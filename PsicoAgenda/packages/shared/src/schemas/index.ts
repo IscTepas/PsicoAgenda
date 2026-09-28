@@ -20,7 +20,21 @@ export const createUserSchema = z.object({
   password: passwordSchema,
   name: z.string().min(2, "El nombre es obligatorio"),
   phone: z.string().optional(),
-  role: z.nativeEnum(UserRole),
+  role: z.union([z.literal(UserRole.PATIENT), z.literal(UserRole.PSYCHOLOGIST)]),
+});
+
+export const demoLoginSchema = z.object({
+  role: z.union([z.literal(UserRole.PATIENT), z.literal(UserRole.PSYCHOLOGIST)]),
+});
+
+export const authResponseSchema = z.object({
+  token: z.string(),
+  user: z.object({
+    id: z.string(),
+    email: z.string().email(),
+    name: z.string(),
+    role: z.nativeEnum(UserRole),
+  }),
 });
 
 export const createAppointmentSchema = z.object({

@@ -46,9 +46,9 @@ export default function manifest(): MetadataRoute.Manifest {
         url: "/agenda",
       },
       {
-        name: "Nuevo paciente",
-        short_name: "Paciente",
-        url: "/pacientes/nuevo",
+        name: "Nueva cita",
+        short_name: "Cita",
+        url: "/agenda/nueva",
       },
     ],
   };

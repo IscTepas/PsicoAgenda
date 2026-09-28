@@ -1,0 +1,6 @@
+change:
+  name: acceso-por-rol
+  date: 2026-09-27
+  description: Demo login por rol, columna role en User, protección de rutas con proxy.ts y filtro de navegación por rol.
+  spec_delta:
+    - specs/user-management/spec.md

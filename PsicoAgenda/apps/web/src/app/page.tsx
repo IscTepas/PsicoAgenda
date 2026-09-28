@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { APP_NAME, MAX_APPOINTMENT_DURATION, MIN_APPOINTMENT_DURATION } from "@psicoagenda/shared";
 import { CalendarClock, FileLock2, MessageSquare, ShieldCheck } from "lucide-react";
 import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 const FEATURES = [
@@ -59,6 +61,14 @@ export default function Home() {
             seguimiento del paciente: agenda, expediente, recordatorios y reportes, con la
             confidencialidad que exige la relación terapéutica.
           </p>
+          <div className="flex gap-3 pt-2">
+            <Button asChild>
+              <Link href="/login">Entrar</Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/registro">Crear cuenta</Link>
+            </Button>
+          </div>
         </section>
 
         <section className="grid gap-4 sm:grid-cols-2">

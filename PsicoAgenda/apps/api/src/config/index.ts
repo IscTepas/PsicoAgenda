@@ -25,4 +25,5 @@ export const config = {
   jwtSecret: requiredInProduction("JWT_SECRET", process.env.JWT_SECRET),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
+  allowDemoLogin: process.env.NODE_ENV !== "production" && process.env.ALLOW_DEMO_LOGIN !== "false",
 } as const;

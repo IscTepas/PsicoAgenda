@@ -8,7 +8,7 @@ export interface HealthStatus {
 
 export const healthService = {
   /** Comprobación de disponibilidad de la API. */
-  check: () => apiFetch<HealthStatus>("/api/health"),
+  check: () => apiFetch<HealthStatus>("/health"),
 };
 
 export { ApiError };

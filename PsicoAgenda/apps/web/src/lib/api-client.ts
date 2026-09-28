@@ -2,6 +2,14 @@ import { DEFAULT_API_PORT } from "@psicoagenda/shared";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${DEFAULT_API_PORT}`;
 
+const API_PREFIX = "/api";
+
+function buildApiUrl(path: string): string {
+  // Normalizar: si el caller ya incluyó /api, no duplicar.
+  const normalizedPath = path.startsWith(API_PREFIX) ? path : `${API_PREFIX}${path}`;
+  return `${API_URL}${normalizedPath}`;
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -32,7 +40,7 @@ interface ApiErrorBody {
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { token, body, headers, ...rest } = options;
 
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     ...rest,
     headers: {
       Accept: "application/json",

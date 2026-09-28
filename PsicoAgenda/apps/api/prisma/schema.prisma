@@ -16,15 +16,16 @@ datasource db {
 // --- Usuarios y roles ---
 
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  passwordHash String    @map("password_hash")
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String   @map("password_hash")
   name         String
   phone        String?
-  isActive     Boolean   @default(true) @map("is_active")
+  role         UserRole @default(PATIENT)
+  isActive     Boolean  @default(true) @map("is_active")
   lastLoginAt  DateTime? @map("last_login_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   psychologist  Psychologist?
   patient       Patient?

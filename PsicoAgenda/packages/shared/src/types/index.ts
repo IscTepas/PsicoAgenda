@@ -66,6 +66,8 @@ export interface User {
   updatedAt: Date;
 }
 
+export type SessionUser = Pick<User, "id" | "email" | "name" | "role">;
+
 export interface Psychologist extends User {
   role: UserRole.PSYCHOLOGIST;
   licenseNumber: string;
