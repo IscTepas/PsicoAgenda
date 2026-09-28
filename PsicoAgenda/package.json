@@ -1,0 +1,33 @@
+{
+  "name": "psicoagenda",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sistema de gestión integral para consultorios de psicología",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build": "tsc -b && npm run build --workspace=apps/web",
+    "typecheck": "tsc -b && npm run typecheck --workspace=apps/web",
+    "lint": "npm run lint --workspace=apps/api && npm run lint --workspace=apps/web",
+    "test": "npm run test --workspace=apps/api",
+    "prisma:generate": "npm run prisma:generate --workspace=apps/api",
+    "prisma:migrate": "npm run prisma:migrate --workspace=apps/api",
+    "clean": "npm run clean --workspaces --if-present && tsc -b --clean && rimraf tsconfig.tsbuildinfo"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "concurrently": "^9.2.1",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.19.0",
+    "npm": ">=9.0.0"
+  }
+}

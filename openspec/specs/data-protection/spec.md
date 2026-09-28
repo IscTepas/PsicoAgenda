@@ -1,71 +1,60 @@
-# Protección de Datos
-
 ## Purpose
-
-Garantías de seguridad, privacidad y cumplimiento normativo de la información clínica y personal: cifrado, control de sesiones, cumplimiento de la LFPDPPP (México), retención de datos y portabilidad a solicitud del paciente.
+Protección de datos personales y clínicos: cifrado, control de sesiones, autenticación segura, cumplimiento de la LFPDPPP, respaldo en AWS, retención de expedientes, portabilidad de datos y auditoría de accesos.
 
 ## Requirements
 
 ### Requirement: Cifrado de datos
-El sistema SHALL cifrar los datos en tránsito y en almacenamiento, y SHALL cifrar las contraseñas de los usuarios.
+El sistema SHALL cifrar los datos en tránsito y en almacenamiento, especialmente contraseñas e información clínica.
 
-#### Scenario: Transmisión y almacenamiento seguro
-- **WHEN** los datos viajan por la red o se guardan en almacenamiento persistente
-- **THEN** el sistema SHALL cifrarlos tanto en tránsito como en reposo
+#### Scenario: Almacenamiento seguro
+- **WHEN** se guarda información sensible en la base de datos
+- **THEN** el sistema almacena la información cifrada aplicando algoritmos seguros
 
-#### Scenario: Almacenamiento de contraseñas
-- **WHEN** se registra o actualiza la contraseña de un usuario
-- **THEN** el sistema SHALL almacenarla cifrada y nunca en texto plano
+### Requirement: Control de sesiones
+El sistema SHALL crear sesiones únicas y cifradas, controlar la inactividad y finalizar sesiones por expiración.
 
-### Requirement: Autenticación en dos pasos (2FA)
-El sistema SHALL ofrecer autenticación en dos pasos (2FA) para el acceso a las cuentas.
+#### Scenario: Expiración por inactividad
+- **WHEN** un usuario permanece inactivo más allá del tiempo permitido
+- **THEN** el sistema cierra la sesión automáticamente y requiere autenticación nuevamente
 
-#### Scenario: Inicio de sesión con 2FA habilitado
-- **WHEN** un usuario autenticado con 2FA habilitado inicia sesión con credenciales válidas
-- **THEN** el sistema SHALL requerir un segundo factor antes de conceder el acceso
-
-### Requirement: Control estricto de sesiones
-El sistema SHALL aplicar controles de sesión con tiempo límite e intentos fallidos.
-
-#### Scenario: Reintentos fallidos excesivos
-- **WHEN** se exceden los intentos fallidos de autenticación
-- **THEN** el sistema SHALL bloquear temporalmente el acceso
-
-#### Scenario: Sesión vencida
-- **WHEN** la sesión supera el tiempo límite de inactividad
-- **THEN** el sistema SHALL cerrar la sesión y requerir autenticación nuevamente
-
-### Requirement: Cumplimiento de privacidad (LFPDPPP)
-El sistema SHALL cumplir con la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (México) para el tratamiento de datos personales y clínicos.
+### Requirement: Cumplimiento LFPDPPP
+El sistema SHALL alinear el manejo de datos personales y clínicos con la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (México).
 
 #### Scenario: Tratamiento de datos personales
-- **WHEN** el sistema trata datos personales o sensibles de pacientes
-- **THEN** SHALL hacerlo conforme a la LFPDPPP, con base en el consentimiento registrado
+- **WHEN** el sistema recolecta, almacena o comparte datos personales
+- **THEN** lo hace con base en el consentimiento informado, la finalidad declarada y las medidas de seguridad requeridas por la ley
 
 ### Requirement: Respaldo en AWS
-El sistema SHALL respaldar la información en servidores de AWS.
+El sistema SHALL realizar respaldos periódicos y cifrados de la información en servidores de AWS.
 
-#### Scenario: Respaldo de información
-- **WHEN** se almacena información del sistema
-- **THEN** SHALL estar respaldada en servidores de AWS
+#### Scenario: Respaldo programado
+- **WHEN** se ejecuta el trabajo de respaldo programado
+- **THEN** el sistema genera una copia de seguridad cifrada y la almacena en la infraestructura cloud configurada
 
-### Requirement: Alta disponibilidad
-El sistema SHALL mantener una alta disponibilidad del 99% durante el horario laboral.
+### Requirement: Retención de expedientes
+El sistema SHALL conservar los expedientes clínicos por el tiempo mínimo exigido por la normativa, incluso si el paciente está inactivo.
 
-#### Scenario: Disponibilidad en horario laboral
-- **WHEN** se opera durante el horario laboral
-- **THEN** el sistema SHALL permanecer disponible al menos el 99% del tiempo
-
-### Requirement: Retención de datos
-El sistema SHALL conservar los expedientes conforme a la normativa legal, incluso cuando el paciente esté inactivo.
-
-#### Scenario: Paciente inactivo
-- **WHEN** un paciente pasa a estado inactivo
-- **THEN** el sistema SHALL conservar su expediente durante el período legal de retención
+#### Scenario: Intento de eliminación antes de plazo
+- **WHEN** se intenta eliminar un expediente antes del plazo legal de retención
+- **THEN** el sistema bloquea la eliminación y registra el intento
 
 ### Requirement: Portabilidad de datos
-El sistema SHALL permitir la exportación de los datos del paciente a solicitud de este.
+El sistema SHALL facilitar la exportación del historial de citas y notas del paciente si este lo solicita.
 
 #### Scenario: Solicitud de portabilidad
-- **WHEN** un paciente solicita la exportación de su información
-- **THEN** el sistema SHALL generar y entregar una copia portátil de sus datos
+- **WHEN** un paciente solicita la portabilidad de sus datos
+- **THEN** el sistema genera un archivo exportable en formato estándar y lo entrega de forma segura
+
+### Requirement: Confidencialidad profesional
+El sistema SHALL asegurar que la información clínica solo sea accesible para usuarios autorizados.
+
+#### Scenario: Acceso restringido a historial
+- **WHEN** un usuario intenta acceder a un historial clínico
+- **THEN** el sistema verifica sus permisos y permite el acceso solo si está autorizado
+
+### Requirement: Auditoría y trazabilidad
+El sistema SHALL registrar acciones relevantes sobre datos sensibles para fines de auditoría.
+
+#### Scenario: Registro de modificación clínica
+- **WHEN** un profesional modifica una entrada de bitácora
+- **THEN** el sistema guarda un log con el usuario, la fecha, la hora y los cambios realizados

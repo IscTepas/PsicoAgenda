@@ -14,9 +14,11 @@ Sistema orientado a profesionistas de la psicología para la gestión integral d
 - Generación de reportes operativos exportables a PDF/Excel.
 
 **Excluye:**
-- Módulos de facturación.
+- Módulos de facturación electrónica o contabilidad.
 - Videollamadas.
 - Expedientes médicos interdisciplinarios.
+
+> **Nota sobre RD-14:** el sistema sí registra el *estado de pago de honorarios* (pendiente/pagado) como control administrativo del consultorio, pero esto no equivale a un módulo de facturación electrónica.
 
 **Plataformas:** Aplicación multiplataforma compatible con Windows, Android y cualquier navegador moderno.
 
@@ -29,6 +31,9 @@ Sistema orientado a profesionistas de la psicología para la gestión integral d
 | `openspec/specs/` | Capacidades del sistema en formato OpenSpec (`spec.md`) |
 | `openspec/changes/` | Cambios propuestos (flujo propose → apply → archive) |
 | `openspec/config.yaml` | Configuración de OpenSpec (schema `spec-driven`, idioma `es`) |
+| `apps/api/` | Backend Express 5 + TypeScript + Prisma 7 |
+| `apps/web/` | Frontend Next.js 16 + Tailwind v4 + shadcn/ui + PWA Serwist |
+| `packages/shared/` | Tipos, esquemas Zod y constantes compartidas |
 | `.opencode/` | Slash commands y skills de OpenSpec para opencode |
 | `psicoagenda_openspec.md` | Documento maestro original (referencia histórica) |
 | `README.md` | Este archivo |
@@ -47,12 +52,26 @@ Sistema orientado a profesionistas de la psicología para la gestión integral d
 
 ## Requisitos previos
 
-- **Node.js** (≥ 18) y **npm**.
+- **Node.js** ≥ 20.19.0 y **npm** ≥ 9.
+- **PostgreSQL** 15+ (solo para ejecutar migraciones; `prisma generate` y `prisma validate` no lo requieren).
 - **OpenSpec CLI** instalado globalmente:
 
 ```bash
 npm install -g @fission-ai/openspec
 openspec --version
+```
+
+## Estructura del monorepo
+
+```text
+PsicoAgenda/
+├── apps/
+│   ├── api/    # Backend Express 5 + Prisma 7
+│   └── web/    # Frontend Next.js 16 + PWA
+├── packages/
+│   └── shared/ # Tipos, schemas y constantes compartidas
+├── openspec/   # Especificaciones del proyecto
+└── package.json # Workspaces de npm
 ```
 
 ## Cómo inicializar el proyecto
@@ -64,17 +83,47 @@ git clone <url-del-repo> PsicoAgenda
 cd PsicoAgenda
 ```
 
-### 2. (Opcional pero recomendado) Re-inicializar OpenSpec
-
-La estructura `openspec/` y la integración con `opencode` ya están configuradas en el repo. Si quieres regenerarlas desde cero (por ejemplo, para configurar otra herramienta de IA):
+### 2. Instalar dependencias
 
 ```bash
-openspec init --tools opencode --language es
+npm install
 ```
 
-> `--tools opencode` instala los slash commands y skills de OpenSpec en `.opencode/`; `--language es` establece el idioma de los artefactos. Consulta `openspec init --help` para otras opciones.
+### 3. Configurar variables de entorno
 
-### 3. Verificar la estructura
+```bash
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
+```
+
+Ajusta `DATABASE_URL` en `apps/api/.env` con tus credenciales de PostgreSQL.
+
+### 4. Generar el cliente de Prisma
+
+```bash
+npm run prisma:generate
+```
+
+### 5. Ejecutar migraciones (requiere PostgreSQL)
+
+```bash
+npm run prisma:migrate
+```
+
+> Por ahora la base de datos se deja vacía; el seed es un placeholder. Los datos de ejemplo se agregarán en changes posteriores.
+
+### 6. Levantar en desarrollo
+
+```bash
+# Ambas aplicaciones a la vez
+npm run dev
+
+# O por separado
+npm run dev:api   # http://localhost:4000
+npm run dev:web   # http://localhost:3000
+```
+
+### 7. Verificar la estructura
 
 ```bash
 # Lista las capacidades y su número de requirements
@@ -87,13 +136,27 @@ openspec doctor
 openspec context
 ```
 
-### 4. Validar las especificaciones
+### 8. Validar las especificaciones
 
 ```bash
 openspec validate --specs
 ```
 
 Debe devolver: `6 passed, 0 failed`.
+
+## Scripts útiles
+
+| Script | Descripción |
+|--------|-------------|
+| `npm run dev` | Levanta API y web en paralelo |
+| `npm run dev:api` | Levanta solo el backend |
+| `npm run dev:web` | Levanta solo el frontend |
+| `npm run typecheck` | Typecheck de todo el monorepo |
+| `npm run lint` | Lint de API y web |
+| `npm test` | Tests del backend |
+| `npm run build` | Build completo (shared → api → web + service worker) |
+| `npm run prisma:generate` | Genera el cliente de Prisma 7 |
+| `npm run prisma:migrate` | Ejecuta migraciones con PostgreSQL |
 
 ## Flujo de trabajo con OpenSpec
 

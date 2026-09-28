@@ -1,58 +1,53 @@
-# Historial Clínico
-
 ## Purpose
-
-Gestión del historial clínico psicológico individual del paciente: bitácora por sesión, notas clínicas, edición con registro de modificaciones, consentimiento informado, antecedentes y contacto de emergencia, bajo criterios éticos (APA) y con respaldo a tutores legales para menores.
+Gestión del historial clínico psicológico: apertura de expediente, bitácora por sesión, edición con trazabilidad de cambios, consulta del historial completo, consentimiento informado y manejo de contactos de emergencia y tutores legales.
 
 ## Requirements
 
-### Requirement: Apertura de historial clínico
-El sistema SHALL abrir un historial clínico para cada paciente, registrando fecha de apertura, antecedentes y observaciones generales.
+### Requirement: Registro de paciente y apertura de expediente
+El sistema SHALL permitir registrar un nuevo paciente y crear su expediente clínico inicial.
 
-#### Scenario: Apertura del historial
-- **WHEN** un paciente inicia su proceso terapéutico
-- **THEN** el sistema SHALL crear su historial clínico con fecha de apertura
-- **AND** SHALL registrar antecedentes y el diagnóstico inicial si existe
+#### Scenario: Registro clínico exitoso
+- **WHEN** el psicólogo/a ingresa los datos obligatorios de un nuevo paciente
+- **THEN** el sistema valida la información, verifica duplicados, cifra datos sensibles y crea el expediente clínico inicial
 
-### Requirement: Bitácora por sesión
-El sistema SHALL generar una entrada de bitácora por cada sesión atendida, asociada a la cita correspondiente.
+### Requirement: Ver historial clínico
+El sistema SHALL mostrar el historial clínico completo del paciente de forma organizada y navegable.
 
-#### Scenario: Registrar nota de sesión
-- **WHEN** el psicólogo captura la nota de una sesión
-- **THEN** el sistema SHALL guardar la entrada de bitácora vinculada a la cita del paciente
+#### Scenario: Consulta de historial
+- **WHEN** el psicólogo/a consulta el historial de un paciente autorizado
+- **THEN** el sistema muestra datos generales, antecedentes, diagnósticos, sesiones y documentos asociados
 
-### Requirement: Edición con registro de modificaciones
-El sistema SHALL permitir editar las entradas del historial manteniendo un registro de las modificaciones realizadas.
+### Requirement: Agregar entrada de bitácora
+El sistema SHALL generar un formulario semi-completado a partir de los datos de una cita para registrar observaciones de sesión.
 
-#### Scenario: Editar una entrada existente
-- **WHEN** el psicólogo edita una entrada del historial
-- **THEN** el sistema SHALL conservar la versión anterior y registrar el cambio con su autor y fecha
+#### Scenario: Pre-llenado de bitácora
+- **WHEN** el psicólogo/a inicia una nueva entrada de bitácora desde una cita atendida
+- **THEN** el sistema pre-llena el formulario con datos de la cita y deja los campos clínicos para completar manualmente
 
-### Requirement: Visualización del historial completo
-El sistema SHALL permitir al psicólogo visualizar el historial completo del paciente, incluyendo antecedentes y todas las entradas de sesión.
+### Requirement: Guardar entrada de bitácora
+El sistema SHALL almacenar los datos clínicos capturados en el formulario de bitácora.
 
-#### Scenario: Consulta del historial
-- **WHEN** el psicólogo consulta el historial de un paciente
-- **THEN** el sistema SHALL mostrar las entradas de bitácora, antecedentes, observaciones generales y el historial de modificaciones
+#### Scenario: Guardado exitoso
+- **WHEN** el psicólogo/a guarda una entrada de bitácora completada
+- **THEN** el sistema valida campos obligatorios, registra fecha, hora y profesional responsable, y confirma el guardado
 
-### Requirement: Consentimiento informado y código de conducta APA
-El sistema SHALL exigir el registro del consentimiento informado y apegar la gestión clínica al código de conducta de la APA.
+### Requirement: Editar bitácora con trazabilidad
+El sistema SHALL permitir modificar una entrada de la bitácora manteniendo el historial de versiones.
 
-#### Scenario: Registro del consentimiento
-- **WHEN** se abre un proceso terapéutico
-- **THEN** el sistema SHALL requerir el registro del consentimiento informado del paciente (o de su tutor legal si es menor)
-- **AND** SHALL asociar el consentimiento al historial correspondiente
+#### Scenario: Edición con control de cambios
+- **WHEN** el psicólogo/a edita una entrada existente de la bitácora
+- **THEN** el sistema guarda una nueva versión, registra quién realizó el cambio y cuándo, y confirma la actualización
 
-### Requirement: Contacto de emergencia obligatorio
-El sistema SHALL requerir un campo de contacto de emergencia en el expediente del paciente.
+### Requirement: Consentimiento informado
+El sistema SHALL registrar el consentimiento informado otorgado por el paciente o su tutor legal.
 
-#### Scenario: Expediente sin contacto de emergencia
-- **WHEN** se intenta completar un historial sin contacto de emergencia registrado
-- **THEN** el sistema SHALL impedir la finalización hasta que se indique el contacto de emergencia
+#### Scenario: Registro de consentimiento
+- **WHEN** se registra o actualiza el consentimiento informado de un paciente
+- **THEN** el sistema almacena el documento, la fecha de firma y, si aplica, la información del tutor legal
 
-### Requirement: Acceso de tutor legal para menores
-El sistema SHALL restringir el acceso a la información clínica de menores al paciente autorizado y a su tutor legal.
+### Requirement: Contacto de emergencia y tutor legal
+El sistema SHALL exigir un contacto de emergencia y, para menores de edad, vincular a un tutor legal.
 
-#### Scenario: Consulta de historial de un menor
-- **WHEN** un tutor legal autorizado consulta la información de un paciente menor
-- **THEN** el sistema SHALL permitir únicamente el acceso a la información que el tutor tiene autorizada
+#### Scenario: Expediente con contacto de emergencia
+- **WHEN** se crea o actualiza el expediente de un paciente
+- **THEN** el sistema valida que exista al menos un contacto de emergencia y, si el paciente es menor de edad, un tutor legal responsable

@@ -1,0 +1,58 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+coverage/
+
+# next.js (build artifacts en cualquier workspace)
+**/.next/
+**/out/
+**/.turbo/
+
+# production
+build/
+dist/
+
+# misc
+.DS_Store
+Thumbs.db
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (los .env.example sí se versionan)
+.env*
+!.env.example
+!.env.*.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# prisma (cliente generado por prisma generate)
+apps/api/src/generated/
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
+
+# serwist / pwa (service worker generado en build)
+apps/web/public/sw.js
+apps/web/public/sw.js.map
+apps/web/public/swe-worker-*.js
+apps/web/public/swe-worker-*.js.map
+
+# artefactos generados por next dev
+apps/web/CLAUDE.md

@@ -1,48 +1,47 @@
-# Gestión de Citas
-
 ## Purpose
-
-Programación y control de la agenda digital: crear, modificar y cancelar citas, verificar disponibilidad para evitar empalmes y registrar la asistencia del paciente.
+Administración de la agenda clínica: programar, modificar, cancelar y consultar citas; verificar disponibilidad para evitar empalmes; y registrar la asistencia de los pacientes.
 
 ## Requirements
 
-### Requirement: Programación de citas
-El sistema SHALL permitir programar citas con su fecha, hora, duración, motivo y modalidad, respetando la duración estándar de 45 a 60 minutos.
+### Requirement: Programar cita
+El sistema SHALL permitir a pacientes y psicólogos/as agendar una sesión seleccionando fecha, hora, motivo y profesional.
 
-#### Scenario: Crear una cita válida
-- **WHEN** el paciente o el psicólogo programa una cita con fecha, hora y motivo
-- **THEN** el sistema SHALL registrar la cita en estado Pendiente con su modalidad y duración dentro del rango estándar
+#### Scenario: Programación exitosa
+- **WHEN** un usuario selecciona una fecha y hora disponibles con un psicólogo/a
+- **THEN** el sistema reserva el espacio, registra la cita y notifica a ambas partes
 
-#### Scenario: Duración fuera del rango
-- **WHEN** se intenta programar una cita cuya duración está fuera de 45-60 minutos
-- **THEN** el sistema SHALL rechazar el registro o requerir justificación del psicólogo
+### Requirement: Modificar cita
+El sistema SHALL permitir cambiar la fecha, hora o motivo de una cita previamente agendada.
 
-### Requirement: Verificación de disponibilidad sin empalmes
-El sistema SHALL evitar la sobreposición de citas de un mismo psicólogo y/o recurso.
+#### Scenario: Modificación con disponibilidad
+- **WHEN** un usuario solicita cambiar una cita a una nueva fecha y hora disponibles
+- **THEN** el sistema actualiza el registro, reprograma las notificaciones y alerta al paciente y al psicólogo/a
 
-#### Scenario: Conflicto de horario
-- **WHEN** una cita nueva se solapa con otra ya programada para el mismo psicólogo
-- **THEN** el sistema SHALL advertir del conflicto y bloquear el empalme
+#### Scenario: Modificación sin disponibilidad
+- **WHEN** un usuario solicita cambiar una cita a una fecha u hora no disponible
+- **THEN** el sistema muestra un mensaje indicando la falta de disponibilidad y solicita otra opción
 
-### Requirement: Modificación de citas
-El sistema SHALL permitir modificar citas existentes (fecha, hora, duración, motivo) respetando la disponibilidad.
+### Requirement: Cancelar cita
+El sistema SHALL permitir cancelar una cita programada y liberar el horario correspondiente.
 
-#### Scenario: Reprogramar una cita
-- **WHEN** se modifica la fecha u hora de una cita
-- **THEN** el sistema SHALL validar de nuevo la disponibilidad
-- **AND** SHALL notificar el cambio de horario al paciente
+#### Scenario: Cancelación de cita
+- **WHEN** un usuario o psicólogo/a cancela una cita vigente
+- **THEN** el sistema actualiza el estado a "Cancelada", libera el horario y notifica a la contraparte
 
-### Requirement: Cancelación de citas
-El sistema SHALL permitir cancelar citas, pasándolas a estado Cancelada.
+### Requirement: Consultar agenda y verificar disponibilidad
+El sistema SHALL mostrar el calendario de citas programadas y los espacios disponibles para agendar.
 
-#### Scenario: Cancelar una cita programada
-- **WHEN** el paciente o el psicólogo cancela una cita
-- **THEN** el sistema SHALL marcar la cita como Cancelada
-- **AND** SHALL notificar a las partes involucradas
+#### Scenario: Visualización de agenda
+- **WHEN** un usuario consulta su agenda con un rango de fechas
+- **THEN** el sistema muestra las citas organizadas por día, semana o mes con indicadores de estado
 
-### Requirement: Registro de asistencia
-El sistema SHALL registrar la asistencia real del paciente, pasando la cita a estado Atendida cuando corresponda.
+#### Scenario: Verificación de disponibilidad
+- **WHEN** un paciente consulta los horarios disponibles de un psicólogo/a
+- **THEN** el sistema muestra los bloques libres según la configuración de horarios laborales
 
-#### Scenario: Marcar asistencia
-- **WHEN** el psicólogo registra la asistencia del paciente tras la sesión
-- **THEN** el sistema SHALL actualizar el estado de la cita a Atendida
+### Requirement: Registrar asistencia
+El sistema SHALL registrar si el paciente asistió o no a la cita programada.
+
+#### Scenario: Registro de asistencia
+- **WHEN** el psicólogo/a marca el estado de asistencia de una cita
+- **THEN** el sistema actualiza el estado de la cita y vincula el registro al historial del paciente

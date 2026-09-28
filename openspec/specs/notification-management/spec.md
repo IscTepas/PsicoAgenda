@@ -1,33 +1,29 @@
-# Gestión de Notificaciones
-
 ## Purpose
-
-Envío automático de recordatorios y notificaciones a los pacientes: recordatorio 24 horas antes de la cita vía WhatsApp, confirmación de asistencia y avisos ante cambios de horario. Los canales de envío son WhatsApp y correo electrónico.
+Envío y gestión de notificaciones automáticas: recordatorios previos a las citas, confirmación de asistencia y avisos ante cambios de horario o estado. Los canales principales son WhatsApp y correo electrónico.
 
 ## Requirements
 
-### Requirement: Recordatorio automático de citas
-El sistema SHALL enviar un recordatorio automático al paciente 24 horas antes de la cita, a través de los canales configurados (WhatsApp y/o correo electrónico).
+### Requirement: Enviar recordatorios automáticos
+El sistema SHALL enviar recordatorios automáticos antes de cada cita para reducir inasistencias.
 
-#### Scenario: Recordatorio previo a la cita
-- **WHEN** faltan 24 horas para una cita confirmada
-- **THEN** el sistema SHALL enviar un recordatorio al paciente con los datos de la cita
-- **AND** SHALL usar el canal configurado (WhatsApp, correo electrónico o ambos)
+#### Scenario: Recordatorio programado
+- **WHEN** existe una cita programada dentro del tiempo de anticipación configurado (por defecto 24 h)
+- **THEN** el sistema genera y envía un recordatorio al paciente y, si aplica, al psicólogo/a
 
 ### Requirement: Confirmación de asistencia
-El sistema SHALL permitir que el paciente confirme su asistencia a la cita a través de la notificación.
+El sistema SHALL permitir al paciente confirmar o cancelar su asistencia desde la notificación.
 
-#### Scenario: Paciente confirma asistencia
-- **WHEN** el paciente confirma su asistencia respondiendo a la notificación
-- **THEN** el sistema SHALL registrar la confirmación y actualizar el estado de la cita
+#### Scenario: Confirmación desde notificación
+- **WHEN** un paciente confirma su asistencia a través de la notificación
+- **THEN** el sistema actualiza el estado de la cita a "Confirmada" y refleja el cambio en la agenda
 
-### Requirement: Notificación ante cambios de horario
-El sistema SHALL notificar a las partes involucradas cuando una cita cambia de horario, de forma o se cancela.
+#### Scenario: Cancelación desde notificación
+- **WHEN** un paciente cancela su asistencia a través de la notificación
+- **THEN** el sistema libera el horario de la cita y notifica al psicólogo/a
 
-#### Scenario: Cambio de horario
-- **WHEN** una cita programada o confirmada cambia de fecha u hora
-- **THEN** el sistema SHALL notificar el cambio al paciente
+### Requirement: Notificación de cambios
+El sistema SHALL informar al usuario afectado cuando una cita sufra modificaciones.
 
-#### Scenario: Cancelación de cita
-- **WHEN** una cita se cancela
-- **THEN** el sistema SHALL notificar la cancelación a las partes involucradas
+#### Scenario: Cambio de cita
+- **WHEN** una cita programada es modificada o cancelada
+- **THEN** el sistema envía una notificación inmediata con los detalles del cambio al paciente o psicólogo/a afectado

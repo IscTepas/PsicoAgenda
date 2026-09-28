@@ -1,9 +1,13 @@
 schema: spec-driven
 
+# Project context (optional)
+# This is shown to AI when creating artifacts.
 context: |
   Language: es
-  All artifacts must be written in es.
+  All artifacts must be written in Spanish.
   Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  Domain: psychology practice management (appointments, clinical records, notifications, reports).
+  Project: PsicoAgenda — multiplatform application for psychologists and patients.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
