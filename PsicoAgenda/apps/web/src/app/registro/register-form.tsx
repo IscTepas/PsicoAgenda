@@ -1,10 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { createUserSchema, UserRole, APP_NAME } from "@psicoagenda/shared"
+import { useState } from "react"
+import { z } from "zod"
+import { emailSchema, passwordSchema, APP_NAME } from "@psicoagenda/shared"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -23,35 +25,97 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client"
 
-const REGISTER_ROLES = [
-  { value: UserRole.PATIENT, label: "Paciente" },
-  { value: UserRole.PSYCHOLOGIST, label: "Psicólogo" },
-]
+/**
+ * El registro público crea **siempre** una cuenta de paciente, y el formulario ni
+ * siquiera ofrece elegir otro rol.
+ *
+ * No es una decisión de interfaz: el rol efectivo viaja en `app_metadata.role`, que el
+ * cliente no puede escribir, y el trigger de alta lo lee con
+ * `upper(raw_app_meta_data ->> 'role')`, es decir, de `app_metadata` y no de
+ * `user_metadata`. Enviar el rol pedido en `user_metadata` no concedía nada: el perfil
+ * nacía con el valor por defecto y la UI prometía un rol que el usuario no tenía.
+ *
+ * Sacar el selector elimina la promesa falsa en lugar de dejar que parezca funcionar.
+ * Los cuentas de psicólogo/a y de administración se crean y se promover por un flujo
+ * administrativo; ver la sección "Promover una cuenta" del README.
+ */
+const registerSchema = z.object({
+  name: z.string().min(2, "El nombre es obligatorio"),
+  email: emailSchema,
+  password: passwordSchema,
+  phone: z.string().optional(),
+})
+
+type RegisterValues = z.infer<typeof registerSchema>
 
 export function RegisterForm() {
-  const router = useRouter()
-  const form = useForm({
-    resolver: zodResolver(createUserSchema),
-    defaultValues: {
-      name: "",
-      email: "",
-      password: "",
-      phone: "",
-      role: UserRole.PATIENT,
-    },
+  const [error, setError] = useState<string | null>(null)
+  const [isPending, setIsPending] = useState(false)
+  const [isSubmitted, setIsSubmitted] = useState(false)
+  const configured = isSupabaseConfigured()
+
+  const form = useForm<RegisterValues>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: { name: "", email: "", password: "", phone: "" },
   })
 
-  function onSubmit() {
-    // TODO: implementar registro real contra /api/auth/register
-    router.push("/login")
+  async function onSubmit(values: RegisterValues) {
+    setError(null)
+    setIsPending(true)
+
+    // El proveedor crea la identidad, cifra la contraseña y envía el correo de
+    // verificación. El perfil en `public.users` lo crea el trigger sobre `auth.users`,
+    // que le asigna `PATIENT` porque aquí no se declara ningún rol: un alta pública no
+    // puede elegir el suyo.
+    const { error: signUpError } = await createClient().auth.signUp({
+      email: values.email,
+      password: values.password,
+      options: {
+        data: {
+          name: values.name,
+          phone: values.phone,
+        },
+      },
+    })
+
+    if (signUpError) {
+      setError(
+        signUpError.message === "User already registered"
+          ? "Ya existe una cuenta con ese correo"
+          : "No se pudo crear la cuenta. Intenta de nuevo.",
+      )
+      setIsPending(false)
+      return
+    }
+
+    setIsPending(false)
+    setIsSubmitted(true)
+  }
+
+  if (isSubmitted) {
+    return (
+      <>
+        <Link href="/" className="mb-6 text-2xl font-bold text-primary">
+          {APP_NAME}
+        </Link>
+
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            <CardTitle className="text-xl">Revisa tu correo</CardTitle>
+            <CardDescription>
+              Te enviamos un enlace de verificación. Inicia sesión cuando lo confirmes.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="justify-center">
+            <Button variant="link" asChild>
+              <Link href="/login">Ir a iniciar sesión</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+      </>
+    )
   }
 
   return (
@@ -63,11 +127,27 @@ export function RegisterForm() {
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-xl">Crear cuenta</CardTitle>
-          <CardDescription>
-            Completa tus datos para comenzar
-          </CardDescription>
+            <CardDescription>
+              Crea tu cuenta de paciente. Las cuentas de profesionales las habilita el
+              equipo.
+            </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          ) : null}
+          {!configured ? (
+            <Alert variant="destructive">
+              <AlertDescription>
+                Faltan <code>NEXT_PUBLIC_SUPABASE_URL</code> y{" "}
+                <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> en{" "}
+                <code>apps/web/.env</code>.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
@@ -141,36 +221,8 @@ export function RegisterForm() {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="role"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tipo de cuenta</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecciona un rol" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {REGISTER_ROLES.map((role) => (
-                          <SelectItem key={role.value} value={role.value}>
-                            {role.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <Button type="submit" className="w-full">
-                Crear cuenta
+              <Button type="submit" className="w-full" disabled={isPending || !configured}>
+                {isPending ? "Creando cuenta..." : "Crear cuenta"}
               </Button>
             </form>
           </Form>

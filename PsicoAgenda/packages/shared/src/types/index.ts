@@ -56,6 +56,10 @@ export enum PaymentStatus {
   WAIVED = "waived",
 }
 
+/**
+ * Identidad en la base de datos de la aplicación. Es un perfil espejado de la
+ * identidad del proveedor: no guarda contraseñas ni su equivalente cifrado.
+ */
 export interface User {
   id: string;
   email: string;
@@ -66,7 +70,20 @@ export interface User {
   updatedAt: Date;
 }
 
-export type SessionUser = Pick<User, "id" | "email" | "name" | "role">;
+/**
+ * Datos de la sesión que consume la interfaz.
+ *
+ * - `id` y `email` los emite el proveedor de identidad (`sub` y `email` del token).
+ * - `role` lo declara el proveedor en `app_metadata.role`; una sesión sin rol se
+ *   rechaza en lugar de degradar al de menor privilegio.
+ * - `name` proviene del perfil espejado, no del token.
+ */
+export interface SessionUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+}
 
 export interface Psychologist extends User {
   role: UserRole.PSYCHOLOGIST;

@@ -5,8 +5,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { APP_NAME, UserRole } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
-import { NAV_ITEMS } from "@/lib/navigation"
-import { MOCK_PSYCHOLOGIST } from "@/lib/mock-data"
+import { navItemsForRole } from "@/lib/navigation"
 import { cn } from "@/lib/utils"
 import { useSession } from "@/lib/use-session"
 import {
@@ -40,12 +39,15 @@ const ROLE_LABELS: Record<UserRole, string> = {
 }
 
 function getInitials(name: string): string {
-  return name
+  const initials = name
     .split(" ")
+    .filter(Boolean)
     .map((n) => n[0])
     .join("")
     .slice(0, 2)
     .toUpperCase()
+
+  return initials || "?"
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -53,20 +55,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const pathname = usePathname()
   const router = useRouter()
-  const { user, logout } = useSession()
+  const { user, isLoading, logout } = useSession()
 
-  const filteredNav = React.useMemo(() => {
-    if (!user) return NAV_ITEMS
-    return NAV_ITEMS.filter((item) => item.roles.includes(user.role))
-  }, [user])
+  // Sin rol declarado no se asume ninguno: la navegación se queda vacía en vez de
+  // asumir el de menor privilegio.
+  const filteredNav = React.useMemo(() => navItemsForRole(user?.role), [user])
 
   const handleLogout = () => {
-    logout()
-    router.push("/login")
+    void logout().finally(() => router.push("/login"))
   }
 
-  const displayName = user?.name ?? MOCK_PSYCHOLOGIST.name
-  const displayRole = user?.role ?? MOCK_PSYCHOLOGIST.role
+  const displayName = user?.name ?? ""
+  const displayRole = user?.role
 
   return (
     <div className="flex min-h-screen w-full">
@@ -175,10 +175,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               )}
             >
               <p className="truncate text-sm font-medium">
-                {displayName}
+                {isLoading ? "Cargando..." : displayName || APP_NAME}
               </p>
               <p className="truncate text-xs text-sidebar-foreground/70">
-                {ROLE_LABELS[displayRole]}
+                {displayRole ? ROLE_LABELS[displayRole] : "Sesión sin rol"}
               </p>
             </div>
           </div>

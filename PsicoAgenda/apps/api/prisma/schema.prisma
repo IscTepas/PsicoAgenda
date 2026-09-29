@@ -15,22 +15,28 @@ datasource db {
 
 // --- Usuarios y roles ---
 
+/// Perfil espejado de la identidad administrada por el proveedor de identidad.
+/// Los `id` son los UUID de `auth.users` y los mantiene un trigger
+/// `AFTER INSERT OR UPDATE ON auth.users` (ver la migración `*_auth_user_profile_sync`).
+/// No guarda contraseñas: el cifrado y la verificación de credenciales, el MFA y
+/// la verificación de correo los resuelve el proveedor de identidad.
+/// Prisma nunca referencia `auth` en el datasource: el proveedor modifica sus
+/// schemas y referenciarlos genera drift que `migrate dev` intentaría revertir.
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  name         String
-  phone        String?
-  role         UserRole @default(PATIENT)
-  isActive     Boolean  @default(true) @map("is_active")
-  lastLoginAt  DateTime? @map("last_login_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id    String   @id
+  email String   @unique
+  name  String
+  phone String?
+  role  UserRole @default(PATIENT)
+  /// Refleja `banned_until` de la identidad: una cuenta bloqueada deja de ser usable.
+  isActive    Boolean   @default(true) @map("is_active")
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  psychologist  Psychologist?
-  patient       Patient?
-  twoFactorAuth TwoFactorAuth?
-  reports       Report[]
+  psychologist Psychologist?
+  patient      Patient?
+  reports      Report[]
 
   @@map("users")
 }
@@ -111,19 +117,6 @@ model EmergencyContact {
 
   @@index([patientId])
   @@map("emergency_contacts")
-}
-
-model TwoFactorAuth {
-  id         String    @id @default(uuid())
-  userId     String    @unique @map("user_id")
-  secret     String
-  enabled    Boolean   @default(false)
-  verifiedAt DateTime? @map("verified_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("two_factor_auth")
 }
 
 // --- Agenda ---

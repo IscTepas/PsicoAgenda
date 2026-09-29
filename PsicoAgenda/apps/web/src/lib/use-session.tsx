@@ -1,68 +1,60 @@
 "use client";
 
 import * as React from "react";
-import { type SessionUser } from "@psicoagenda/shared";
-import { readSession, saveSession, clearSession, type Session } from "@/lib/session";
+import type { User } from "@supabase/supabase-js";
+import { isSupabaseConfigured, createClient } from "@/lib/supabase/client";
+import { readIdentity } from "@/lib/session";
 
 interface SessionContextValue {
-  user: SessionUser | null;
-  token: string | null;
-  logout: () => void;
-  setSession: (session: Session) => void;
-}
-
-const SESSION_EVENT = "psicoagenda:session-change";
-
-function notifySessionChange(): void {
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(SESSION_EVENT));
-  }
-}
-
-function getSessionSnapshot(): Session | null {
-  return readSession();
-}
-
-function subscribe(callback: () => void): () => void {
-  const handler = () => callback();
-  window.addEventListener(SESSION_EVENT, handler);
-  window.addEventListener("storage", handler);
-  return () => {
-    window.removeEventListener(SESSION_EVENT, handler);
-    window.removeEventListener("storage", handler);
-  };
+  /** Identidad y perfil derivados de la sesión del proveedor. `null` sin sesión. */
+  user: ReturnType<typeof readIdentity>;
+  isLoading: boolean;
+  /** `false` cuando faltan `NEXT_PUBLIC_SUPABASE_*`: permite avisar en vez de fallar en silencio. */
+  isConfigured: boolean;
+  logout: () => Promise<void>;
 }
 
 const SessionContext = React.createContext<SessionContextValue | null>(null);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  const session = React.useSyncExternalStore(
-    subscribe,
-    getSessionSnapshot,
-    () => null,
-  );
+  const isConfigured = isSupabaseConfigured();
+  const [user, setUser] = React.useState<User | null>(null);
+  const [isLoading, setIsLoading] = React.useState(isConfigured);
+
+  React.useEffect(() => {
+    // `isConfigured` no cambia en tiempo de ejecución: si falta configuración,
+    // `isLoading` ya nació en `false` y no hay nada que sincronizar.
+    if (!isConfigured) return;
+
+    const supabase = createClient();
+
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+      setIsLoading(false);
+    });
+
+    // `INITIAL_SESSION` cubre la restauración; `TOKEN_REFRESHED` y `SIGNED_OUT` cubren
+    // la renovación transparente y el cierre de sesión en otras pestañas.
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setIsLoading(false);
+    });
+
+    return () => subscription.subscription.unsubscribe();
+  }, [isConfigured]);
+
+  const logout = React.useCallback(async () => {
+    if (!isConfigured) return;
+    await createClient().auth.signOut();
+    setUser(null);
+  }, [isConfigured]);
 
   const value = React.useMemo<SessionContextValue>(
-    () => ({
-      user: session?.user ?? null,
-      token: session?.token ?? null,
-      logout: () => {
-        clearSession();
-        notifySessionChange();
-      },
-      setSession: (nextSession) => {
-        saveSession(nextSession);
-        notifySessionChange();
-      },
-    }),
-    [session],
+    () => ({ user: readIdentity(user), isLoading, isConfigured, logout }),
+    [user, isLoading, isConfigured, logout],
   );
 
-  return (
-    <SessionContext.Provider value={value}>
-      {children}
-    </SessionContext.Provider>
-  );
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
 export function useSession(): SessionContextValue {

@@ -22,8 +22,13 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   isProduction: process.env.NODE_ENV === "production",
   databaseUrl: requiredInProduction("DATABASE_URL", process.env.DATABASE_URL),
-  jwtSecret: requiredInProduction("JWT_SECRET", process.env.JWT_SECRET),
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
+  /** URL del proyecto Supabase. De ahí se deriva el JWKS y el `issuer` de los tokens. */
+  supabaseUrl: requiredInProduction("SUPABASE_URL", process.env.SUPABASE_URL).replace(/\/+$/, ""),
+  /**
+   * Tamaño máximo del pool de conexiones. `pg` abre 10 por defecto y Supavisor en
+   * modo sesión tiene un "Pool Size" acotado por combinación base-de-datos+rol:
+   * con más de una instancia de la API el límite se agota con facilidad.
+   */
+  databasePoolMax: toPort(process.env.DATABASE_POOL_MAX, 5),
   corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
-  allowDemoLogin: process.env.NODE_ENV !== "production" && process.env.ALLOW_DEMO_LOGIN !== "false",
 } as const;

@@ -1,62 +1,41 @@
-import { type SessionUser } from "@psicoagenda/shared";
+import type { Session, User } from "@supabase/supabase-js";
+import { UserRole, type SessionUser } from "@psicoagenda/shared";
 
-const SESSION_KEY = "psicoagenda_session";
-const TOKEN_KEY = "psicoagenda_token";
-const COOKIE_NAME = "pa_session";
+/**
+ * La sesión es la del proveedor de identidad. No hay token en `localStorage`: la
+ * credencial de acceso vive en cookies httpOnly, fuera del alcance del JavaScript de
+ * la página, y se renueva de forma transparente mientras la sesión siga vigente.
+ */
 
-export interface Session {
-  user: SessionUser;
-  token: string;
+const BUSINESS_ROLES: readonly string[] = Object.values(UserRole);
+
+const readString = (value: unknown): string => (typeof value === "string" ? value : "");
+
+const readUserMetadata = (user: User): Record<string, unknown> =>
+  (user.user_metadata as Record<string, unknown> | undefined) ?? {};
+
+/**
+ * Identidad declarada por el proveedor. El rol viaja en `app_metadata`, que el cliente
+ * no puede editar (a diferencia de `user_metadata`); el nombre proviene del perfil
+ * espejado y el `id`/`email` del token.
+ *
+ * Devuelve `null` cuando la identidad no declara un `app_metadata.role` válido: quien
+ * consume debe fallar cerrado en lugar de asumir el rol de menor privilegio.
+ */
+export function readIdentity(user: User | null): SessionUser | null {
+  if (!user) return null;
+
+  const role = (user.app_metadata as { role?: unknown } | undefined)?.role;
+  if (typeof role !== "string" || !BUSINESS_ROLES.includes(role)) return null;
+
+  const email = readString(user.email);
+  const metadata = readUserMetadata(user);
+  const name =
+    readString(metadata.name) || readString(metadata.full_name) || email.split("@")[0];
+
+  return { id: user.id, email, name, role: role as UserRole };
 }
 
-export function saveSession(session: Session): void {
-  if (typeof window === "undefined") return;
-
-  localStorage.setItem(TOKEN_KEY, session.token);
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session.user));
-  document.cookie = `${COOKIE_NAME}=1; path=/; SameSite=Lax`;
-}
-
-let cachedKey: string | null | undefined = undefined;
-let cachedSession: Session | null = null;
-
-export function readSession(): Session | null {
-  if (typeof window === "undefined") return null;
-
-  const token = localStorage.getItem(TOKEN_KEY);
-  const userJson = localStorage.getItem(SESSION_KEY);
-  const key = token === null && userJson === null ? null : `${token}\u0000${userJson}`;
-
-  if (key !== undefined && key === cachedKey) {
-    return cachedSession;
-  }
-
-  cachedKey = key;
-
-  if (!token || !userJson) {
-    cachedSession = null;
-    return null;
-  }
-
-  try {
-    const user = JSON.parse(userJson) as SessionUser;
-    cachedSession = { token, user };
-    return cachedSession;
-  } catch {
-    cachedSession = null;
-    return null;
-  }
-}
-
-export function clearSession(): void {
-  if (typeof window === "undefined") return;
-
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(SESSION_KEY);
-  document.cookie = `${COOKIE_NAME}=; path=/; SameSite=Lax; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-}
-
-export function hasSessionCookie(): boolean {
-  if (typeof window === "undefined") return false;
-  return document.cookie.split("; ").some((cookie) => cookie.startsWith(`${COOKIE_NAME}=`));
+export function isSessionActive(session: Session | null): boolean {
+  return session !== null;
 }

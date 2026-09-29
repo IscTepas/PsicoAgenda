@@ -11,13 +11,12 @@ context: |
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - Nombra el change con el prefijo `YYYY-MM-DD-` seguido de un nombre en kebab-case
+      (por ejemplo `2026-09-28-migrar-a-supabase`). `openspec new change` no antepone
+      la fecha, y el prefijo es lo que da orden cronológico en `openspec/changes/archive/`.
+      La fecha también queda en el campo `created:` del `.openspec.yaml`.
 
 # Per-operation guidance (optional)
 # Add advisory guidance for how apply and archive work should be conducted.

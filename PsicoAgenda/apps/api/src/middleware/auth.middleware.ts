@@ -14,12 +14,13 @@ const readBearerToken = (header: string | undefined): string => {
 };
 
 export const requireAuth: RequestHandler = (req: AuthedRequest, _res, next) => {
-  try {
-    req.auth = verifyToken(readBearerToken(req.headers.authorization));
-    next();
-  } catch (error) {
-    next(error);
-  }
+  verifyToken(readBearerToken(req.headers.authorization))
+    .then((auth) => {
+      req.auth = auth;
+      next();
+    })
+    // Cualquier fallo del verificador (firma ajena, caducado, rol ausente) es un 401.
+    .catch(() => next(AppError.unauthorized()));
 };
 
 export const requireRole =

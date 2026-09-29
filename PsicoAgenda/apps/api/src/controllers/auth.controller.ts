@@ -1,8 +1,12 @@
 import type { RequestHandler } from "express";
-import type { UserRole } from "@psicoagenda/shared";
-import { demoLogin } from "@/services/auth.service";
+import { getProfileById } from "@/services/auth.service";
+import type { AuthedRequest } from "@/types/express";
 
-export const demoLoginController: RequestHandler = (req, res) => {
-  const { role } = req.body as { role: UserRole.PATIENT | UserRole.PSYCHOLOGIST };
-  res.json(demoLogin(role));
+export const meController: RequestHandler = async (req: AuthedRequest, res, next) => {
+  try {
+    // `requireAuth` ya validó la firma y garantizó que `auth` existe.
+    res.json(await getProfileById(req.auth!.id));
+  } catch (error) {
+    next(error);
+  }
 };

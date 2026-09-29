@@ -25,6 +25,10 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions extends Omit<RequestInit, "body"> {
+  /**
+   * Credencial de acceso de la sesión. Si se omite se resuelve desde el proveedor de
+   * identidad, de modo que las rutas protegidas nunca viajan anónimas por descuido.
+   */
   token?: string;
   body?: unknown;
 }
@@ -34,18 +38,33 @@ interface ApiErrorBody {
 }
 
 /**
+ * Resuelve la credencial de acceso vigente. En el servidor se lee de la sesión
+ * suprabase-js; en el navegador, del cliente compartido.
+ */
+async function resolveAccessToken(): Promise<string | null> {
+  const client =
+    typeof window === "undefined"
+      ? await (await import("@/lib/supabase/server")).createClient()
+      : (await import("@/lib/supabase/client")).createClient();
+
+  const { data } = await client.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+/**
  * Cliente HTTP mínimo sobre fetch. Entiende el formato de error de la API
  * (`{ error: { code, message, details } }`) y lanza `ApiError` con ese código.
  */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { token, body, headers, ...rest } = options;
+  const accessToken = token ?? (await resolveAccessToken());
 
   const response = await fetch(buildApiUrl(path), {
     ...rest,
     headers: {
       Accept: "application/json",
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...headers,
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),

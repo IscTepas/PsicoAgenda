@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { demoLoginSchema } from "@psicoagenda/shared";
-import { validate } from "@/middleware/validate.middleware";
-import { demoLoginController } from "@/controllers/auth.controller";
+import { meController } from "@/controllers/auth.controller";
+import { requireAuth } from "@/middleware/auth.middleware";
 
 const router = Router();
 
-router.post("/demo-login", validate({ body: demoLoginSchema }), demoLoginController);
+// El alta, el inicio de sesión, la verificación de correo y el MFA los resuelve el
+// proveedor de identidad: la API no emite tokens ni almacena credenciales.
+router.get("/me", requireAuth, meController);
 
 export default router;

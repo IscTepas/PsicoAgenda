@@ -1,5 +1,11 @@
 -- CreateSchema
-CREATE SCHEMA IF NOT EXISTS "public";
+-- OMITIDO a propósito. `prisma migrate diff` emite `CREATE SCHEMA IF NOT EXISTS
+-- "public"`, pero PostgreSQL valida el permiso CREATE **sobre la base de datos**
+-- antes de aplicar el atajo IF NOT EXISTS, así que la sentencia falla con
+-- `permission denied for database postgres` para el rol de aplicación, que solo
+-- tiene CONNECT. El schema `public` ya existe en todo proyecto Supabase, de modo
+-- que la sentencia es innecesaria. Otorgar CREATE sobre la base al rol `prisma`
+-- sería Excessive: la aplicación nunca crea schemas.
 
 -- CreateEnum
 CREATE TYPE "UserRole" AS ENUM ('PSYCHOLOGIST', 'PATIENT', 'ADMIN');
@@ -35,7 +41,6 @@ CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'PAID', 'WAIVED');
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
-    "password_hash" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "phone" TEXT,
     "role" "UserRole" NOT NULL DEFAULT 'PATIENT',
@@ -96,18 +101,6 @@ CREATE TABLE "emergency_contacts" (
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "emergency_contacts_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "two_factor_auth" (
-    "id" TEXT NOT NULL,
-    "user_id" TEXT NOT NULL,
-    "secret" TEXT NOT NULL,
-    "enabled" BOOLEAN NOT NULL DEFAULT false,
-    "verified_at" TIMESTAMP(3),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "two_factor_auth_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -236,9 +229,6 @@ CREATE INDEX "patients_psychologist_id_idx" ON "patients"("psychologist_id");
 CREATE INDEX "emergency_contacts_patient_id_idx" ON "emergency_contacts"("patient_id");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "two_factor_auth_user_id_key" ON "two_factor_auth"("user_id");
-
--- CreateIndex
 CREATE INDEX "appointments_psychologist_id_start_time_idx" ON "appointments"("psychologist_id", "start_time");
 
 -- CreateIndex
@@ -285,9 +275,6 @@ ALTER TABLE "patients" ADD CONSTRAINT "patients_psychologist_id_fkey" FOREIGN KE
 
 -- AddForeignKey
 ALTER TABLE "emergency_contacts" ADD CONSTRAINT "emergency_contacts_patient_id_fkey" FOREIGN KEY ("patient_id") REFERENCES "patients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "two_factor_auth" ADD CONSTRAINT "two_factor_auth_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "appointments" ADD CONSTRAINT "appointments_psychologist_id_fkey" FOREIGN KEY ("psychologist_id") REFERENCES "psychologists"("id") ON DELETE CASCADE ON UPDATE CASCADE;
