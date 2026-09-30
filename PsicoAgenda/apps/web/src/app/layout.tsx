@@ -54,6 +54,26 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="es-MX"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {!serwistEnabled && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+                  navigator.serviceWorker.getRegistrations().then(function(regs) {
+                    for (var r of regs) { r.unregister(); }
+                  });
+                }
+                if (typeof window !== 'undefined' && 'caches' in window) {
+                  caches.keys().then(function(names) {
+                    for (var name of names) { caches.delete(name); }
+                  });
+                }
+              `,
+            }}
+          />
+        )}
+      </head>
       <body className="flex min-h-full flex-col">
         <SerwistProvider swUrl="/sw.js" disable={!serwistEnabled}>
           <Providers>{children}</Providers>
