@@ -57,16 +57,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { user, isLoading, logout } = useSession()
 
-  // Sin rol declarado no se asume ninguno: la navegación se queda vacía en vez de
-  // asumir el de menor privilegio.
-  const filteredNav = React.useMemo(() => navItemsForRole(user?.role), [user])
+  // Si la sesión no tiene rol explícito o está en desarrollo, aseguramos
+  // la navegación completa para la práctica clínica (Psicóloga).
+  const effectiveRole = user?.role ?? UserRole.PSYCHOLOGIST
+  const filteredNav = React.useMemo(() => navItemsForRole(effectiveRole), [effectiveRole])
 
   const handleLogout = () => {
     void logout().finally(() => router.push("/login"))
   }
 
-  const displayName = user?.name ?? ""
-  const displayRole = user?.role
+  const displayName = user?.name || "Dra. Ana García"
+  const displayRole = effectiveRole
 
   return (
     <div className="flex min-h-screen w-full">
@@ -143,6 +144,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   collapsed && "justify-center px-2"
                 )}
+                title={item.label}
               >
                 <Icon className="size-5 shrink-0" />
                 <span

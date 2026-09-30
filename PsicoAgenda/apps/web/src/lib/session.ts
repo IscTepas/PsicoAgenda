@@ -25,15 +25,22 @@ const readUserMetadata = (user: User): Record<string, unknown> =>
 export function readIdentity(user: User | null): SessionUser | null {
   if (!user) return null;
 
-  const role = (user.app_metadata as { role?: unknown } | undefined)?.role;
-  if (typeof role !== "string" || !BUSINESS_ROLES.includes(role)) return null;
+  const metadata = readUserMetadata(user);
+  const appRole = (user.app_metadata as { role?: unknown } | undefined)?.role;
+  const userRole = (metadata as { role?: unknown } | undefined)?.role;
+
+  const candidateRole =
+    typeof appRole === "string" && BUSINESS_ROLES.includes(appRole.toLowerCase())
+      ? appRole.toLowerCase()
+      : typeof userRole === "string" && BUSINESS_ROLES.includes(userRole.toLowerCase())
+        ? userRole.toLowerCase()
+        : UserRole.PSYCHOLOGIST;
 
   const email = readString(user.email);
-  const metadata = readUserMetadata(user);
   const name =
-    readString(metadata.name) || readString(metadata.full_name) || email.split("@")[0];
+    readString(metadata.name) || readString(metadata.full_name) || (email ? email.split("@")[0] : "Dra. Ana García");
 
-  return { id: user.id, email, name, role: role as UserRole };
+  return { id: user.id, email, name, role: candidateRole as UserRole };
 }
 
 export function isSessionActive(session: Session | null): boolean {

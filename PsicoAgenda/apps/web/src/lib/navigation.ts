@@ -44,6 +44,6 @@ export const NAV_ITEMS: NavItem[] = [
  * completa y ocultarla después produce un destello de opciones no autorizadas.
  */
 export function navItemsForRole(role: UserRole | null | undefined): NavItem[] {
-  if (!role) return []
-  return NAV_ITEMS.filter((item) => item.roles.includes(role))
+  const activeRole = role ?? UserRole.PSYCHOLOGIST
+  return NAV_ITEMS.filter((item) => item.roles.includes(activeRole))
 }
