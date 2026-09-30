@@ -16,9 +16,6 @@ import {
   Check,
   ChevronRight,
   ExternalLink,
-  ShieldAlert,
-  ArrowRight,
-  Sparkles,
   UserCheck,
 } from "lucide-react"
 import {
@@ -60,35 +57,35 @@ function getStatusBadge(status: AppointmentStatus) {
   switch (status) {
     case AppointmentStatus.CONFIRMED:
       return (
-        <Badge className="bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 font-normal">
-          <CheckCircle2 className="size-3 mr-1" />
+        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+          <CheckCircle2 className="size-3" />
           Confirmada
-        </Badge>
+        </span>
       )
     case AppointmentStatus.PENDING:
       return (
-        <Badge className="bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-normal">
-          <Clock className="size-3 mr-1" />
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+          <Clock className="size-3" />
           Por confirmar
-        </Badge>
+        </span>
       )
     case AppointmentStatus.COMPLETED:
       return (
-        <Badge variant="outline" className="text-muted-foreground font-normal">
+        <span className="inline-flex items-center rounded-full border border-border/50 bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
           Completada
-        </Badge>
+        </span>
       )
     case AppointmentStatus.CANCELLED:
       return (
-        <Badge variant="destructive" className="font-normal">
+        <span className="inline-flex items-center rounded-full border border-destructive/20 bg-destructive/10 px-2.5 py-0.5 text-[11px] font-medium text-destructive">
           Cancelada
-        </Badge>
+        </span>
       )
     case AppointmentStatus.NO_SHOW:
       return (
-        <Badge variant="outline" className="text-muted-foreground font-normal">
+        <span className="inline-flex items-center rounded-full border border-border/50 bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
           No asistió
-        </Badge>
+        </span>
       )
   }
 }
@@ -154,7 +151,7 @@ export function DashboardView() {
       )
     )
     setActionMessage(`Cita con ${patientName} confirmada con éxito.`)
-    setTimeout(() => setActionMessage(null), 4000)
+    setTimeout(() => setActionMessage(null), 3500)
   }
 
   const handleComplete = (id: string, patientName: string) => {
@@ -164,91 +161,109 @@ export function DashboardView() {
       )
     )
     setActionMessage(`Consulta con ${patientName} marcada como completada.`)
-    setTimeout(() => setActionMessage(null), 4000)
+    setTimeout(() => setActionMessage(null), 3500)
   }
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText("https://meet.google.com/psi-diag-ses")
     setCopiedLink(true)
-    setTimeout(() => setCopiedLink(false), 2500)
+    setTimeout(() => setCopiedLink(false), 2000)
   }
 
   return (
     <div className="space-y-6">
-      {/* MENSAJE DE ACCIÓN RÁPIDA (FEEDBACK TEMPORAL) */}
+      {/* MENSAJE DE ACCIÓN RÁPIDA (FEEDBACK TEMPORAL ESTILO APPLE) */}
       {actionMessage && (
-        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-foreground animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="size-4 text-primary" />
-            <span>{actionMessage}</span>
+        <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-foreground shadow-xs animate-in fade-in slide-in-from-top-1 duration-200">
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Check className="size-3.5" />
+            </div>
+            <span className="font-medium text-[13px]">{actionMessage}</span>
           </div>
           <button
             onClick={() => setActionMessage(null)}
-            className="text-xs text-muted-foreground hover:text-foreground"
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors p-1"
           >
-            Entendido
+            Cerrar
           </button>
         </div>
       )}
 
-      {/* BARRA OPERATIVA INTEGRADA (CLINICAL WORKFLOW BAR) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="rounded-xl border border-border bg-card p-4 space-y-1">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Consultas hoy</span>
-            <CalendarDays className="size-4 text-primary" />
+      {/* BARRA OPERATIVA INTEGRADA (APPLE HEALTH / DASHBOARD TILES) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="group rounded-2xl border border-border/50 bg-card p-4 transition-all duration-150 hover:border-border/80 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium tracking-wide uppercase text-muted-foreground/80">
+              Consultas hoy
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <CalendarDays className="size-3.5" />
+            </div>
           </div>
-          <div className="text-2xl font-bold tracking-tight text-foreground">
+          <div className="mt-2 text-[26px] font-semibold tracking-[-0.03em] tabular-nums text-foreground leading-none">
             {todayAppointments.length}
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="mt-1.5 text-[11px] text-muted-foreground/75 leading-tight">
             {virtualTodayCount} virtual{virtualTodayCount === 1 ? "" : "es"} •{" "}
             {inPersonTodayCount} presencial{inPersonTodayCount === 1 ? "" : "es"}
           </p>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-4 space-y-1">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Por confirmar</span>
-            <Clock className="size-4 text-amber-500" />
+        <div className="group rounded-2xl border border-border/50 bg-card p-4 transition-all duration-150 hover:border-border/80 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium tracking-wide uppercase text-muted-foreground/80">
+              Por confirmar
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <Clock className="size-3.5" />
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-bold tracking-tight text-foreground">
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-[26px] font-semibold tracking-[-0.03em] tabular-nums text-foreground leading-none">
               {pendingCount}
             </span>
             {pendingCount > 0 && (
-              <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 text-[10px] px-1.5 py-0 border-amber-300">
+              <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
                 Atención
-              </Badge>
+              </span>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="mt-1.5 text-[11px] text-muted-foreground/75 leading-tight">
             {pendingCount === 1 ? "1 cita pendiente" : `${pendingCount} citas pendientes`}
           </p>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-4 space-y-1">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Pacientes activos</span>
-            <Users className="size-4 text-primary" />
+        <div className="group rounded-2xl border border-border/50 bg-card p-4 transition-all duration-150 hover:border-border/80 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium tracking-wide uppercase text-muted-foreground/80">
+              Pacientes activos
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Users className="size-3.5" />
+            </div>
           </div>
-          <div className="text-2xl font-bold tracking-tight text-foreground">
+          <div className="mt-2 text-[26px] font-semibold tracking-[-0.03em] tabular-nums text-foreground leading-none">
             {MOCK_PATIENTS.length}
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="mt-1.5 text-[11px] text-muted-foreground/75 leading-tight">
             1 menor con tutor legal (RD-11)
           </p>
         </div>
 
-        <div className="rounded-xl border border-border bg-card p-4 space-y-1">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Expedientes clínicos</span>
-            <UserCheck className="size-4 text-emerald-600" />
+        <div className="group rounded-2xl border border-border/50 bg-card p-4 transition-all duration-150 hover:border-border/80 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium tracking-wide uppercase text-muted-foreground/80">
+              Expedientes clínicos
+            </span>
+            <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <UserCheck className="size-3.5" />
+            </div>
           </div>
-          <div className="text-2xl font-bold tracking-tight text-foreground">
+          <div className="mt-2 text-[26px] font-semibold tracking-[-0.03em] tabular-nums text-foreground leading-none">
             100%
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="mt-1.5 text-[11px] text-muted-foreground/75 leading-tight">
             Notas al día y actualizadas
           </p>
         </div>
@@ -260,41 +275,41 @@ export function DashboardView() {
         <div className="lg:col-span-2 space-y-6">
           {/* HERO CARD: PRÓXIMA CONSULTA / EN CURSO */}
           {nextAppointment && nextPatient ? (
-            <Card className="overflow-hidden border-primary/30 bg-gradient-to-br from-primary/[0.04] via-card to-card shadow-sm">
-              <CardHeader className="pb-3 border-b border-border/40">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="relative flex size-2.5">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                      <span className="relative inline-flex size-2.5 rounded-full bg-primary" />
-                    </span>
-                    <span className="text-xs font-semibold uppercase tracking-wider text-primary">
-                      Próxima consulta en agenda
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {nextAppointment.modality === AppointmentModality.VIRTUAL ? (
-                      <Badge variant="outline" className="bg-background/80 gap-1 text-xs">
-                        <Video className="size-3 text-primary" />
-                        Videollamada
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-background/80 gap-1 text-xs">
-                        <MapPin className="size-3 text-primary" />
-                        Consultorio Presencial
-                      </Badge>
-                    )}
-                    {getStatusBadge(nextAppointment.status)}
-                  </div>
+            <div className="rounded-2xl border border-primary/20 bg-card shadow-xs overflow-hidden transition-all duration-200">
+              {/* Header de la tarjeta */}
+              <div className="px-5 py-3.5 border-b border-border/40 flex flex-wrap items-center justify-between gap-2.5 bg-muted/15">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex size-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                    <span className="relative inline-flex size-2 rounded-full bg-primary" />
+                  </span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-primary">
+                    Próxima consulta en agenda
+                  </span>
                 </div>
-              </CardHeader>
 
-              <CardContent className="pt-4 pb-4">
+                <div className="flex items-center gap-2">
+                  {nextAppointment.modality === AppointmentModality.VIRTUAL ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/90 px-2.5 py-0.5 text-xs text-muted-foreground">
+                      <Video className="size-3 text-primary" />
+                      Videollamada
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/90 px-2.5 py-0.5 text-xs text-muted-foreground">
+                      <MapPin className="size-3 text-primary" />
+                      Consultorio Presencial
+                    </span>
+                  )}
+                  {getStatusBadge(nextAppointment.status)}
+                </div>
+              </div>
+
+              {/* Contenido principal de la cita */}
+              <div className="p-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-start gap-3.5">
-                    <Avatar size="lg" className="border border-border">
-                      <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                    <Avatar size="lg" className="border border-border/40 size-12 shrink-0">
+                      <AvatarFallback className="bg-primary/10 text-primary font-semibold text-sm">
                         {getInitials(nextPatient.name)}
                       </AvatarFallback>
                     </Avatar>
@@ -303,49 +318,52 @@ export function DashboardView() {
                       <div className="flex items-center gap-2">
                         <Link
                           href={`/pacientes/${nextPatient.id}`}
-                          className="text-lg font-bold text-foreground hover:text-primary transition-colors hover:underline"
+                          className="text-[17px] font-semibold tracking-[-0.015em] text-foreground hover:text-primary transition-colors"
                         >
                           {nextPatient.name}
                         </Link>
                         {nextPatient.isMinor && (
-                          <Badge variant="secondary" className="text-[10px] font-normal">
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                             Menor de edad
-                          </Badge>
+                          </span>
                         )}
                       </div>
 
-                      <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                        <FileText className="size-3.5 text-muted-foreground" />
+                      <p className="text-[13px] text-muted-foreground flex items-center gap-1.5">
+                        <FileText className="size-3.5 text-muted-foreground/70" />
                         <span>{nextAppointment.reason || "Consulta psicológica general"}</span>
                       </p>
 
                       {nextPatient.isMinor && nextPatient.legalGuardian && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-[12px] text-muted-foreground/80">
                           Tutor/a: <span className="font-medium text-foreground">{nextPatient.legalGuardian.name}</span> ({nextPatient.legalGuardian.relationship})
                         </p>
                       )}
                     </div>
                   </div>
 
-                  <div className="rounded-lg bg-muted/60 p-3 sm:text-right border border-border/40">
-                    <div className="text-xs font-medium text-muted-foreground">Horario previsto</div>
-                    <div className="text-base font-bold tabular-nums text-foreground">
+                  <div className="rounded-xl bg-muted/40 p-3 sm:px-4 sm:py-3 border border-border/30 sm:text-right shrink-0">
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80">
+                      Horario previsto
+                    </div>
+                    <div className="text-base font-semibold tabular-nums text-foreground tracking-tight mt-0.5">
                       {formatAppointmentTime(new Date(nextAppointment.startTime))} hrs
                     </div>
-                    <div className="text-xs text-muted-foreground">
+                    <div className="text-[11px] text-muted-foreground/75 mt-0.5">
                       Duración: {nextAppointment.durationMinutes} minutos
                     </div>
                   </div>
                 </div>
-              </CardContent>
+              </div>
 
-              <CardFooter className="pt-2 pb-4 bg-muted/20 border-t border-border/40 flex flex-wrap items-center justify-between gap-2">
+              {/* Botones de acción al pie de la tarjeta */}
+              <div className="px-5 py-3 bg-muted/15 border-t border-border/40 flex flex-wrap items-center justify-between gap-2.5">
                 <div className="flex flex-wrap items-center gap-2">
                   {nextAppointment.modality === AppointmentModality.VIRTUAL ? (
                     <>
                       <Button
                         size="sm"
-                        className="bg-primary text-primary-foreground gap-1.5 shadow-xs"
+                        className="rounded-xl bg-primary text-primary-foreground font-medium gap-1.5 shadow-xs hover:bg-primary/90 active:scale-[0.98] transition-all"
                         asChild
                       >
                         <a
@@ -353,9 +371,9 @@ export function DashboardView() {
                           target="_blank"
                           rel="noreferrer"
                         >
-                          <Video className="size-4" />
+                          <Video className="size-3.5" />
                           Entrar a videollamada
-                          <ExternalLink className="size-3 opacity-70" />
+                          <ExternalLink className="size-3 opacity-60" />
                         </a>
                       </Button>
 
@@ -363,7 +381,7 @@ export function DashboardView() {
                         variant="outline"
                         size="sm"
                         onClick={handleCopyLink}
-                        className="gap-1.5"
+                        className="rounded-xl border-border/60 bg-background/80 hover:bg-muted/60 active:scale-[0.98] transition-all gap-1.5 text-xs font-medium"
                       >
                         {copiedLink ? (
                           <>
@@ -381,85 +399,102 @@ export function DashboardView() {
                   ) : (
                     <Button
                       size="sm"
-                      className="bg-primary text-primary-foreground gap-1.5 shadow-xs"
+                      className="rounded-xl bg-primary text-primary-foreground font-medium gap-1.5 shadow-xs hover:bg-primary/90 active:scale-[0.98] transition-all"
                       onClick={() => handleComplete(nextAppointment.id, nextPatient.name)}
                     >
-                      <CheckCircle2 className="size-4" />
+                      <CheckCircle2 className="size-3.5" />
                       Registrar asistencia
                     </Button>
                   )}
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" asChild className="gap-1 text-xs">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    asChild
+                    className="rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground transition-colors gap-1.5"
+                  >
                     <Link href={`/pacientes/${nextPatient.id}`}>
                       <FileText className="size-3.5" />
                       Expediente clínico
                     </Link>
                   </Button>
                 </div>
-              </CardFooter>
-            </Card>
-          ) : (
-            <Card className="border-dashed p-6 text-center">
-              <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary mb-3">
-                <CheckCircle2 className="size-6" />
               </div>
-              <h2 className="text-base font-semibold text-foreground">
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border/70 p-6 text-center bg-card">
+              <div className="mx-auto flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary mb-3">
+                <CheckCircle2 className="size-5" />
+              </div>
+              <h2 className="text-[15px] font-semibold text-foreground tracking-tight">
                 No tienes consultas inmediatas pendientes
               </h2>
-              <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
+              <p className="text-[13px] text-muted-foreground mt-1 max-w-md mx-auto">
                 Has atendido las sesiones programadas para este momento. Puedes agendar nuevas citas o revisar los expedientes clínicos de tus pacientes.
               </p>
-              <div className="mt-4 flex justify-center gap-3">
-                <Button size="sm" asChild>
+              <div className="mt-4 flex justify-center gap-2.5">
+                <Button size="sm" asChild className="rounded-xl font-medium shadow-xs">
                   <Link href="/agenda/nueva">
-                    <Plus className="mr-1.5 size-4" />
+                    <Plus className="mr-1.5 size-3.5" />
                     Agendar cita
                   </Link>
                 </Button>
-                <Button variant="outline" size="sm" asChild>
+                <Button variant="outline" size="sm" asChild className="rounded-xl border-border/60">
                   <Link href="/pacientes">Ver pacientes</Link>
                 </Button>
               </div>
-            </Card>
+            </div>
           )}
 
-          {/* CRONOGRAMA DE HOY (TIMELINE) */}
-          <Card>
-            <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
+          {/* CRONOGRAMA DE HOY (APPLE SEGMENTED TIMELINE) */}
+          <div className="rounded-2xl border border-border/50 bg-card shadow-xs overflow-hidden">
+            <div className="px-5 py-4 border-b border-border/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <CardTitle className="text-lg">Cronograma de hoy</CardTitle>
-                <CardDescription>
+                <h3 className="text-[16px] font-semibold tracking-[-0.015em] text-foreground">
+                  Cronograma de hoy
+                </h3>
+                <p className="text-xs text-muted-foreground/80 mt-0.5">
                   {formatShortDate(today)} • {todayAppointments.length} sesiones en total
-                </CardDescription>
+                </p>
               </div>
 
+              {/* Segmented Control estilo Apple */}
               <Tabs
                 value={agendaFilter}
                 onValueChange={(val) => setAgendaFilter(val as typeof agendaFilter)}
               >
-                <TabsList className="h-8">
-                  <TabsTrigger value="all" className="text-xs px-2.5">
+                <TabsList className="bg-muted/70 p-0.5 rounded-xl border border-border/30 h-7.5 gap-0.5">
+                  <TabsTrigger
+                    value="all"
+                    className="rounded-lg text-xs font-medium px-2.5 py-1 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-2xs transition-all"
+                  >
                     Todas ({todayAppointments.length})
                   </TabsTrigger>
-                  <TabsTrigger value="confirmed" className="text-xs px-2.5">
+                  <TabsTrigger
+                    value="confirmed"
+                    className="rounded-lg text-xs font-medium px-2.5 py-1 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-2xs transition-all"
+                  >
                     Confirmadas ({confirmedTodayCount})
                   </TabsTrigger>
-                  <TabsTrigger value="pending" className="text-xs px-2.5">
+                  <TabsTrigger
+                    value="pending"
+                    className="rounded-lg text-xs font-medium px-2.5 py-1 text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-2xs transition-all"
+                  >
                     Pendientes ({todayAppointments.length - confirmedTodayCount})
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
-            </CardHeader>
+            </div>
 
-            <CardContent>
+            <div className="p-5">
               {filteredTodayAppointments.length === 0 ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">
+                <div className="py-8 text-center text-xs text-muted-foreground">
                   No hay citas que coincidan con este filtro para hoy.
                 </div>
               ) : (
-                <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-px before:bg-border">
+                <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-px before:bg-border/60">
                   {filteredTodayAppointments.map((apt) => {
                     const patient = getPatientById(apt.patientId)
                     const isNext = nextAppointment?.id === apt.id
@@ -468,22 +503,22 @@ export function DashboardView() {
                       <div key={apt.id} className="relative group">
                         {/* Indicador de nodo temporal */}
                         <div
-                          className={`absolute -left-6 top-1.5 size-3 rounded-full border-2 border-background ring-1 ${
+                          className={`absolute -left-6 top-3 size-2.5 rounded-full border-2 border-background ring-1 ${
                             isNext
                               ? "bg-primary ring-primary"
                               : apt.status === AppointmentStatus.COMPLETED
-                              ? "bg-muted-foreground ring-border"
+                              ? "bg-muted-foreground/60 ring-border"
                               : "bg-background ring-border"
                           }`}
                         />
 
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-border/60 bg-card p-3.5 hover:border-border hover:bg-muted/30 transition-colors">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border/40 bg-card p-3.5 hover:border-border/80 hover:bg-muted/20 transition-all duration-150">
                           <div className="flex items-start gap-3">
                             <div className="text-center shrink-0 w-16 pt-0.5">
-                              <span className="block text-sm font-semibold tabular-nums text-foreground">
+                              <span className="block text-sm font-semibold tabular-nums text-foreground tracking-tight">
                                 {formatAppointmentTime(new Date(apt.startTime))}
                               </span>
-                              <span className="block text-[11px] text-muted-foreground">
+                              <span className="block text-[11px] text-muted-foreground/75">
                                 {apt.durationMinutes} min
                               </span>
                             </div>
@@ -492,14 +527,14 @@ export function DashboardView() {
                               <div className="flex items-center gap-2">
                                 <Link
                                   href={`/pacientes/${apt.patientId}`}
-                                  className="font-medium text-sm text-foreground hover:text-primary hover:underline"
+                                  className="font-medium text-sm text-foreground hover:text-primary transition-colors hover:underline"
                                 >
                                   {patient?.name ?? "Paciente"}
                                 </Link>
                                 {getStatusBadge(apt.status)}
                               </div>
 
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
                                 <span className="flex items-center gap-1">
                                   {apt.modality === AppointmentModality.VIRTUAL ? (
                                     <>
@@ -513,7 +548,7 @@ export function DashboardView() {
                                     </>
                                   )}
                                 </span>
-                                <span>•</span>
+                                <span className="opacity-40">•</span>
                                 <span>{apt.reason || "Sesión regular"}</span>
                               </div>
                             </div>
@@ -524,7 +559,7 @@ export function DashboardView() {
                               <Button
                                 size="xs"
                                 variant="outline"
-                                className="text-xs border-amber-300 text-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                                className="rounded-lg text-xs font-medium border-amber-300/80 text-amber-800 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/40 active:scale-[0.97] transition-all"
                                 onClick={() =>
                                   handleConfirm(apt.id, patient?.name ?? "el paciente")
                                 }
@@ -538,7 +573,7 @@ export function DashboardView() {
                               <Button
                                 size="xs"
                                 variant="ghost"
-                                className="text-xs text-muted-foreground hover:text-foreground"
+                                className="rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground active:scale-[0.97] transition-all"
                                 onClick={() =>
                                   handleComplete(apt.id, patient?.name ?? "el paciente")
                                 }
@@ -547,9 +582,9 @@ export function DashboardView() {
                               </Button>
                             )}
 
-                            <Button size="xs" variant="ghost" asChild>
-                              <Link href={`/pacientes/${apt.patientId}`}>
-                                <ChevronRight className="size-4 text-muted-foreground" />
+                            <Button size="xs" variant="ghost" className="rounded-lg size-7 p-0" asChild>
+                              <Link href={`/pacientes/${apt.patientId}`} title="Ver ficha">
+                                <ChevronRight className="size-4 text-muted-foreground/70" />
                               </Link>
                             </Button>
                           </div>
@@ -559,39 +594,38 @@ export function DashboardView() {
                   })}
                 </div>
               )}
-            </CardContent>
+            </div>
 
-            <CardFooter className="pt-2 border-t border-border/50 justify-between">
-              <span className="text-xs text-muted-foreground">
+            <div className="px-5 py-3 border-t border-border/40 flex items-center justify-between bg-muted/10">
+              <span className="text-[11px] text-muted-foreground/75">
                 Zona horaria clínica: America/Mexico_City
               </span>
-              <Button variant="link" size="sm" asChild className="text-xs text-primary p-0 h-auto">
+              <Button variant="link" size="sm" asChild className="text-xs text-primary p-0 h-auto font-medium">
                 <Link href="/agenda">Ir a la agenda completa →</Link>
               </Button>
-            </CardFooter>
-          </Card>
+            </div>
+          </div>
         </div>
 
         {/* COLUMNA DERECHA: SOLICITUDES PENDIENTES & PACIENTES RECIENTES */}
         <div className="space-y-6">
           {/* BANDEJA DE SOLICITUDES POR CONFIRMAR */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Clock className="size-4 text-amber-500" />
+          <div className="rounded-2xl border border-border/50 bg-card shadow-xs overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-border/40 flex items-center justify-between bg-muted/10">
+              <div className="flex items-center gap-2">
+                <div className="flex size-6 items-center justify-center rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <Clock className="size-3.5" />
+                </div>
+                <h4 className="text-[14px] font-semibold text-foreground tracking-tight">
                   Solicitudes por confirmar
-                </CardTitle>
-                <Badge variant="secondary" className="text-xs font-normal">
-                  {pendingAppointments.length}
-                </Badge>
+                </h4>
               </div>
-              <CardDescription>
-                Citas agendadas por pacientes que esperan tu aprobación
-              </CardDescription>
-            </CardHeader>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                {pendingAppointments.length}
+              </span>
+            </div>
 
-            <CardContent className="space-y-3">
+            <div className="p-4 space-y-3">
               {pendingAppointments.length === 0 ? (
                 <div className="py-6 text-center text-xs text-muted-foreground">
                   <CheckCircle2 className="size-5 text-emerald-500 mx-auto mb-1.5" />
@@ -604,26 +638,26 @@ export function DashboardView() {
                   return (
                     <div
                       key={apt.id}
-                      className="rounded-lg border border-border p-3 space-y-2 bg-muted/20"
+                      className="rounded-xl border border-border/40 p-3.5 space-y-2 bg-muted/20 hover:border-border/70 transition-all"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="font-medium text-sm text-foreground">
+                          <div className="font-medium text-sm text-foreground tracking-tight">
                             {patient?.name ?? "Paciente"}
                           </div>
                           <div className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
                             <CalendarDays className="size-3" />
                             <span>{formatShortDate(new Date(apt.startTime))}</span>
-                            <span>•</span>
+                            <span className="opacity-40">•</span>
                             <span className="tabular-nums font-medium">
                               {formatAppointmentTime(new Date(apt.startTime))}
                             </span>
                           </div>
                         </div>
 
-                        <Badge variant="outline" className="text-[10px]">
+                        <span className="rounded-full border border-border/40 bg-background/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                           {apt.modality === AppointmentModality.VIRTUAL ? "Virtual" : "Presencial"}
-                        </Badge>
+                        </span>
                       </div>
 
                       {apt.reason && (
@@ -632,15 +666,20 @@ export function DashboardView() {
                         </p>
                       )}
 
-                      <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/40">
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/30">
                         <Button
                           size="xs"
-                          className="bg-primary text-primary-foreground text-xs"
+                          className="rounded-lg bg-primary text-primary-foreground text-xs font-medium px-2.5 py-1 active:scale-[0.97] transition-all"
                           onClick={() => handleConfirm(apt.id, patient?.name ?? "el paciente")}
                         >
                           Confirmar
                         </Button>
-                        <Button variant="ghost" size="xs" asChild>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground"
+                          asChild
+                        >
                           <Link href={`/pacientes/${apt.patientId}`}>Ficha</Link>
                         </Button>
                       </div>
@@ -648,71 +687,75 @@ export function DashboardView() {
                   )
                 })
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
           {/* PACIENTES EN TRATAMIENTO RECIENTE */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Users className="size-4 text-primary" />
+          <div className="rounded-2xl border border-border/50 bg-card shadow-xs overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-border/40 flex items-center justify-between bg-muted/10">
+              <div className="flex items-center gap-2">
+                <div className="flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Users className="size-3.5" />
+                </div>
+                <h4 className="text-[14px] font-semibold text-foreground tracking-tight">
                   Pacientes recientes
-                </CardTitle>
-                <Button variant="link" size="sm" asChild className="text-xs p-0 h-auto">
-                  <Link href="/pacientes">Ver todos</Link>
-                </Button>
+                </h4>
               </div>
-              <CardDescription>
-                Acceso directo a expedientes clínicos activos
-              </CardDescription>
-            </CardHeader>
+              <Button variant="link" size="sm" asChild className="text-xs text-primary p-0 h-auto font-medium">
+                <Link href="/pacientes">Ver todos</Link>
+              </Button>
+            </div>
 
-            <CardContent className="space-y-3">
+            <div className="p-3 space-y-1">
               {MOCK_PATIENTS.slice(0, 3).map((patient) => (
                 <div
                   key={patient.id}
-                  className="flex items-center justify-between gap-3 p-2 rounded-lg hover:bg-muted/40 transition-colors"
+                  className="flex items-center justify-between gap-3 p-2.5 rounded-xl hover:bg-muted/40 transition-all duration-150"
                 >
                   <div className="flex items-center gap-3">
-                    <Avatar size="default" className="border border-border">
-                      <AvatarFallback className="text-xs font-medium">
+                    <Avatar size="default" className="border border-border/40 size-8.5 shrink-0">
+                      <AvatarFallback className="text-xs font-semibold bg-muted/60 text-foreground">
                         {getInitials(patient.name)}
                       </AvatarFallback>
                     </Avatar>
                     <div>
                       <Link
                         href={`/pacientes/${patient.id}`}
-                        className="text-sm font-medium text-foreground hover:text-primary hover:underline line-clamp-1"
+                        className="text-[13px] font-medium text-foreground hover:text-primary transition-colors line-clamp-1"
                       >
                         {patient.name}
                       </Link>
-                      <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <div className="text-[11px] text-muted-foreground/75 flex items-center gap-1.5 mt-0.5">
                         <span>{patient.gender === "femenino" ? "Mujer" : "Hombre"}</span>
-                        <span>•</span>
+                        <span className="opacity-40">•</span>
                         <span>{patient.isMinor ? "Menor (con tutor)" : "Adulto"}</span>
                       </div>
                     </div>
                   </div>
 
-                  <Button variant="ghost" size="xs" asChild>
-                    <Link href={`/pacientes/${patient.id}`}>
-                      <FileText className="size-3.5 text-muted-foreground hover:text-primary" />
+                  <Button variant="ghost" size="xs" className="rounded-lg size-7 p-0" asChild>
+                    <Link href={`/pacientes/${patient.id}`} title="Ver expediente">
+                      <FileText className="size-3.5 text-muted-foreground hover:text-primary transition-colors" />
                     </Link>
                   </Button>
                 </div>
               ))}
-            </CardContent>
+            </div>
 
-            <CardFooter className="pt-2 border-t border-border/40">
-              <Button variant="outline" size="sm" className="w-full text-xs" asChild>
+            <div className="p-3 border-t border-border/40 bg-muted/5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full rounded-xl text-xs font-medium border-border/60 hover:bg-muted/60 active:scale-[0.98] transition-all"
+                asChild
+              >
                 <Link href="/agenda/nueva">
                   <Plus className="mr-1.5 size-3.5" />
                   Agendar consulta manual
                 </Link>
               </Button>
-            </CardFooter>
-          </Card>
+            </div>
+          </div>
         </div>
       </div>
     </div>
