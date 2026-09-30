@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { APP_NAME } from "@psicoagenda/shared";
 import { SerwistProvider } from "@/app/serwist";
 import { Providers } from "@/components/providers";
+import { DevWorkerCleanup } from "@/components/dev-worker-cleanup";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -54,27 +55,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="es-MX"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
-        {!serwistEnabled && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-                  navigator.serviceWorker.getRegistrations().then(function(regs) {
-                    for (var r of regs) { r.unregister(); }
-                  });
-                }
-                if (typeof window !== 'undefined' && 'caches' in window) {
-                  caches.keys().then(function(names) {
-                    for (var name of names) { caches.delete(name); }
-                  });
-                }
-              `,
-            }}
-          />
-        )}
-      </head>
       <body className="flex min-h-full flex-col">
+        <DevWorkerCleanup />
         <SerwistProvider swUrl="/sw.js" disable={!serwistEnabled}>
           <Providers>{children}</Providers>
         </SerwistProvider>
