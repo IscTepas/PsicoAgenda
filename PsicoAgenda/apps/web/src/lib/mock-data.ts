@@ -243,10 +243,102 @@ export const MOCK_CLINICAL_RECORD = {
   patientId: MOCK_PATIENTS[0].id,
   openedAt: new Date("2024-01-20T10:00:00.000Z"),
   diagnosis: "Trastorno de ansiedad generalizada (F41.1)",
-  background: "Antecedentes familiares de ansiedad. Inicio de síntomas hace 2 años.",
-  generalObservations: "Paciente con buena adherencia al tratamiento.",
+  background: "Antecedentes familiares de ansiedad en línea materna. Inicio de sintomatología hace 2 años posterior a evento de estrés laboral agudo.",
+  allergies: "Sin alergias medicamentosas conocidas. Intolerancia a la cafeína y estimulantes.",
+  generalObservations: "Paciente con excelente adherencia al tratamiento. Práctica regular de técnicas cognitivo-conductuales y registro diario de pensamientos automáticos.",
   status: RecordStatus.ACTIVE,
   updatedAt: new Date("2024-09-25T10:00:00.000Z"),
+}
+
+export interface SessionLogEntry {
+  id: string
+  patientId: string
+  appointmentId?: string
+  sessionNumber: number
+  date: Date
+  psychologistName: string
+  modality: AppointmentModality
+  sessionType: string
+  notes: string
+  interventions?: string
+  homework?: string
+  createdAt: Date
+  updatedAt?: Date
+}
+
+export const MOCK_SESSION_LOGS: SessionLogEntry[] = [
+  {
+    id: "log-3",
+    patientId: "patient-1",
+    appointmentId: "apt-7",
+    sessionNumber: 3,
+    date: new Date(today.getTime() - 24 * 60 * 60 * 1000 + 1 * 60 * 60 * 1000), // ayer
+    psychologistName: "Dra. Ana García",
+    modality: AppointmentModality.IN_PERSON,
+    sessionType: "Seguimiento terapéutico",
+    notes: "La paciente refiere una disminución notable en la frecuencia de crisis de angustia nocturnas. Reporta haber utilizado la respiración diafragmática en dos ocasiones de tensión en el trabajo con éxito.",
+    interventions: "Revisión de autorregistros de distorsiones cognitivas (catastrofismo). Entrenamiento en detención de pensamiento y reestructuración de ideas sobreexigentes.",
+    homework: "Continuar con el autoregistro ABC de pensamientos automáticos y dedicar 15 minutos diarios a la relajación muscular progresiva de Jacobson.",
+    createdAt: new Date("2024-09-25T11:00:00.000Z"),
+  },
+  {
+    id: "log-2",
+    patientId: "patient-1",
+    sessionNumber: 2,
+    date: new Date(today.getTime() - 8 * 24 * 60 * 60 * 1000), // hace 8 días
+    psychologistName: "Dra. Ana García",
+    modality: AppointmentModality.IN_PERSON,
+    sessionType: "Psicoeducación y encuadre",
+    notes: "Se explicó el modelo cognitivo de la ansiedad y el círculo vicioso entre pensamientos catastrofistas, sensaciones fisiológicas y conductas de evitación. Buena comprensión y motivación de la paciente.",
+    interventions: "Psicoeducación sobre la fisiología de la ansiedad. Modelado de respiración diafragmática lenta (4-4-6).",
+    homework: "Completar la escala de autoevaluación de síntomas somáticos e identificar tres situaciones desencadenantes durante la semana.",
+    createdAt: new Date("2024-09-18T11:00:00.000Z"),
+  },
+  {
+    id: "log-1",
+    patientId: "patient-1",
+    sessionNumber: 1,
+    date: new Date(today.getTime() - 15 * 24 * 60 * 60 * 1000), // hace 15 días
+    psychologistName: "Dra. Ana García",
+    modality: AppointmentModality.IN_PERSON,
+    sessionType: "Entrevista inicial y evaluación",
+    notes: "Primera consulta. Motivo de consulta: episodios de taquicardia, opresión torácica y rumiación constante sobre el rendimiento laboral. Sin antecedentes médicos cardiovasculares (descartado por cardiólogo).",
+    interventions: "Entrevista clínica semiestructurada, exploración del estado mental y establecimiento del encuadre terapéutico y confidencialidad.",
+    homework: "Ninguna asignada (fase diagnóstica).",
+    createdAt: new Date("2024-09-11T11:00:00.000Z"),
+  },
+  {
+    id: "log-4",
+    patientId: "patient-2",
+    sessionNumber: 1,
+    date: new Date(today.getTime() - 2 * 24 * 60 * 60 * 1000),
+    psychologistName: "Dra. Ana García",
+    modality: AppointmentModality.VIRTUAL,
+    sessionType: "Entrevista clínica inicial",
+    notes: "Paciente acude por sintomatología depresiva leve asociada a duelo por cambio de residencia. Afecto aplanado, discurso coherente.",
+    interventions: "Validación emocional, anamnesis general y delimitación de objetivos terapéuticos.",
+    homework: "Escribir una lista de actividades placenteras cotidianas para activación conductual.",
+    createdAt: new Date("2024-09-24T12:00:00.000Z"),
+  },
+  {
+    id: "log-5",
+    patientId: "patient-3",
+    sessionNumber: 1,
+    date: new Date(today.getTime() - 5 * 24 * 60 * 60 * 1000),
+    psychologistName: "Dra. Ana García",
+    modality: AppointmentModality.IN_PERSON,
+    sessionType: "Sesión inicial con tutora",
+    notes: "Acude la menor Sofía acompañada de su madre Daniela. Motivo de consulta: dificultades de adaptación escolar y aislamiento social.",
+    interventions: "Firma de consentimiento informado por la tutora legal. Observación lúdica con la menor.",
+    homework: "La madre registrará los episodios de llanto o retraimiento en casa.",
+    createdAt: new Date("2024-09-20T16:00:00.000Z"),
+  },
+]
+
+export function getSessionLogsByPatientId(patientId: string): SessionLogEntry[] {
+  return MOCK_SESSION_LOGS.filter((log) => log.patientId === patientId).sort(
+    (a, b) => b.date.getTime() - a.date.getTime()
+  )
 }
 
 export function getPatientById(id: string): Patient | undefined {
