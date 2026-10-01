@@ -257,6 +257,10 @@ export function getAppointmentsByPatientId(patientId: string): Appointment[] {
   return MOCK_APPOINTMENTS.filter((apt) => apt.patientId === patientId)
 }
 
+export function getAppointmentById(id: string): Appointment | undefined {
+  return MOCK_APPOINTMENTS.find((apt) => apt.id === id)
+}
+
 export function formatAppointmentTime(date: Date): string {
   return date.toLocaleTimeString("es-MX", {
     hour: "2-digit",

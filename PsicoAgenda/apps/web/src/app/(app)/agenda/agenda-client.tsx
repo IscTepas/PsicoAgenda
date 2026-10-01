@@ -1005,10 +1005,15 @@ export function AgendaClient() {
                   >
                     Cerrar
                   </Button>
+                  <Button asChild variant="outline" className="w-full sm:w-auto h-9 rounded-xl border-border/80">
+                    <Link href={`/agenda/${selectedAppointment.id}`}>
+                      <span>Modificar Cita</span>
+                    </Link>
+                  </Button>
                   {patient?.id && (
                     <Button asChild className="w-full sm:w-auto h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs">
                       <Link href={`/pacientes/${patient.id}`} className="flex items-center gap-1.5">
-                        <span>Ver Expediente Completo</span>
+                        <span>Ver Expediente</span>
                         <ArrowUpRight className="size-4" />
                       </Link>
                     </Button>
