@@ -46,6 +46,8 @@ import {
   HeartHandshake,
   Loader2,
   FileBadge,
+  Eye,
+  EyeOff,
 } from "lucide-react"
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client"
 
@@ -190,6 +192,7 @@ const SPECIALTY_OPTIONS = [
 export function RegisterForm() {
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [submittedUser, setSubmittedUser] = useState<{
     email: string;
     role: "patient" | "psychologist";
@@ -311,34 +314,34 @@ export function RegisterForm() {
   // Estado de confirmación (Email enviado)
   if (submittedUser) {
     return (
-      <div className="w-full max-w-md rounded-[32px] bg-white dark:bg-[#1C1C1E] p-8 sm:p-10 border border-black/[0.06] dark:border-white/[0.08] shadow-[0_20px_60px_rgba(0,0,0,0.06)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.4)] text-center flex flex-col items-center gap-4">
-        <div className="flex size-14 items-center justify-center rounded-[20px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 mb-2">
+      <div className="w-full max-w-md rounded-[28px] bg-card p-8 border border-border shadow-sm text-center flex flex-col items-center gap-4">
+        <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-1">
           <CheckCircle2 className="size-8" />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">
           ¡Revisa tu correo!
         </h1>
         <div>
-          <Badge variant="secondary" className="rounded-full px-3 py-1 font-normal text-xs bg-black/[0.05] dark:bg-white/[0.08]">
+          <Badge variant="secondary" className="rounded-full px-3 py-1 font-normal text-xs bg-muted text-foreground">
             {submittedUser.role === "psychologist"
               ? "Cuenta de Profesional"
               : "Cuenta de Paciente"}
           </Badge>
         </div>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="text-sm text-muted-foreground">
           Enviamos un enlace seguro de activación a:
         </p>
-        <p className="font-semibold text-neutral-900 dark:text-white text-sm bg-black/[0.03] dark:bg-white/[0.05] px-4 py-2 rounded-xl">
+        <p className="font-semibold text-foreground text-sm bg-muted/60 px-4 py-2 rounded-xl">
           {submittedUser.email}
         </p>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed max-w-sm mt-1">
+        <p className="text-xs text-muted-foreground leading-relaxed max-w-sm">
           Por motivos de seguridad y confidencialidad clínica, confirma tu cuenta haciendo clic en el enlace recibido antes de iniciar sesión.
         </p>
-        <div className="w-full flex flex-col gap-2.5 pt-4">
-          <Button asChild size="lg" className="w-full rounded-full bg-[#0071E3] hover:bg-[#0077ED] text-white">
+        <div className="w-full flex flex-col gap-2 pt-3">
+          <Button asChild size="lg" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl">
             <Link href="/login">Ir a iniciar sesión</Link>
           </Button>
-          <Button variant="ghost" size="sm" asChild className="rounded-full text-neutral-500 hover:text-neutral-900 dark:hover:text-white">
+          <Button variant="ghost" size="sm" asChild className="rounded-xl text-muted-foreground hover:text-foreground">
             <Link href="/">Regresar al inicio</Link>
           </Button>
         </div>
@@ -347,23 +350,23 @@ export function RegisterForm() {
   }
 
   return (
-    <div className="w-full max-w-xl rounded-[32px] bg-white dark:bg-[#1C1C1E] p-7 sm:p-10 border border-black/[0.06] dark:border-white/[0.08] shadow-[0_20px_60px_rgba(0,0,0,0.06)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.4)] flex flex-col gap-6">
-      {/* Apple App Symbol & Header */}
+    <div className="w-full max-w-xl rounded-[28px] bg-card p-7 sm:p-9 border border-border shadow-sm flex flex-col gap-6">
+      {/* Cabecera con isotipo verde y blanco de PsicoAgenda */}
       <div className="text-center flex flex-col items-center">
-        <div className="flex size-14 items-center justify-center rounded-[20px] bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-2xl font-bold shadow-md mb-4 transition-transform active:scale-95">
+        <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary text-2xl font-bold shadow-2xs mb-3">
           Ψ
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
-          Crea tu cuenta
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          Crear cuenta
         </h1>
-        <p className="mt-1 text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">
+        <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
           Selecciona tu perfil y completa tus datos para acceder a {APP_NAME}
         </p>
       </div>
 
       <div className="space-y-6">
         {error ? (
-          <Alert variant="destructive" className="rounded-xl border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400">
+          <Alert variant="destructive" className="rounded-xl">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
@@ -379,40 +382,40 @@ export function RegisterForm() {
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* Apple Segmented Role Picker */}
+            {/* Selector interactivo de perfil */}
             <div className="space-y-2">
-              <FormLabel className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+              <FormLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Tipo de perfil
               </FormLabel>
-              <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06]">
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={() => form.setValue("role", "patient")}
-                  className={`flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-150 outline-none ${
+                  className={`flex flex-col items-center justify-center p-3.5 rounded-xl border text-center transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     selectedRole === "patient"
-                      ? "bg-white dark:bg-[#2C2C2E] text-neutral-900 dark:text-white shadow-xs font-semibold"
-                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-white font-medium"
+                      ? "border-primary bg-primary/10 text-primary font-semibold shadow-xs ring-1 ring-primary"
+                      : "border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   }`}
                 >
-                  <User className={`size-5 mb-1 ${selectedRole === "patient" ? "text-[#0071E3]" : "text-neutral-400"}`} />
-                  <span className="text-sm">Soy Paciente</span>
-                  <span className="text-[11px] text-neutral-400 dark:text-neutral-500">
-                    Agendar consultas
+                  <User className="size-5 mb-1.5" />
+                  <span className="text-sm font-semibold">Soy Paciente</span>
+                  <span className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
+                    Agendar citas y consultas
                   </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => form.setValue("role", "psychologist")}
-                  className={`flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-150 outline-none ${
+                  className={`flex flex-col items-center justify-center p-3.5 rounded-xl border text-center transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                     selectedRole === "psychologist"
-                      ? "bg-white dark:bg-[#2C2C2E] text-neutral-900 dark:text-white shadow-xs font-semibold"
-                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-white font-medium"
+                      ? "border-primary bg-primary/10 text-primary font-semibold shadow-xs ring-1 ring-primary"
+                      : "border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                   }`}
                 >
-                  <Stethoscope className={`size-5 mb-1 ${selectedRole === "psychologist" ? "text-[#0071E3]" : "text-neutral-400"}`} />
-                  <span className="text-sm">Soy Profesional</span>
-                  <span className="text-[11px] text-neutral-400 dark:text-neutral-500">
+                  <Stethoscope className="size-5 mb-1.5" />
+                  <span className="text-sm font-semibold">Soy Profesional</span>
+                  <span className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
                     Gestión clínica y agenda
                   </span>
                 </button>
@@ -495,16 +498,34 @@ export function RegisterForm() {
                     control={form.control}
                     name="password"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Contraseña</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="password"
-                            placeholder="••••••••"
-                            autoComplete="new-password"
-                            {...field}
-                          />
-                        </FormControl>
+                      <FormItem className="space-y-1.5">
+                        <FormLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Contraseña
+                        </FormLabel>
+                        <div className="relative flex items-center">
+                          <FormControl>
+                            <Input
+                              type={showPassword ? "text" : "password"}
+                              placeholder="••••••••"
+                              autoComplete="new-password"
+                              className="h-10 pr-10 rounded-xl"
+                              {...field}
+                            />
+                          </FormControl>
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword((prev) => !prev)}
+                            aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                            aria-pressed={showPassword}
+                            className="absolute right-3 text-muted-foreground hover:text-foreground transition-colors p-1"
+                          >
+                            {showPassword ? (
+                              <EyeOff className="size-4" />
+                            ) : (
+                              <Eye className="size-4" />
+                            )}
+                          </button>
+                        </div>
                         <FormDescription className="text-[11px] leading-tight text-muted-foreground">
                           Mín. 8 caracteres, mayúscula, minúscula y número
                         </FormDescription>
@@ -517,16 +538,21 @@ export function RegisterForm() {
                     control={form.control}
                     name="confirmPassword"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Confirmar contraseña</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="password"
-                            placeholder="••••••••"
-                            autoComplete="new-password"
-                            {...field}
-                          />
-                        </FormControl>
+                      <FormItem className="space-y-1.5">
+                        <FormLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Confirmar contraseña
+                        </FormLabel>
+                        <div className="relative flex items-center">
+                          <FormControl>
+                            <Input
+                              type={showPassword ? "text" : "password"}
+                              placeholder="••••••••"
+                              autoComplete="new-password"
+                              className="h-10 pr-10 rounded-xl"
+                              {...field}
+                            />
+                          </FormControl>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -878,7 +904,7 @@ export function RegisterForm() {
               <Button
                 type="submit"
                 size="lg"
-                className="w-full h-11 rounded-full text-[15px] font-medium bg-[#0071E3] hover:bg-[#0077ED] text-white shadow-sm hover:shadow active:scale-[0.98] transition-all"
+                className="w-full h-11 rounded-xl text-sm font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-[0.98] transition-all"
                 disabled={isPending || !configured}
               >
                 {isPending ? (
@@ -886,25 +912,23 @@ export function RegisterForm() {
                     <Loader2 className="mr-2 size-4 animate-spin" />
                     Procesando registro...
                   </>
-                ) : selectedRole === "psychologist" ? (
-                  "Registrarme como Profesional"
                 ) : (
-                  "Crear cuenta de Paciente"
+                  "Registrarse"
                 )}
               </Button>
             </form>
           </Form>
         </div>
 
-        {/* Footer con link a Login */}
-        <div className="text-center pt-2 border-t border-black/[0.06] dark:border-white/[0.08]">
-          <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">
-            ¿Ya tienes una cuenta de consulta?{" "}
-            <Link href="/login" className="font-medium text-[#0071E3] hover:underline">
-              Inicia sesión aquí
+        {/* Footer con enlace a Login */}
+        <div className="text-center pt-4 border-t border-border">
+          <p className="text-sm text-muted-foreground">
+            ¿Ya tengo cuenta?{" "}
+            <Link href="/login" className="font-semibold text-primary hover:underline">
+              Iniciar sesión
             </Link>
           </p>
         </div>
       </div>
     );
-  }
+}
