@@ -16,10 +16,16 @@ interface SessionContextValue {
 
 const SessionContext = React.createContext<SessionContextValue | null>(null);
 
-export function SessionProvider({ children }: { children: React.ReactNode }) {
+export function SessionProvider({
+  children,
+  initialUser = null,
+}: {
+  children: React.ReactNode;
+  initialUser?: User | null;
+}) {
   const isConfigured = isSupabaseConfigured();
-  const [user, setUser] = React.useState<User | null>(null);
-  const [isLoading, setIsLoading] = React.useState(isConfigured);
+  const [user, setUser] = React.useState<User | null>(initialUser);
+  const [isLoading, setIsLoading] = React.useState(!initialUser && isConfigured);
 
   React.useEffect(() => {
     // `isConfigured` no cambia en tiempo de ejecución: si falta configuración,
@@ -28,10 +34,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     const supabase = createClient();
 
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-      setIsLoading(false);
-    });
+    if (!initialUser) {
+      supabase.auth.getUser().then(({ data }) => {
+        setUser(data.user);
+        setIsLoading(false);
+      });
+    }
 
     // `INITIAL_SESSION` cubre la restauración; `TOKEN_REFRESHED` y `SIGNED_OUT` cubren
     // la renovación transparente y el cierre de sesión en otras pestañas.
@@ -41,7 +49,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => subscription.subscription.unsubscribe();
-  }, [isConfigured]);
+  }, [isConfigured, initialUser]);
 
   const logout = React.useCallback(async () => {
     if (!isConfigured) return;
