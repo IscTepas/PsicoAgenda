@@ -311,119 +311,113 @@ export function RegisterForm() {
   // Estado de confirmación (Email enviado)
   if (submittedUser) {
     return (
-      <div className="flex flex-col items-center max-w-md w-full">
-        <Link href="/" className="mb-6 text-2xl font-bold text-primary tracking-tight">
-          {APP_NAME}
-        </Link>
-
-        <Card className="w-full text-center border-border shadow-xs">
-          <CardHeader className="pb-3 flex flex-col items-center">
-            <div className="mb-2 flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <CheckCircle2 className="size-6" />
-            </div>
-            <CardTitle className="text-xl">¡Revisa tu correo!</CardTitle>
-            <div className="mt-1">
-              <Badge variant="secondary" className="font-normal capitalize">
-                {submittedUser.role === "psychologist"
-                  ? "Cuenta de Profesional"
-                  : "Cuenta de Paciente"}
-              </Badge>
-            </div>
-            <CardDescription className="mt-2 text-sm">
-              Enviamos un enlace de activación a:
-            </CardDescription>
-            <p className="font-medium text-foreground text-sm">{submittedUser.email}</p>
-          </CardHeader>
-          <CardContent className="space-y-3 text-xs text-muted-foreground">
-            <p>
-              Por motivos de seguridad y confidencialidad clínica, debes confirmar tu cuenta
-              haciendo clic en el botón del correo recibido antes de iniciar sesión.
-            </p>
-          </CardContent>
-          <CardFooter className="flex flex-col gap-2 pt-2">
-            <Button asChild className="w-full">
-              <Link href="/login">Ir a iniciar sesión</Link>
-            </Button>
-            <Button variant="ghost" size="sm" asChild className="text-muted-foreground text-xs">
-              <Link href="/">Regresar al inicio</Link>
-            </Button>
-          </CardFooter>
-        </Card>
+      <div className="w-full max-w-md rounded-[32px] bg-white dark:bg-[#1C1C1E] p-8 sm:p-10 border border-black/[0.06] dark:border-white/[0.08] shadow-[0_20px_60px_rgba(0,0,0,0.06)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.4)] text-center flex flex-col items-center gap-4">
+        <div className="flex size-14 items-center justify-center rounded-[20px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 mb-2">
+          <CheckCircle2 className="size-8" />
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+          ¡Revisa tu correo!
+        </h1>
+        <div>
+          <Badge variant="secondary" className="rounded-full px-3 py-1 font-normal text-xs bg-black/[0.05] dark:bg-white/[0.08]">
+            {submittedUser.role === "psychologist"
+              ? "Cuenta de Profesional"
+              : "Cuenta de Paciente"}
+          </Badge>
+        </div>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">
+          Enviamos un enlace seguro de activación a:
+        </p>
+        <p className="font-semibold text-neutral-900 dark:text-white text-sm bg-black/[0.03] dark:bg-white/[0.05] px-4 py-2 rounded-xl">
+          {submittedUser.email}
+        </p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed max-w-sm mt-1">
+          Por motivos de seguridad y confidencialidad clínica, confirma tu cuenta haciendo clic en el enlace recibido antes de iniciar sesión.
+        </p>
+        <div className="w-full flex flex-col gap-2.5 pt-4">
+          <Button asChild size="lg" className="w-full rounded-full bg-[#0071E3] hover:bg-[#0077ED] text-white">
+            <Link href="/login">Ir a iniciar sesión</Link>
+          </Button>
+          <Button variant="ghost" size="sm" asChild className="rounded-full text-neutral-500 hover:text-neutral-900 dark:hover:text-white">
+            <Link href="/">Regresar al inicio</Link>
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col items-center max-w-xl w-full">
-      <Link href="/" className="mb-6 text-2xl font-bold text-primary tracking-tight">
-        {APP_NAME}
-      </Link>
+    <div className="w-full max-w-xl rounded-[32px] bg-white dark:bg-[#1C1C1E] p-7 sm:p-10 border border-black/[0.06] dark:border-white/[0.08] shadow-[0_20px_60px_rgba(0,0,0,0.06)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.4)] flex flex-col gap-6">
+      {/* Apple App Symbol & Header */}
+      <div className="text-center flex flex-col items-center">
+        <div className="flex size-14 items-center justify-center rounded-[20px] bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-2xl font-bold shadow-md mb-4 transition-transform active:scale-95">
+          Ψ
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+          Crea tu cuenta
+        </h1>
+        <p className="mt-1 text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">
+          Selecciona tu perfil y completa tus datos para acceder a {APP_NAME}
+        </p>
+      </div>
 
-      <Card className="w-full border-border shadow-xs">
-        <CardHeader className="text-center pb-4">
-          <CardTitle className="text-2xl font-bold tracking-tight">Crea tu cuenta</CardTitle>
-          <CardDescription>
-            Selecciona tu perfil y completa los datos requeridos para ingresar al sistema
-          </CardDescription>
-        </CardHeader>
+      <div className="space-y-6">
+        {error ? (
+          <Alert variant="destructive" className="rounded-xl border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
 
-        <CardContent className="space-y-6">
-          {error ? (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : null}
+        {!configured ? (
+          <Alert variant="destructive" className="rounded-xl">
+            <AlertDescription>
+              Faltan variables de entorno en el cliente. Revisa tu archivo{" "}
+              <code>.env</code>.
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
-          {!configured ? (
-            <Alert variant="destructive">
-              <AlertDescription>
-                Faltan variables de entorno en el cliente. Revisa tu archivo{" "}
-                <code>.env</code>.
-              </AlertDescription>
-            </Alert>
-          ) : null}
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            {/* Apple Segmented Role Picker */}
+            <div className="space-y-2">
+              <FormLabel className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
+                Tipo de perfil
+              </FormLabel>
+              <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => form.setValue("role", "patient")}
+                  className={`flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-150 outline-none ${
+                    selectedRole === "patient"
+                      ? "bg-white dark:bg-[#2C2C2E] text-neutral-900 dark:text-white shadow-xs font-semibold"
+                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-white font-medium"
+                  }`}
+                >
+                  <User className={`size-5 mb-1 ${selectedRole === "patient" ? "text-[#0071E3]" : "text-neutral-400"}`} />
+                  <span className="text-sm">Soy Paciente</span>
+                  <span className="text-[11px] text-neutral-400 dark:text-neutral-500">
+                    Agendar consultas
+                  </span>
+                </button>
 
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Selector interactivo de perfil */}
-              <div className="space-y-2">
-                <FormLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Tipo de perfil
-                </FormLabel>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => form.setValue("role", "patient")}
-                    className={`flex flex-col items-center justify-center p-3 rounded-lg border text-center transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                      selectedRole === "patient"
-                        ? "border-primary bg-primary/5 text-primary font-medium shadow-xs ring-1 ring-primary"
-                        : "border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                    }`}
-                  >
-                    <User className="size-5 mb-1.5" />
-                    <span className="text-sm font-semibold">Soy Paciente</span>
-                    <span className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
-                      Agendar citas y consultas
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => form.setValue("role", "psychologist")}
-                    className={`flex flex-col items-center justify-center p-3 rounded-lg border text-center transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                      selectedRole === "psychologist"
-                        ? "border-primary bg-primary/5 text-primary font-medium shadow-xs ring-1 ring-primary"
-                        : "border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                    }`}
-                  >
-                    <Stethoscope className="size-5 mb-1.5" />
-                    <span className="text-sm font-semibold">Soy Profesional</span>
-                    <span className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
-                      Gestión clínica y agenda
-                    </span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => form.setValue("role", "psychologist")}
+                  className={`flex flex-col items-center justify-center p-3 rounded-xl transition-all duration-150 outline-none ${
+                    selectedRole === "psychologist"
+                      ? "bg-white dark:bg-[#2C2C2E] text-neutral-900 dark:text-white shadow-xs font-semibold"
+                      : "text-neutral-500 hover:text-neutral-900 dark:hover:text-white font-medium"
+                  }`}
+                >
+                  <Stethoscope className={`size-5 mb-1 ${selectedRole === "psychologist" ? "text-[#0071E3]" : "text-neutral-400"}`} />
+                  <span className="text-sm">Soy Profesional</span>
+                  <span className="text-[11px] text-neutral-400 dark:text-neutral-500">
+                    Gestión clínica y agenda
+                  </span>
+                </button>
               </div>
+            </div>
 
               {/* SECCIÓN 1: Credenciales y datos básicos */}
               <div className="space-y-4 pt-1">
@@ -884,7 +878,7 @@ export function RegisterForm() {
               <Button
                 type="submit"
                 size="lg"
-                className="w-full font-medium"
+                className="w-full h-11 rounded-full text-[15px] font-medium bg-[#0071E3] hover:bg-[#0077ED] text-white shadow-sm hover:shadow active:scale-[0.98] transition-all"
                 disabled={isPending || !configured}
               >
                 {isPending ? (
@@ -893,24 +887,24 @@ export function RegisterForm() {
                     Procesando registro...
                   </>
                 ) : selectedRole === "psychologist" ? (
-                  "Registrarme como Psicólogo/a"
+                  "Registrarme como Profesional"
                 ) : (
                   "Crear cuenta de Paciente"
                 )}
               </Button>
             </form>
           </Form>
-        </CardContent>
+        </div>
 
-        <CardFooter className="justify-center border-t border-border/50 pt-4">
-          <p className="text-sm text-muted-foreground">
-            ¿Ya tienes una cuenta?{" "}
-            <Link href="/login" className="font-medium text-primary hover:underline">
-              Inicia sesión
+        {/* Footer con link a Login */}
+        <div className="text-center pt-2 border-t border-black/[0.06] dark:border-white/[0.08]">
+          <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">
+            ¿Ya tienes una cuenta de consulta?{" "}
+            <Link href="/login" className="font-medium text-[#0071E3] hover:underline">
+              Inicia sesión aquí
             </Link>
           </p>
-        </CardFooter>
-      </Card>
-    </div>
-  );
-}
+        </div>
+      </div>
+    );
+  }

@@ -76,134 +76,144 @@ export function LoginForm() {
   }
 
   return (
-    <>
-      <Link href="/" className="mb-6 text-2xl font-bold text-primary">
-        {APP_NAME}
-      </Link>
+    <div className="w-full max-w-[420px] rounded-[32px] bg-white dark:bg-[#1C1C1E] p-7 sm:p-9 border border-black/[0.06] dark:border-white/[0.08] shadow-[0_20px_60px_rgba(0,0,0,0.06)] dark:shadow-[0_20px_60px_rgba(0,0,0,0.4)] flex flex-col gap-6">
+      {/* Apple App Symbol & Header */}
+      <div className="text-center flex flex-col items-center">
+        <div className="flex size-14 items-center justify-center rounded-[20px] bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-2xl font-bold shadow-md mb-4 transition-transform active:scale-95">
+          Ψ
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+          Iniciar sesión
+        </h1>
+        <p className="mt-1 text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">
+          Accede con tu ID a la consulta de {APP_NAME}
+        </p>
+      </div>
 
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-xl">Iniciar sesión</CardTitle>
-          <CardDescription>
-            Ingresa tus credenciales para continuar
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error ? (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : null}
-          {!configured ? (
-            <Alert variant="destructive">
-              <AlertDescription>
-                Faltan <code>NEXT_PUBLIC_SUPABASE_URL</code> y{" "}
-                <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> en{" "}
-                <code>apps/web/.env</code>.
-              </AlertDescription>
-            </Alert>
-          ) : null}
+      {error ? (
+        <Alert variant="destructive" className="rounded-xl border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Correo electrónico</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="email"
-                        placeholder="tu@correo.com"
-                        autoComplete="email"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+      {!configured ? (
+        <Alert variant="destructive" className="rounded-xl">
+          <AlertDescription>
+            Faltan <code>NEXT_PUBLIC_SUPABASE_URL</code> y{" "}
+            <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> en{" "}
+            <code>apps/web/.env</code>.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Contraseña</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="password"
-                        placeholder="••••••••"
-                        autoComplete="current-password"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem className="space-y-1.5">
+                <FormLabel className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  Correo electrónico
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    type="email"
+                    placeholder="ejemplo@psicoagenda.com"
+                    autoComplete="email"
+                    className="h-11 rounded-xl bg-black/[0.02] dark:bg-white/[0.04]"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-              <Button type="submit" className="w-full" disabled={isPending || !configured}>
-                {isPending ? "Entrando..." : "Entrar"}
-              </Button>
-            </form>
-          </Form>
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem className="space-y-1.5">
+                <FormLabel className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                  Contraseña
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    type="password"
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    className="h-11 rounded-xl bg-black/[0.02] dark:bg-white/[0.04]"
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-          {/*
-            Cuentas de prueba. El gate es `process.env.NODE_ENV`, no una variable
-            NEXT_PUBLIC_: Next la sustituye por una constante al compilar, asi que en
-            produccion la comparacion es `false` y este JSX desaparece del bundle. Con
-            un flag NEXT_PUBLIC_ el bloque se publicaria en cualquier build.
-            Ver `src/lib/demo-accounts.ts` para de donde salen las credenciales.
-          */}
-          {process.env.NODE_ENV === "development" && demoAccounts.length > 0 ? (
-            <div className="space-y-2 rounded-md border border-dashed p-3">
-              <p className="text-xs text-muted-foreground">
-                Cuentas de prueba. No existen en un build de produccion.
-              </p>
-              {demoAccounts.map((account) => (
-                <div
-                  key={account.email}
-                  className="flex items-center justify-between gap-2 text-xs"
-                >
-                  <div className="min-w-0">
-                    <span className="font-medium">{account.label}</span>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {account.email} · {account.password} · {account.navItems} ítems
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      form.setValue("email", account.email)
-                      form.setValue("password", account.password)
-                    }}
-                  >
-                    Usar
-                  </Button>
+          <Button
+            type="submit"
+            size="lg"
+            className="w-full h-11 rounded-full text-[15px] font-medium bg-[#0071E3] hover:bg-[#0077ED] text-white shadow-sm hover:shadow active:scale-[0.98] transition-all mt-2"
+            disabled={isPending || !configured}
+          >
+            {isPending ? "Validando credenciales..." : "Continuar"}
+          </Button>
+        </form>
+      </Form>
+
+      {/* Cuentas de demostración en modo development */}
+      {process.env.NODE_ENV === "development" && demoAccounts.length > 0 ? (
+        <div className="rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] p-3.5 border border-black/[0.05] dark:border-white/[0.06] space-y-2">
+          <div className="flex items-center justify-between px-0.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+              Acceso Rápido Demo (1-clic)
+            </span>
+            <span className="text-[10px] text-neutral-400">Desarrollo</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {demoAccounts.map((account) => (
+              <button
+                key={account.email}
+                type="button"
+                onClick={() => {
+                  form.setValue("email", account.email)
+                  form.setValue("password", account.password)
+                }}
+                className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-[#2C2C2E] border border-black/[0.06] dark:border-white/[0.08] shadow-2xs hover:border-[#0071E3]/50 hover:bg-[#0071E3]/5 active:scale-[0.97] transition-all text-left group"
+              >
+                <div className="min-w-0 pr-1">
+                  <p className="text-xs font-semibold text-neutral-900 dark:text-white truncate">
+                    {account.label}
+                  </p>
+                  <p className="text-[10px] text-neutral-500 truncate">
+                    {account.email}
+                  </p>
                 </div>
-              ))}
-            </div>
-          ) : null}
-        </CardContent>
-        <CardFooter className="justify-center">
-          <p className="text-sm text-muted-foreground">
-            ¿No tienes cuenta?{" "}
-            <Link href="/registro" className="font-medium text-primary hover:underline">
-              Regístrate
-            </Link>
-          </p>
-        </CardFooter>
-      </Card>
+                <span className="text-[10px] font-medium text-[#0071E3] bg-[#0071E3]/10 group-hover:bg-[#0071E3] group-hover:text-white px-2 py-0.5 rounded-full shrink-0 transition-colors">
+                  Usar
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
-      <Button variant="link" asChild className="mt-4">
-        <Link href="/">Volver al inicio</Link>
-      </Button>
-    </>
+      {/* Link de Registro */}
+      <div className="text-center pt-2 border-t border-black/[0.06] dark:border-white/[0.08]">
+        <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400">
+          ¿No tienes una cuenta de consulta?{" "}
+          <Link
+            href="/registro"
+            className="font-medium text-[#0071E3] hover:underline"
+          >
+            Regístrate aquí
+          </Link>
+        </p>
+      </div>
+    </div>
   )
 }
 
