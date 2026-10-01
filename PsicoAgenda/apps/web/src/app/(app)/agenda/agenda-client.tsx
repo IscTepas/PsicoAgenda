@@ -29,6 +29,7 @@ import {
   APP_NAME,
   AppointmentStatus,
   AppointmentModality,
+  UserRole,
   type Appointment,
   type Patient,
 } from "@psicoagenda/shared"
@@ -64,6 +65,7 @@ import {
   MOCK_PSYCHOLOGIST,
   MOCK_CLINICAL_RECORD,
   getPatientById,
+  getPatientForUser,
   formatAppointmentTime,
   formatShortDate,
 } from "@/lib/mock-data"
@@ -205,6 +207,18 @@ function getMonthDays(currentDate: Date): { date: Date; isCurrentMonth: boolean 
 
 export function AgendaClient() {
   const { user } = useSession()
+  const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
+  const isPatient = effectiveRole === UserRole.PATIENT
+  const currentPatient = React.useMemo(() => getPatientForUser(user), [user])
+
+  // Restrict appointments: Patients only see their own appointments!
+  const baseAppointments = React.useMemo(() => {
+    if (isPatient) {
+      return MOCK_APPOINTMENTS.filter((apt) => apt.patientId === currentPatient.id)
+    }
+    return MOCK_APPOINTMENTS
+  }, [isPatient, currentPatient.id])
+
   const [currentDate, setCurrentDate] = React.useState<Date>(new Date())
   const [view, setView] = React.useState<CalendarView>("semana")
   const [selectedStatus, setSelectedStatus] = React.useState<string>("ALL")
@@ -212,16 +226,17 @@ export function AgendaClient() {
   const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(null)
 
   const psychologistName = user?.name || MOCK_PSYCHOLOGIST.name
+  const greetingName = isPatient ? currentPatient.name : psychologistName
 
   // Appointments today for header stats
   const today = new Date()
   const todayAppointments = React.useMemo(() => {
-    return MOCK_APPOINTMENTS.filter((apt) => isSameDay(apt.startTime, today))
-  }, [today])
+    return baseAppointments.filter((apt) => isSameDay(apt.startTime, today))
+  }, [baseAppointments, today])
 
   // Filtered appointments according to status & search query
   const filteredAppointments = React.useMemo(() => {
-    return MOCK_APPOINTMENTS.filter((apt) => {
+    return baseAppointments.filter((apt) => {
       // Status filter
       if (selectedStatus !== "ALL" && apt.status !== selectedStatus) {
         return false
@@ -247,24 +262,24 @@ export function AgendaClient() {
 
       return true
     })
-  }, [selectedStatus, searchQuery])
+  }, [baseAppointments, selectedStatus, searchQuery])
 
   // Counts by status
   const counts = React.useMemo(() => {
     const map: Record<string, number> = {
-      ALL: MOCK_APPOINTMENTS.length,
+      ALL: baseAppointments.length,
       [AppointmentStatus.CONFIRMED]: 0,
       [AppointmentStatus.PENDING]: 0,
       [AppointmentStatus.CANCELLED]: 0,
       [AppointmentStatus.COMPLETED]: 0,
     }
-    MOCK_APPOINTMENTS.forEach((apt) => {
+    baseAppointments.forEach((apt) => {
       if (map[apt.status] !== undefined) {
         map[apt.status]++
       }
     })
     return map
-  }, [])
+  }, [baseAppointments])
 
   // Navigation handlers
   const handlePrev = () => {
@@ -325,14 +340,22 @@ export function AgendaClient() {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground font-heading">
-              ¡Hola, {psychologistName}!
+              ¡Hola, {greetingName}!
             </h1>
             <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-              Agenda Activa
+              {isPatient ? "Mis Citas" : "Agenda Activa"}
             </span>
           </div>
           <p className="text-sm text-muted-foreground">
-            Tienes <span className="font-medium text-foreground">{todayAppointments.length} citas</span> programadas para hoy. Consulta y administra tus sesiones clínicas.
+            {isPatient ? (
+              <>
+                Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span> programadas para hoy. Consulta tus sesiones con {MOCK_PSYCHOLOGIST.name}.
+              </>
+            ) : (
+              <>
+                Tienes <span className="font-medium text-foreground">{todayAppointments.length} citas</span> programadas para hoy. Consulta y administra tus sesiones clínicas.
+              </>
+            )}
           </p>
         </div>
 
@@ -342,7 +365,7 @@ export function AgendaClient() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
             <Input
               type="text"
-              placeholder="Buscar paciente o motivo..."
+              placeholder={isPatient ? "Buscar en mis citas..." : "Buscar paciente o motivo..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9 pr-8 h-9 text-sm rounded-xl bg-card border-border/80 focus-visible:ring-primary/20"
@@ -359,11 +382,11 @@ export function AgendaClient() {
             )}
           </div>
 
-          {/* Botón destacado "+ Nueva Cita" */}
+          {/* Botón destacado "+ Nueva Cita / Solicitar Cita" */}
           <Button asChild className="h-9 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shrink-0">
             <Link href="/agenda/nueva" className="flex items-center gap-2">
               <Plus className="size-4 stroke-[2.5]" />
-              <span className="font-medium">Nueva Cita</span>
+              <span className="font-medium">{isPatient ? "Solicitar Cita" : "Nueva Cita"}</span>
             </Link>
           </Button>
         </div>
@@ -601,7 +624,7 @@ export function AgendaClient() {
                                 <div className="space-y-1">
                                   <div className="flex items-center gap-2">
                                     <span className="font-heading font-semibold text-sm text-foreground group-hover:text-primary transition-colors">
-                                      {patient?.name ?? "Paciente sin nombre"}
+                                      {isPatient ? (apt.reason || "Sesión Terapéutica") : (patient?.name ?? "Paciente sin nombre")}
                                     </span>
                                     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border ${status.badgeClass}`}>
                                       <StatusIcon className="size-3" />
@@ -732,7 +755,7 @@ export function AgendaClient() {
                               </div>
 
                               <div className="font-heading font-medium text-xs text-foreground line-clamp-1">
-                                {patient?.name ?? "Paciente"}
+                                {isPatient ? (apt.reason || "Sesión Terapéutica") : (patient?.name ?? "Paciente")}
                               </div>
 
                               <div className="flex items-center gap-1 text-[10px]">
@@ -824,14 +847,14 @@ export function AgendaClient() {
                               type="button"
                               onClick={() => setSelectedAppointment(apt)}
                               className={`w-full text-left px-1.5 py-0.5 rounded-md border text-[11px] truncate flex items-center gap-1 transition-all ${status.badgeClass} hover:opacity-85 shadow-2xs`}
-                              title={`${formatAppointmentTime(apt.startTime)} - ${patient?.name ?? "Paciente"}`}
+                              title={`${formatAppointmentTime(apt.startTime)} - ${isPatient ? (apt.reason || "Sesión Terapéutica") : (patient?.name ?? "Paciente")}`}
                             >
                               <span className={`size-1.5 rounded-full shrink-0 ${status.dotClass}`} />
                               <span className="font-semibold shrink-0">
                                 {formatAppointmentTime(apt.startTime)}
                               </span>
                               <span className="truncate">
-                                {patient?.name?.split(" ")[0] ?? "Paciente"}
+                                {isPatient ? (apt.reason?.split(" ")[0] || "Sesión") : (patient?.name?.split(" ")[0] ?? "Paciente")}
                               </span>
                             </button>
                           )
@@ -886,45 +909,63 @@ export function AgendaClient() {
                   </div>
 
                   <DialogTitle className="text-xl font-heading font-semibold text-foreground">
-                    Resumen de Sesión Clínica
+                    {isPatient ? "Detalle de tu Sesión Terapéutica" : "Resumen de Sesión Clínica"}
                   </DialogTitle>
                   <DialogDescription className="text-xs text-muted-foreground">
-                    Detalles programados para la consulta con el paciente.
+                    {isPatient ? "Información programada para tu consulta con la psicóloga." : "Detalles programados para la consulta con el paciente."}
                   </DialogDescription>
                 </DialogHeader>
 
                 <div className="space-y-4 py-2 text-sm">
-                  {/* Paciente Card */}
-                  <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="size-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm">
-                        {patient?.name
-                          ? patient.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .slice(0, 2)
-                              .join("")
-                          : "P"}
-                      </div>
-                      <div>
-                        <div className="font-heading font-semibold text-foreground text-sm">
-                          {patient?.name ?? "Paciente no asignado"}
+                  {/* Paciente o Terapeuta Card */}
+                  {isPatient ? (
+                    <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="size-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm font-heading">
+                          AG
                         </div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-2">
-                          <span>{patient?.gender === "femenino" ? "Femenino" : "Masculino"}</span>
-                          {patient?.phone && <span>· {patient.phone}</span>}
+                        <div>
+                          <div className="font-heading font-semibold text-foreground text-sm">
+                            {MOCK_PSYCHOLOGIST.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {MOCK_PSYCHOLOGIST.specialty} · {MOCK_PSYCHOLOGIST.licenseNumber}
+                          </div>
                         </div>
                       </div>
                     </div>
+                  ) : (
+                    <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="size-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm">
+                          {patient?.name
+                            ? patient.name
+                                .split(" ")
+                                .map((n) => n[0])
+                                .slice(0, 2)
+                                .join("")
+                            : "P"}
+                        </div>
+                        <div>
+                          <div className="font-heading font-semibold text-foreground text-sm">
+                            {patient?.name ?? "Paciente no asignado"}
+                          </div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-2">
+                            <span>{patient?.gender === "femenino" ? "Femenino" : "Masculino"}</span>
+                            {patient?.phone && <span>· {patient.phone}</span>}
+                          </div>
+                        </div>
+                      </div>
 
-                    {patient?.id && (
-                      <Button variant="ghost" size="sm" asChild className="h-8 px-2 text-xs">
-                        <Link href={`/pacientes/${patient.id}`}>
-                          Ver Ficha
-                        </Link>
-                      </Button>
-                    )}
-                  </div>
+                      {patient?.id && (
+                        <Button variant="ghost" size="sm" asChild className="h-8 px-2 text-xs">
+                          <Link href={`/pacientes/${patient.id}`}>
+                            Ver Ficha
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
+                  )}
 
                   {/* Horario y Modalidad */}
                   <div className="grid grid-cols-2 gap-2.5">

@@ -57,16 +57,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { user, isLoading, logout } = useSession()
 
-  // Si la sesión no tiene rol explícito o está en desarrollo, aseguramos
-  // la navegación completa para la práctica clínica (Psicóloga).
-  const effectiveRole = user?.role ?? UserRole.PSYCHOLOGIST
+  const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
+  const isPatient = effectiveRole === UserRole.PATIENT
   const filteredNav = React.useMemo(() => navItemsForRole(effectiveRole), [effectiveRole])
 
   const handleLogout = () => {
     void logout().finally(() => router.push("/login"))
   }
 
-  const displayName = user?.name || "Dra. Ana García"
+  const displayName = user?.name || (isPatient ? "María López" : "Dra. Ana García")
   const displayRole = effectiveRole
 
   return (

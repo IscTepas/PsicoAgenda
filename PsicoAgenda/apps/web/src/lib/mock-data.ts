@@ -367,3 +367,35 @@ export function formatShortDate(date: Date): string {
     month: "short",
   })
 }
+
+export function getPatientForUser(user?: { email?: string; id?: string } | null): Patient {
+  if (!user?.email) return MOCK_PATIENTS[0]
+  const emailLower = user.email.toLowerCase()
+  const found = MOCK_PATIENTS.find(
+    (p) => p.email.toLowerCase() === emailLower || (emailLower.includes("paciente") && p.id === "patient-1")
+  )
+  return found || MOCK_PATIENTS[0]
+}
+
+export function getAppointmentsForUser(user?: { email?: string; role?: UserRole; id?: string } | null): Appointment[] {
+  if (user?.role === UserRole.PATIENT) {
+    const patient = getPatientForUser(user)
+    return MOCK_APPOINTMENTS.filter((apt) => apt.patientId === patient.id)
+  }
+  return MOCK_APPOINTMENTS
+}
+
+export function getLatestHomeworkForPatient(patientId: string): string[] {
+  const patientLogs = getSessionLogsByPatientId(patientId)
+  const homeworks: string[] = []
+  for (const log of patientLogs) {
+    if (log.homework && log.homework.trim() && !log.homework.toLowerCase().includes("ninguna")) {
+      homeworks.push(log.homework)
+    }
+  }
+  if (homeworks.length === 0) {
+    homeworks.push("Continuar con el autoregistro ABC de pensamientos automáticos.")
+    homeworks.push("Dedicar 15 minutos diarios a la relajación muscular progresiva de Jacobson.")
+  }
+  return homeworks
+}

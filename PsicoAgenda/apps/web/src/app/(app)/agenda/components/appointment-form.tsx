@@ -27,6 +27,7 @@ import {
   AppointmentStatus,
   AppointmentModality,
   AttendanceStatus,
+  UserRole,
   type Appointment,
   type Patient,
 } from "@psicoagenda/shared"
@@ -50,11 +51,13 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
+import { useSession } from "@/lib/use-session"
 import {
   MOCK_PATIENTS,
   MOCK_APPOINTMENTS,
   MOCK_PSYCHOLOGIST,
   getPatientById,
+  getPatientForUser,
   formatAppointmentTime,
   formatShortDate,
 } from "@/lib/mock-data"
@@ -113,9 +116,16 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const searchParams = useSearchParams()
   const isEdit = Boolean(initialAppointment)
 
-  // Pre-selected patient from props or query param
+  const { user } = useSession()
+  const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
+  const isPatient = effectiveRole === UserRole.PATIENT
+  const currentPatient = React.useMemo(() => getPatientForUser(user), [user])
+
+  // Pre-selected patient from props or query param (or locked to currentPatient if isPatient)
   const paramPatientId = searchParams.get("patientId")
-  const defaultPatientId = initialAppointment?.patientId || paramPatientId || ""
+  const defaultPatientId = isPatient
+    ? currentPatient.id
+    : initialAppointment?.patientId || paramPatientId || ""
 
   // Form State
   const [selectedPatientId, setSelectedPatientId] = React.useState<string>(defaultPatientId)
@@ -364,8 +374,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         </div>
       )}
 
-      {/* SECCIÓN DESTACADA: REGISTRAR ASISTENCIA (Solo si es el día de la cita) */}
-      {isAppointmentToday && isEdit && status !== AppointmentStatus.CANCELLED && (
+      {/* SECCIÓN DESTACADA: REGISTRAR ASISTENCIA (Solo si es el día de la cita y no es paciente) */}
+      {isAppointmentToday && isEdit && status !== AppointmentStatus.CANCELLED && !isPatient && (
         <Card className="border-primary/30 bg-primary/[0.03] shadow-xs">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -455,27 +465,34 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-center">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedPatientId("")
-                      setPatientSearch("")
-                      setIsPatientDropdownOpen(true)
-                    }}
-                    className="h-8 text-xs rounded-lg border-border/80 hover:border-primary/50"
-                  >
-                    <RefreshCw className="size-3.5 mr-1 text-muted-foreground" />
-                    Cambiar paciente
-                  </Button>
-                  <Button variant="ghost" size="sm" asChild className="h-8 text-xs text-primary">
-                    <Link href={`/pacientes/${selectedPatient.id}`} target="_blank">
-                      Ver expediente
-                    </Link>
-                  </Button>
-                </div>
+                {isPatient ? (
+                  <div className="text-xs text-muted-foreground self-end sm:self-center">
+                    <span>Terapeuta: </span>
+                    <strong className="text-foreground">{MOCK_PSYCHOLOGIST.name}</strong>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 self-end sm:self-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedPatientId("")
+                        setPatientSearch("")
+                        setIsPatientDropdownOpen(true)
+                      }}
+                      className="h-8 text-xs rounded-lg border-border/80 hover:border-primary/50"
+                    >
+                      <RefreshCw className="size-3.5 mr-1 text-muted-foreground" />
+                      Cambiar paciente
+                    </Button>
+                    <Button variant="ghost" size="sm" asChild className="h-8 text-xs text-primary">
+                      <Link href={`/pacientes/${selectedPatient.id}`} target="_blank">
+                        Ver expediente
+                      </Link>
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               // Autocomplete Search Input
@@ -799,8 +816,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           </CardContent>
         </Card>
 
-        {/* CARD 5: SECCIÓN DE ESTADO (Solo visible si la cita ya existe) */}
-        {isEdit && (
+        {/* CARD 5: SECCIÓN DE ESTADO (Solo visible si la cita ya existe y es psicólogo) */}
+        {isEdit && !isPatient && (
           <Card className="border-border/70 shadow-2xs bg-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
@@ -935,7 +952,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               ) : (
                 <>
                   <Plus className="size-4 stroke-[2.5]" />
-                  <span>Guardar Cita</span>
+                  <span>{isPatient ? "Solicitar Cita" : "Guardar Cita"}</span>
                 </>
               )}
             </Button>

@@ -17,10 +17,16 @@ import {
   ChevronRight,
   ExternalLink,
   UserCheck,
+  User,
+  Phone,
+  Mail,
+  ShieldCheck,
+  Sparkles,
 } from "lucide-react"
 import {
   AppointmentStatus,
   AppointmentModality,
+  UserRole,
   type Appointment,
   type Patient,
 } from "@psicoagenda/shared"
@@ -36,6 +42,9 @@ import {
 } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { PageHeader } from "../components/page-header"
+import { useSession } from "@/lib/use-session"
+import { cn } from "@/lib/utils"
 import {
   MOCK_APPOINTMENTS,
   MOCK_PATIENTS,
@@ -43,6 +52,8 @@ import {
   formatAppointmentTime,
   formatShortDate,
   getPatientById,
+  getPatientForUser,
+  getLatestHomeworkForPatient,
 } from "@/lib/mock-data"
 
 function getInitials(name: string): string {
@@ -90,7 +101,7 @@ function getStatusBadge(status: AppointmentStatus) {
   }
 }
 
-export function DashboardView() {
+function PsychologistDashboardView({ user }: { user: any }) {
   const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS)
   const [agendaFilter, setAgendaFilter] = useState<"all" | "confirmed" | "pending">("all")
   const [copiedLink, setCopiedLink] = useState(false)
@@ -170,8 +181,39 @@ export function DashboardView() {
     setTimeout(() => setCopiedLink(false), 2000)
   }
 
+  const psychologistName = user?.name || MOCK_PSYCHOLOGIST.name
+  const firstName = psychologistName.split(" ")[1] ?? psychologistName
+
   return (
     <div className="space-y-6">
+      <PageHeader
+        title={`Bienvenida, Dra. ${firstName}`}
+        description="Gestión del día clínico • Consultas inmediatas, agenda y expedientes"
+        actions={
+          <div className="flex items-center gap-2.5">
+            <Button
+              variant="outline"
+              asChild
+              className="hidden sm:inline-flex rounded-xl border-border/60 text-xs font-medium hover:bg-muted/60 active:scale-[0.98] transition-all"
+            >
+              <Link href="/agenda">
+                <CalendarDays className="mr-1.5 size-3.5" />
+                Ver agenda
+              </Link>
+            </Button>
+            <Button
+              asChild
+              className="rounded-xl bg-primary text-primary-foreground shadow-xs font-medium text-xs hover:bg-primary/90 active:scale-[0.98] transition-all"
+            >
+              <Link href="/agenda/nueva">
+                <Plus className="mr-1.5 size-3.5" />
+                Nueva cita
+              </Link>
+            </Button>
+          </div>
+        }
+      />
+
       {/* MENSAJE DE ACCIÓN RÁPIDA (FEEDBACK TEMPORAL ESTILO APPLE) */}
       {actionMessage && (
         <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-foreground shadow-xs animate-in fade-in slide-in-from-top-1 duration-200">
@@ -761,3 +803,413 @@ export function DashboardView() {
     </div>
   )
 }
+
+function PatientDashboardView({ user }: { user: any }) {
+  const patient = getPatientForUser(user)
+  const patientAppointments = MOCK_APPOINTMENTS.filter((a) => a.patientId === patient.id)
+
+  const [completedTasks, setCompletedTasks] = useState<Record<number, boolean>>({ 0: true })
+  const [copiedPhone, setCopiedPhone] = useState(false)
+
+  const homeworkList = getLatestHomeworkForPatient(patient.id)
+
+  // Upcoming appointment for patient
+  const now = new Date()
+  const upcomingAppointments = patientAppointments
+    .filter((a) => a.status !== AppointmentStatus.COMPLETED && a.status !== AppointmentStatus.CANCELLED)
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+
+  const nextAppointment = upcomingAppointments[0] || null
+
+  // Past appointments
+  const pastAppointments = patientAppointments
+    .filter((a) => a.status === AppointmentStatus.COMPLETED || new Date(a.startTime) < now)
+    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+
+  const toggleTask = (index: number) => {
+    setCompletedTasks((prev) => ({ ...prev, [index]: !prev[index] }))
+  }
+
+  const copyEmergencyPhone = () => {
+    if (patient.emergencyContact?.phone) {
+      navigator.clipboard.writeText(patient.emergencyContact.phone)
+      setCopiedPhone(true)
+      setTimeout(() => setCopiedPhone(false), 2000)
+    }
+  }
+
+  const completedCount = Object.values(completedTasks).filter(Boolean).length
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={`¡Hola, ${patient.name}!`}
+        description="Bienvenida a tu espacio de atención terapéutica • Citas programadas, acuerdos y contacto con tu psicóloga"
+        actions={
+          <div className="flex items-center gap-2.5">
+            <Button
+              variant="outline"
+              asChild
+              className="rounded-xl border-border/60 text-xs font-medium hover:bg-muted/60 active:scale-[0.98] transition-all"
+            >
+              <Link href="/agenda">
+                <CalendarDays className="mr-1.5 size-3.5" />
+                Mis Citas
+              </Link>
+            </Button>
+            <Button
+              asChild
+              className="rounded-xl bg-primary text-primary-foreground shadow-xs font-medium text-xs hover:bg-primary/90 active:scale-[0.98] transition-all"
+            >
+              <Link href="/agenda/nueva">
+                <Plus className="mr-1.5 size-3.5" />
+                + Solicitar Cita
+              </Link>
+            </Button>
+          </div>
+        }
+      />
+
+      {/* 1. Tarjeta Destacada: Próxima Sesión */}
+      {nextAppointment ? (
+        <Card className="border-emerald-300/80 bg-emerald-50/40 dark:bg-emerald-950/20 dark:border-emerald-800 shadow-2xs overflow-hidden">
+          <CardHeader className="pb-3 border-b border-emerald-200/60 dark:border-emerald-900/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                <CalendarDays className="size-4" />
+              </span>
+              <div>
+                <CardTitle className="text-base font-semibold text-foreground font-heading">
+                  Tu Próxima Sesión de Terapia
+                </CardTitle>
+                <CardDescription className="text-xs text-muted-foreground">
+                  Programada con {MOCK_PSYCHOLOGIST.name}
+                </CardDescription>
+              </div>
+            </div>
+            <div>{getStatusBadge(nextAppointment.status)}</div>
+          </CardHeader>
+          <CardContent className="p-5 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                  Fecha y Hora
+                </span>
+                <p className="text-base font-bold text-foreground">
+                  {formatShortDate(nextAppointment.startTime)} · {formatAppointmentTime(nextAppointment.startTime)} hrs
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Duración aproximada: {nextAppointment.durationMinutes} minutos
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                  Modalidad de Atención
+                </span>
+                <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                  {nextAppointment.modality === AppointmentModality.VIRTUAL ? (
+                    <>
+                      <Video className="size-4 text-primary" />
+                      <span>Sesión Virtual (Videollamada)</span>
+                    </>
+                  ) : (
+                    <>
+                      <MapPin className="size-4 text-primary" />
+                      <span>Presencial en Consultorio</span>
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {nextAppointment.modality === AppointmentModality.VIRTUAL
+                    ? "El enlace seguro se activa 10 min antes."
+                    : "Paseo de la Reforma #450, Piso 3, Consultorio 3B, CDMX."}
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                  Motivo / Enfoque
+                </span>
+                <p className="text-sm font-medium text-foreground">
+                  {nextAppointment.reason || "Sesión de seguimiento terapéutico"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Psicología clínica & Terapia Cognitivo-Conductual
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex flex-wrap items-center gap-2 border-t border-emerald-200/60 dark:border-emerald-900/40">
+              <Button asChild size="sm" className="rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold shadow-2xs">
+                <Link href={`/agenda/${nextAppointment.id}`}>
+                  Ver detalles de mi cita
+                </Link>
+              </Button>
+              <Button asChild variant="outline" size="sm" className="rounded-xl text-xs border-border/80">
+                <Link href={`/agenda/${nextAppointment.id}`}>
+                  Reagendar o Cancelar
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-border/70 shadow-2xs bg-card p-6 text-center">
+          <div className="max-w-md mx-auto space-y-3">
+            <div className="size-12 rounded-2xl bg-primary/10 text-primary mx-auto flex items-center justify-center">
+              <CalendarDays className="size-6" />
+            </div>
+            <h3 className="text-lg font-bold font-heading text-foreground">
+              No tienes citas programadas actualmente
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Recuerda que la constancia entre sesiones es clave para tu proceso terapéutico. Puedes solicitar una cita según la disponibilidad de tu psicóloga.
+            </p>
+            <Button asChild className="rounded-xl bg-primary text-primary-foreground text-xs font-semibold h-10 px-5 shadow-2xs">
+              <Link href="/agenda/nueva">
+                <Plus className="mr-1.5 size-4" />
+                Solicitar Cita con Dra. Ana García
+              </Link>
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* 2. Grid de Información: Terapeuta y Tareas Intersesión */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Mi Terapeuta */}
+        <Card className="border-border/70 shadow-2xs bg-card flex flex-col justify-between">
+          <div>
+            <CardHeader className="pb-3 border-b border-border/50 bg-muted/10">
+              <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
+                <User className="size-4 text-primary" />
+                <span>Tu Profesional Terapéutico</span>
+              </CardTitle>
+              <CardDescription className="text-xs text-muted-foreground">
+                Responsable del acompañamiento y custodia de tu expediente
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="p-5 space-y-4">
+              <div className="flex items-start gap-4">
+                <div className="size-14 rounded-2xl bg-primary/10 text-primary font-bold text-lg flex items-center justify-center shrink-0 font-heading">
+                  AG
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-base font-bold text-foreground">
+                      {MOCK_PSYCHOLOGIST.name}
+                    </h4>
+                    <Badge variant="outline" className="text-[10px] text-primary border-primary/30 bg-primary/5">
+                      {MOCK_PSYCHOLOGIST.licenseNumber}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground font-medium">
+                    {MOCK_PSYCHOLOGIST.specialty}
+                  </p>
+                  <p className="text-xs text-foreground/80 leading-relaxed pt-1">
+                    {MOCK_PSYCHOLOGIST.bio}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-muted/20 border border-border/50 space-y-2 text-xs">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Phone className="size-3.5 text-primary" />
+                  <span>Consultorio: {MOCK_PSYCHOLOGIST.phone}</span>
+                </div>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Mail className="size-3.5 text-primary" />
+                  <span>{MOCK_PSYCHOLOGIST.email}</span>
+                </div>
+              </div>
+            </CardContent>
+          </div>
+
+          <CardFooter className="p-4 border-t border-border/50 bg-muted/10 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <ShieldCheck className="size-4 text-emerald-600 shrink-0" />
+            <span>Atención confidencial bajo secreto profesional y normativa LFPDPPP.</span>
+          </CardFooter>
+        </Card>
+
+        {/* Tareas y Acuerdos Intersesión */}
+        <Card className="border-border/70 shadow-2xs bg-card flex flex-col justify-between">
+          <div>
+            <CardHeader className="pb-3 border-b border-border/50 bg-muted/10 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
+                  <Sparkles className="size-4 text-primary" />
+                  <span>Acuerdos y Tareas Intersesión</span>
+                </CardTitle>
+                <CardDescription className="text-xs text-muted-foreground">
+                  Compromisos acordados en tu última sesión terapéutica
+                </CardDescription>
+              </div>
+              <Badge variant="secondary" className="text-xs font-semibold">
+                {completedCount} de {homeworkList.length} listos
+              </Badge>
+            </CardHeader>
+
+            <CardContent className="p-5 space-y-3">
+              <div className="space-y-2.5">
+                {homeworkList.map((hw, idx) => {
+                  const isDone = Boolean(completedTasks[idx])
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => toggleTask(idx)}
+                      className={cn(
+                        "p-3 rounded-xl border transition-all cursor-pointer flex items-start gap-3 select-none",
+                        isDone
+                          ? "bg-emerald-50/50 border-emerald-200/80 text-foreground dark:bg-emerald-950/20 dark:border-emerald-800"
+                          : "bg-muted/20 border-border/60 hover:border-primary/40 text-foreground"
+                      )}
+                    >
+                      <button
+                        type="button"
+                        className={cn(
+                          "mt-0.5 size-4 rounded flex items-center justify-center transition-colors shrink-0",
+                          isDone ? "bg-emerald-600 text-white" : "border border-border"
+                        )}
+                      >
+                        {isDone && <Check className="size-3" />}
+                      </button>
+                      <div className="space-y-0.5 text-xs leading-relaxed">
+                        <p className={cn("font-medium", isDone && "line-through text-muted-foreground")}>
+                          {hw}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <p className="text-[11px] text-muted-foreground pt-1 leading-relaxed">
+                💡 Consejo: Llevar registro de tus ejercicios intersesión enriquece el trabajo durante tu próxima consulta.
+              </p>
+            </CardContent>
+          </div>
+
+          <CardFooter className="p-4 border-t border-border/50 bg-muted/10 flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Revisión programada:</span>
+            <span className="font-semibold text-foreground">En tu siguiente sesión</span>
+          </CardFooter>
+        </Card>
+      </div>
+
+      {/* 3. Mis Sesiones Recientes y Contacto de Emergencia */}
+      <div className="grid gap-6 md:grid-cols-3">
+        {/* Historial de Sesiones Recientes (2 columnas) */}
+        <div className="md:col-span-2">
+          <Card className="border-border/70 shadow-2xs bg-card">
+            <CardHeader className="pb-3 border-b border-border/50 bg-muted/10 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
+                  <CalendarDays className="size-4 text-primary" />
+                  <span>Historial de Sesiones Previas</span>
+                </CardTitle>
+                <CardDescription className="text-xs text-muted-foreground">
+                  Registro de tus consultas anteriores en PsicoAgenda
+                </CardDescription>
+              </div>
+              <Button asChild variant="ghost" size="sm" className="text-xs text-primary">
+                <Link href="/agenda" className="flex items-center gap-1">
+                  <span>Ver todas</span>
+                  <ChevronRight className="size-3.5" />
+                </Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="p-4 space-y-2">
+              {pastAppointments.length > 0 ? (
+                pastAppointments.slice(0, 3).map((apt) => (
+                  <div
+                    key={apt.id}
+                    className="p-3 rounded-xl border border-border/60 bg-muted/15 flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-foreground">
+                          {formatShortDate(apt.startTime)} · {formatAppointmentTime(apt.startTime)} hrs
+                        </span>
+                        <Badge variant="outline" className="text-[10px]">
+                          {apt.modality === AppointmentModality.VIRTUAL ? "Virtual" : "Presencial"}
+                        </Badge>
+                      </div>
+                      <p className="text-muted-foreground">{apt.reason || "Consulta psicológica"}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {getStatusBadge(apt.status)}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-6 text-center text-xs text-muted-foreground">
+                  Aún no tienes sesiones pasadas completadas.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Contacto de Emergencia Registrado (1 columna) */}
+        <div>
+          <Card className="border-border/70 shadow-2xs bg-card">
+            <CardHeader className="pb-3 border-b border-border/50 bg-muted/10">
+              <CardTitle className="text-sm font-semibold text-foreground font-heading flex items-center gap-2">
+                <Phone className="size-4 text-amber-600" />
+                <span>Contacto de Emergencia</span>
+              </CardTitle>
+              <CardDescription className="text-xs text-muted-foreground">
+                Registrado para tu seguridad clínica
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 space-y-3 text-xs">
+              {patient.emergencyContact ? (
+                <div className="p-3 rounded-xl bg-amber-50/50 border border-amber-200/80 dark:bg-amber-950/20 dark:border-amber-900/60 space-y-1.5">
+                  <p className="font-bold text-foreground">
+                    {patient.emergencyContact.name}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({patient.emergencyContact.relationship})
+                    </span>
+                  </p>
+                  <p className="font-mono text-amber-900 dark:text-amber-200 font-semibold">
+                    {patient.emergencyContact.phone}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={copyEmergencyPhone}
+                    className="w-full mt-2 h-7 text-[11px] rounded-lg border-amber-300 dark:border-amber-800"
+                  >
+                    {copiedPhone ? "✓ Copiado" : "Copiar teléfono"}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">Sin contacto de emergencia asignado.</p>
+              )}
+
+              <p className="text-[11px] text-muted-foreground leading-relaxed pt-1">
+                Puedes actualizar tu contacto de emergencia en tu sección de Perfil.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function DashboardView() {
+  const { user } = useSession()
+  const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
+
+  if (effectiveRole === UserRole.PATIENT) {
+    return <PatientDashboardView user={user} />
+  }
+
+  return <PsychologistDashboardView user={user} />
+}
+

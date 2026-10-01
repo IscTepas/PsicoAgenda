@@ -1,6 +1,7 @@
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { Search, UserPlus } from "lucide-react"
-import { APP_NAME } from "@psicoagenda/shared"
+import { APP_NAME, UserRole } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -21,12 +22,25 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { PageHeader } from "../components/page-header"
 import { MOCK_PATIENTS } from "@/lib/mock-data"
+import { createClient } from "@/lib/supabase/server"
+import { readIdentity } from "@/lib/session"
 
 export const metadata = {
   title: `Pacientes | ${APP_NAME}`,
 }
 
-export default function PatientsPage() {
+export default async function PatientsPage() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  const sessionUser = readIdentity(user)
+
+  // Acceso restringido al profesional de psicología
+  if (sessionUser?.role === UserRole.PATIENT) {
+    redirect("/dashboard")
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
