@@ -122,39 +122,39 @@ function isSameDay(d1: Date, d2: Date): boolean {
   )
 }
 
-function getWireframeStatusBadge(status: AppointmentStatus) {
+function getPsychologistStatusBadge(status: AppointmentStatus) {
   switch (status) {
     case AppointmentStatus.CONFIRMED:
       return (
-        <span className="inline-flex items-center gap-1 rounded-md border border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 px-2 py-0.5 text-[11px] font-semibold tracking-tight">
-          <CheckCircle2 className="size-3" />
+        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800 px-2.5 py-0.5 text-[11px] font-semibold tracking-tight shadow-2xs">
+          <CheckCircle2 className="size-3 text-emerald-600 dark:text-emerald-400" />
           Confirmada
         </span>
       )
     case AppointmentStatus.PENDING:
       return (
-        <span className="inline-flex items-center gap-1 rounded-md border border-zinc-400 dark:border-zinc-600 bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 px-2 py-0.5 text-[11px] font-medium">
-          <Clock className="size-3 text-zinc-500" />
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800 px-2.5 py-0.5 text-[11px] font-medium shadow-2xs">
+          <Clock className="size-3 text-amber-600 dark:text-amber-400" />
           Pendiente
         </span>
       )
     case AppointmentStatus.COMPLETED:
       return (
-        <span className="inline-flex items-center gap-1 rounded-md border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/40 text-zinc-600 dark:text-zinc-400 px-2 py-0.5 text-[11px] font-medium">
-          <CheckCircle2 className="size-3 text-zinc-400" />
+        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 text-muted-foreground px-2.5 py-0.5 text-[11px] font-medium">
+          <CheckCircle2 className="size-3 text-muted-foreground" />
           Completada
         </span>
       )
     case AppointmentStatus.CANCELLED:
       return (
-        <span className="inline-flex items-center gap-1 rounded-md border border-zinc-400 dark:border-zinc-600 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2 py-0.5 text-[11px] font-medium line-through">
-          <XCircle className="size-3 text-zinc-500" />
+        <span className="inline-flex items-center gap-1 rounded-full border border-destructive/30 bg-destructive/10 text-destructive px-2.5 py-0.5 text-[11px] font-medium line-through">
+          <XCircle className="size-3" />
           Cancelada
         </span>
       )
     default:
       return (
-        <span className="inline-flex items-center rounded-md border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+        <span className="inline-flex items-center rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
           {status}
         </span>
       )
@@ -175,7 +175,7 @@ function PsychologistDashboardView({ user }: { user: any }) {
 
   // Nombre y saludo personalizado: "Hola, Psic. [Nombre]"
   const rawName = user?.name || MOCK_PSYCHOLOGIST.name
-  const cleanName = rawName.replace(/^(Dra\.|Dr\.|Psic\.|Lic\.)\s*/i, "")
+  const cleanName = rawName.replace(/^(Dra.|Dr.|Psic.|Lic.)s*/i, "")
   const psychologistGreeting = `Hola, Psic. ${cleanName}`
 
   // Citas de hoy exclusivamente
@@ -284,7 +284,7 @@ function PsychologistDashboardView({ user }: { user: any }) {
           : apt
       )
     )
-    setActionNotice("Asistencia registrada. La sesión fue completada.")
+    setActionNotice("Asistencia registrada con éxito. La sesión fue completada.")
     setActiveSessionAppointment(null)
     setTimeout(() => setActionNotice(null), 3500)
   }
@@ -320,14 +320,16 @@ function PsychologistDashboardView({ user }: { user: any }) {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* 1. CABECERA (HEADER ESTRUCTURAL WIREFRAME) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-zinc-200 dark:border-zinc-800">
+      {/* 1. CABECERA (HEADER CON IDENTIDAD CLÍNICA) */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-border/70">
         <div className="space-y-1">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 font-heading">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground font-heading">
             {psychologistGreeting}
           </h1>
-          <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400">
-            {formattedTodayHeader} • Panel de Práctica Clínica
+          <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-2">
+            <span>{formattedTodayHeader}</span>
+            <span className="opacity-40">•</span>
+            <span className="font-medium text-emerald-700 dark:text-emerald-400">Panel de Práctica Clínica</span>
           </p>
         </div>
 
@@ -335,30 +337,30 @@ function PsychologistDashboardView({ user }: { user: any }) {
         <div className="flex items-center gap-3">
           <Link
             href="/notificaciones"
-            className="relative p-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 transition-colors shadow-2xs"
+            className="relative p-2.5 rounded-xl border border-border/80 bg-card text-foreground hover:bg-muted/70 hover:border-emerald-500/40 transition-colors shadow-2xs"
             title="Notificaciones de citas y recordatorios"
             aria-label="Notificaciones"
           >
             <Bell className="size-5" />
-            <span className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-[10px] font-bold shadow-xs">
+            <span className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px] font-bold shadow-xs ring-2 ring-background">
               3
             </span>
           </Link>
 
           <Link
             href="/perfil"
-            className="flex items-center gap-2.5 p-1.5 pr-3 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shadow-2xs group"
+            className="flex items-center gap-2.5 p-1.5 pr-3 rounded-xl border border-border/80 bg-card hover:bg-muted/60 hover:border-emerald-500/40 transition-colors shadow-2xs group"
             title="Configuración de Perfil Clínico"
           >
-            <div className="relative size-8 rounded-lg bg-zinc-200 dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold text-xs flex items-center justify-center border border-zinc-300 dark:border-zinc-600">
+            <div className="relative size-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 font-bold text-xs flex items-center justify-center border border-emerald-200 dark:border-emerald-800/60">
               {getInitials(rawName)}
-              <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-zinc-800 dark:bg-zinc-200 ring-2 ring-white dark:ring-zinc-900" />
+              <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-500 ring-2 ring-background" />
             </div>
             <div className="hidden md:block text-left">
-              <p className="text-xs font-semibold leading-tight text-zinc-900 dark:text-zinc-100 group-hover:underline truncate max-w-[120px]">
+              <p className="text-xs font-semibold leading-tight text-foreground group-hover:text-emerald-700 dark:group-hover:text-emerald-400 transition-colors truncate max-w-[120px]">
                 Psic. {cleanName}
               </p>
-              <p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-none">
+              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium leading-none mt-0.5">
                 En consulta
               </p>
             </div>
@@ -368,14 +370,14 @@ function PsychologistDashboardView({ user }: { user: any }) {
 
       {/* AVISO DE ACCIÓN (FEEDBACK) */}
       {actionNotice && (
-        <div className="flex items-center justify-between rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800/80 px-4 py-3 text-xs text-zinc-900 dark:text-zinc-100 shadow-2xs animate-in fade-in duration-200">
+        <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-50/90 dark:bg-emerald-950/50 px-4 py-3 text-xs text-emerald-900 dark:text-emerald-100 shadow-2xs animate-in fade-in duration-200">
           <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="size-4 text-zinc-700 dark:text-zinc-300" />
+            <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
             <span className="font-medium">{actionNotice}</span>
           </div>
           <button
             onClick={() => setActionNotice(null)}
-            className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 text-xs px-2 py-0.5"
+            className="text-emerald-700 dark:text-emerald-300 hover:text-emerald-950 dark:hover:text-white text-xs px-2 py-0.5"
           >
             Cerrar
           </button>
@@ -384,55 +386,59 @@ function PsychologistDashboardView({ user }: { user: any }) {
 
       {/* 2. SECCIÓN DE ACCIONES RÁPIDAS (3 BOTONES PRINCIPALES DESTACADOS) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-        {/* Botón 1: + Nueva Cita */}
+        {/* Botón 1: + Nueva Cita (Verde clínico base) */}
         <Link
           href="/agenda/nueva"
-          className="group flex items-center justify-between p-4 rounded-xl border-2 border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 transition-all shadow-xs"
+          className="group flex items-center justify-between p-4 rounded-xl border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 transition-all shadow-sm active:scale-[0.99]"
         >
           <div className="space-y-0.5">
             <div className="flex items-center gap-2">
               <Plus className="size-4 shrink-0 stroke-[2.5]" />
               <span className="font-semibold text-sm tracking-tight">+ Nueva Cita</span>
             </div>
-            <p className="text-xs text-zinc-300 dark:text-zinc-600">
+            <p className="text-xs text-emerald-100">
               Agendar consulta en calendario
             </p>
           </div>
-          <ChevronRight className="size-4 opacity-70 group-hover:translate-x-0.5 transition-transform" />
+          <ChevronRight className="size-4 opacity-80 group-hover:translate-x-0.5 transition-transform" />
         </Link>
 
         {/* Botón 2: + Nuevo Paciente */}
         <Link
           href="/pacientes"
-          className="group flex items-center justify-between p-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/80 transition-all shadow-2xs"
+          className="group flex items-center justify-between p-4 rounded-xl border border-border/80 bg-card text-foreground hover:border-emerald-500/50 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20 transition-all shadow-2xs"
         >
           <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <UserPlus className="size-4 shrink-0 text-zinc-700 dark:text-zinc-300 stroke-[2.2]" />
-              <span className="font-semibold text-sm tracking-tight">+ Nuevo Paciente</span>
+            <div className="flex items-center gap-2.5">
+              <div className="size-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                <UserPlus className="size-3.5 stroke-[2.2]" />
+              </div>
+              <span className="font-semibold text-sm tracking-tight group-hover:text-emerald-700 dark:group-hover:text-emerald-300 transition-colors">+ Nuevo Paciente</span>
             </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="text-xs text-muted-foreground pl-9">
               Registrar expediente clínico
             </p>
           </div>
-          <ChevronRight className="size-4 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
+          <ChevronRight className="size-4 text-muted-foreground group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
         </Link>
 
         {/* Botón 3: Generar Reporte */}
         <Link
           href="/reportes"
-          className="group flex items-center justify-between p-4 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-800/80 transition-all shadow-2xs"
+          className="group flex items-center justify-between p-4 rounded-xl border border-border/80 bg-card text-foreground hover:border-emerald-500/50 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20 transition-all shadow-2xs"
         >
           <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <FileText className="size-4 shrink-0 text-zinc-700 dark:text-zinc-300 stroke-[2.2]" />
-              <span className="font-semibold text-sm tracking-tight">Generar Reporte</span>
+            <div className="flex items-center gap-2.5">
+              <div className="size-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                <FileText className="size-3.5 stroke-[2.2]" />
+              </div>
+              <span className="font-semibold text-sm tracking-tight group-hover:text-emerald-700 dark:group-hover:text-emerald-300 transition-colors">Generar Reporte</span>
             </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="text-xs text-muted-foreground pl-9">
               Hojas de asistencia y métricas
             </p>
           </div>
-          <ChevronRight className="size-4 text-zinc-400 group-hover:translate-x-0.5 transition-transform" />
+          <ChevronRight className="size-4 text-muted-foreground group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all" />
         </Link>
       </div>
 
@@ -440,30 +446,30 @@ function PsychologistDashboardView({ user }: { user: any }) {
       <div className="grid gap-6 lg:grid-cols-3">
         {/* 3. COLUMNA PRINCIPAL (IZQUIERDA - PRÓXIMAS CITAS PROGRAMADAS PARA HOY) */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-border/70">
             <div>
               <div className="flex items-center gap-2.5">
-                <h2 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight font-heading">
+                <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight font-heading">
                   Próximas Citas (Hoy)
                 </h2>
-                <span className="px-2 py-0.5 text-xs font-semibold rounded-md border border-zinc-300 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200">
+                <span className="px-2 py-0.5 text-xs font-semibold rounded-md border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
                   {todayAppointments.length}
                 </span>
               </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Consultas agendadas exclusivamente para el día de hoy
               </p>
             </div>
 
             {/* Filtros rápidos: Todas, Confirmadas, Pendientes */}
-            <div className="flex items-center rounded-lg border border-zinc-300 dark:border-zinc-700 p-0.5 bg-zinc-50 dark:bg-zinc-900 text-xs self-start sm:self-auto">
+            <div className="flex items-center rounded-lg border border-border/80 p-0.5 bg-muted/40 text-xs self-start sm:self-auto">
               <button
                 onClick={() => setAgendaFilter("all")}
                 className={cn(
                   "px-2.5 py-1 rounded-md font-medium transition-colors",
                   agendaFilter === "all"
-                    ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs border border-zinc-200 dark:border-zinc-700"
-                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                    ? "bg-emerald-600 text-white shadow-2xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Todas ({todayAppointments.length})
@@ -473,8 +479,8 @@ function PsychologistDashboardView({ user }: { user: any }) {
                 className={cn(
                   "px-2.5 py-1 rounded-md font-medium transition-colors",
                   agendaFilter === "confirmed"
-                    ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs border border-zinc-200 dark:border-zinc-700"
-                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                    ? "bg-emerald-600 text-white shadow-2xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Confirmadas ({confirmedTodayCount})
@@ -484,8 +490,8 @@ function PsychologistDashboardView({ user }: { user: any }) {
                 className={cn(
                   "px-2.5 py-1 rounded-md font-medium transition-colors",
                   agendaFilter === "pending"
-                    ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-2xs border border-zinc-200 dark:border-zinc-700"
-                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                    ? "bg-emerald-600 text-white shadow-2xs font-semibold"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 Pendientes ({pendingTodayCount})
@@ -506,51 +512,51 @@ function PsychologistDashboardView({ user }: { user: any }) {
               return (
                 <div
                   key={apt.id}
-                  className="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 transition-all hover:border-zinc-400 dark:hover:border-zinc-600 shadow-2xs space-y-3"
+                  className="rounded-xl border border-border/80 bg-card p-4 transition-all hover:border-emerald-500/40 hover:shadow-xs shadow-2xs space-y-3"
                 >
                   {/* Fila superior: Hora, Modalidad y Estado de la cita */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 dark:border-zinc-800/80 pb-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2.5">
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-mono text-xs font-semibold border border-zinc-200 dark:border-zinc-700">
-                        <Clock className="size-3 text-zinc-600 dark:text-zinc-400" />
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-mono text-xs font-semibold border border-emerald-200/80 dark:border-emerald-800/60">
+                        <Clock className="size-3 text-emerald-600 dark:text-emerald-400" />
                         {startTime} – {endTime}
                       </span>
 
                       {apt.modality === AppointmentModality.VIRTUAL ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
-                          <Video className="size-3 text-zinc-500" />
+                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground px-2 py-0.5 rounded-md border border-border/60 bg-muted/40">
+                          <Video className="size-3 text-emerald-600 dark:text-emerald-400" />
                           Virtual
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-zinc-600 dark:text-zinc-400 px-2 py-0.5 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50">
-                          <MapPin className="size-3 text-zinc-500" />
+                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground px-2 py-0.5 rounded-md border border-border/60 bg-muted/40">
+                          <MapPin className="size-3 text-emerald-600 dark:text-emerald-400" />
                           Presencial
                         </span>
                       )}
                     </div>
 
-                    {/* Estado de la cita (Confirmada / Pendiente) */}
-                    <div>{getWireframeStatusBadge(apt.status)}</div>
+                    {/* Estado de la cita con color verde / estado */}
+                    <div>{getPsychologistStatusBadge(apt.status)}</div>
                   </div>
 
                   {/* Fila central: Nombre del Paciente y Motivo de Consulta */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="size-9 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center font-bold text-xs text-zinc-800 dark:text-zinc-200 shrink-0">
+                      <div className="size-9 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/60 flex items-center justify-center font-bold text-xs text-emerald-800 dark:text-emerald-200 shrink-0">
                         {getInitials(patientName)}
                       </div>
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <p className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">
+                          <p className="font-semibold text-sm text-foreground">
                             {patientName}
                           </p>
                           {patient?.isMinor && (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800">
+                            <span className="text-[10px] px-1.5 py-0.2 rounded border border-border/70 text-muted-foreground bg-muted/50">
                               Menor de edad
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1">
+                        <p className="text-xs text-muted-foreground line-clamp-1">
                           {apt.reason || "Sesión de terapia clínica programada"}
                         </p>
                       </div>
@@ -558,15 +564,15 @@ function PsychologistDashboardView({ user }: { user: any }) {
                   </div>
 
                   {/* Fila inferior: Botones de acceso rápido "Ver Expediente" y "Iniciar Sesión" */}
-                  <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 flex flex-wrap items-center justify-between gap-2">
+                  <div className="pt-2 border-t border-border/40 flex flex-wrap items-center justify-between gap-2">
                     <Button
                       variant="outline"
                       size="sm"
                       asChild
-                      className="h-8 text-xs font-medium border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
+                      className="h-8 text-xs font-medium border-border/80 text-foreground hover:border-emerald-400 hover:text-emerald-700 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 rounded-lg"
                     >
                       <Link href={`/pacientes/${apt.patientId}`}>
-                        <FileText className="mr-1.5 size-3.5 text-zinc-500" />
+                        <FileText className="mr-1.5 size-3.5 text-muted-foreground" />
                         Ver Expediente
                       </Link>
                     </Button>
@@ -575,7 +581,7 @@ function PsychologistDashboardView({ user }: { user: any }) {
                       <Button
                         size="sm"
                         onClick={() => setActiveSessionAppointment(apt)}
-                        className="h-8 text-xs font-semibold bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200 rounded-lg shadow-xs"
+                        className="h-8 text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 rounded-lg shadow-xs active:scale-[0.98]"
                       >
                         <CheckCircle2 className="mr-1.5 size-3.5" />
                         Iniciar Sesión
@@ -587,18 +593,18 @@ function PsychologistDashboardView({ user }: { user: any }) {
             })}
 
             {filteredTodayAppointments.length === 0 && (
-              <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 p-8 text-center space-y-2.5 bg-white dark:bg-zinc-900">
-                <CalendarDays className="size-8 mx-auto text-zinc-400 stroke-1" />
-                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+              <div className="rounded-xl border border-dashed border-border/80 p-8 text-center space-y-2.5 bg-card">
+                <CalendarDays className="size-8 mx-auto text-muted-foreground stroke-1" />
+                <p className="text-sm font-semibold text-foreground">
                   No hay citas {agendaFilter !== "all" ? `${agendaFilter}s` : ""} programadas para hoy
                 </p>
-                <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
                   Puedes revisar las demás citas en la agenda o registrar una nueva sesión clínica.
                 </p>
                 <Button
                   size="sm"
                   asChild
-                  className="mt-2 text-xs bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 rounded-lg"
+                  className="mt-2 text-xs bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg"
                 >
                   <Link href="/agenda/nueva">+ Nueva Cita</Link>
                 </Button>
@@ -609,18 +615,18 @@ function PsychologistDashboardView({ user }: { user: any }) {
 
         {/* 4. COLUMNA SECUNDARIA (DERECHA - MINI-CALENDARIO Y MÉTRICAS RÁPIDAS) */}
         <div className="space-y-4">
-          {/* MINI-CALENDARIO MENSUAL ESTRUCTURAL */}
-          <div className="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 space-y-3.5 shadow-2xs">
+          {/* MINI-CALENDARIO MENSUAL CON ACENTOS VERDES */}
+          <div className="rounded-xl border border-border/80 bg-card p-4 space-y-3.5 shadow-2xs">
             {/* Cabecera del mini-calendario */}
-            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
-              <span className="font-bold text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 tracking-tight">
+            <div className="flex items-center justify-between border-b border-border/40 pb-2.5">
+              <span className="font-bold text-xs sm:text-sm text-foreground tracking-tight">
                 {formattedMonth}
               </span>
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={handlePrevMonth}
-                  className="p-1 rounded-md border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                  className="p-1 rounded-md border border-border/70 hover:bg-muted/70 text-muted-foreground hover:text-foreground"
                   title="Mes anterior"
                   aria-label="Mes anterior"
                 >
@@ -629,7 +635,7 @@ function PsychologistDashboardView({ user }: { user: any }) {
                 <button
                   type="button"
                   onClick={handleNextMonth}
-                  className="p-1 rounded-md border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                  className="p-1 rounded-md border border-border/70 hover:bg-muted/70 text-muted-foreground hover:text-foreground"
                   title="Mes siguiente"
                   aria-label="Mes siguiente"
                 >
@@ -639,7 +645,7 @@ function PsychologistDashboardView({ user }: { user: any }) {
             </div>
 
             {/* Días de la semana abreviados */}
-            <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase">
+            <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-muted-foreground uppercase">
               <span>Lu</span>
               <span>Ma</span>
               <span>Mi</span>
@@ -660,10 +666,10 @@ function PsychologistDashboardView({ user }: { user: any }) {
                     onClick={() => setSelectedCalendarDate(item.date)}
                     className={cn(
                       "h-8 rounded-md flex flex-col items-center justify-center relative transition-colors text-[11px]",
-                      !item.isCurrentMonth && "text-zinc-300 dark:text-zinc-600",
-                      item.isCurrentMonth && "text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800",
-                      item.isToday && "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold hover:bg-zinc-800",
-                      item.isSelected && !item.isToday && "ring-1 ring-zinc-500 font-semibold"
+                      !item.isCurrentMonth && "text-muted-foreground/40",
+                      item.isCurrentMonth && "text-foreground hover:bg-muted/60",
+                      item.isToday && "bg-emerald-600 text-white font-bold hover:bg-emerald-700 shadow-xs",
+                      item.isSelected && !item.isToday && "ring-2 ring-emerald-500 font-semibold text-emerald-700 dark:text-emerald-300"
                     )}
                   >
                     <span>{dayNumber}</span>
@@ -673,8 +679,8 @@ function PsychologistDashboardView({ user }: { user: any }) {
                         className={cn(
                           "size-1 rounded-full absolute bottom-1",
                           item.isToday
-                            ? "bg-white dark:bg-zinc-900"
-                            : "bg-zinc-900 dark:bg-zinc-200"
+                            ? "bg-white"
+                            : "bg-emerald-600 dark:bg-emerald-400"
                         )}
                       />
                     )}
@@ -684,14 +690,14 @@ function PsychologistDashboardView({ user }: { user: any }) {
             </div>
 
             {/* Pie del calendario con leyenda y enlace directo a la agenda completa */}
-            <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
+            <div className="pt-2 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <span className="size-1.5 rounded-full bg-zinc-800 dark:bg-zinc-200 inline-block" />
+                <span className="size-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400 inline-block" />
                 Días con citas
               </span>
               <Link
                 href="/agenda"
-                className="font-medium text-zinc-900 dark:text-zinc-100 hover:underline flex items-center gap-1"
+                className="font-medium text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline flex items-center gap-1"
               >
                 <span>Ver agenda</span>
                 <ChevronRight className="size-3" />
@@ -699,64 +705,65 @@ function PsychologistDashboardView({ user }: { user: any }) {
             </div>
           </div>
 
-          {/* BLOQUE DE MÉTRICAS RÁPIDAS (ESTRUCTURAL WIREFRAME) */}
-          <div className="rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4 space-y-3 shadow-2xs">
-            <div className="flex items-center justify-between pb-2 border-b border-zinc-200 dark:border-zinc-800">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-900 dark:text-zinc-100 font-heading">
+          {/* BLOQUE DE MÉTRICAS RÁPIDAS CON ACENTOS VERDES */}
+          <div className="rounded-xl border border-border/80 bg-card p-4 space-y-3 shadow-2xs">
+            <div className="flex items-center justify-between pb-2 border-b border-border/50">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground font-heading flex items-center gap-1.5">
+                <span className="size-2 rounded-full bg-emerald-500 inline-block" />
                 Métricas Rápidas
               </h3>
-              <span className="text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
+              <span className="text-[10px] text-muted-foreground font-mono">
                 Semana en curso
               </span>
             </div>
 
             <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between py-1.5 border-b border-zinc-100 dark:border-zinc-800/60">
-                <span className="text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
-                  <CalendarDays className="size-3.5 text-zinc-500" />
+              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                <span className="text-muted-foreground flex items-center gap-2">
+                  <CalendarDays className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                   Citas hoy
                 </span>
-                <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm tabular-nums">
+                <span className="font-bold text-foreground text-sm tabular-nums">
                   {todayAppointments.length}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between py-1.5 border-b border-zinc-100 dark:border-zinc-800/60">
-                <span className="text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
-                  <CheckCircle2 className="size-3.5 text-zinc-500" />
+              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                <span className="text-muted-foreground flex items-center gap-2">
+                  <CheckCircle2 className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                   Confirmadas hoy
                 </span>
-                <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm tabular-nums">
+                <span className="font-bold text-emerald-700 dark:text-emerald-400 text-sm tabular-nums">
                   {confirmedTodayCount}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between py-1.5 border-b border-zinc-100 dark:border-zinc-800/60">
-                <span className="text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
-                  <Clock className="size-3.5 text-zinc-500" />
+              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                <span className="text-muted-foreground flex items-center gap-2">
+                  <Clock className="size-3.5 text-amber-600 dark:text-amber-400" />
                   Pendientes hoy
                 </span>
-                <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm tabular-nums">
+                <span className="font-bold text-amber-700 dark:text-amber-400 text-sm tabular-nums">
                   {pendingTodayCount}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between py-1.5 border-b border-zinc-100 dark:border-zinc-800/60">
-                <span className="text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
-                  <XCircle className="size-3.5 text-zinc-500" />
+              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
+                <span className="text-muted-foreground flex items-center gap-2">
+                  <XCircle className="size-3.5 text-red-500 dark:text-red-400" />
                   Canceladas esta semana
                 </span>
-                <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm tabular-nums">
+                <span className="font-bold text-red-600 dark:text-red-400 text-sm tabular-nums">
                   {cancelledThisWeekCount}
                 </span>
               </div>
 
               <div className="flex items-center justify-between py-1.5">
-                <span className="text-zinc-600 dark:text-zinc-400 flex items-center gap-2">
-                  <Users className="size-3.5 text-zinc-500" />
+                <span className="text-muted-foreground flex items-center gap-2">
+                  <Users className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                   Pacientes activos
                 </span>
-                <span className="font-bold text-zinc-900 dark:text-zinc-100 text-sm tabular-nums">
+                <span className="font-bold text-foreground text-sm tabular-nums">
                   {MOCK_PATIENTS.length}
                 </span>
               </div>
@@ -773,33 +780,33 @@ function PsychologistDashboardView({ user }: { user: any }) {
             if (!open) setActiveSessionAppointment(null)
           }}
         >
-          <DialogContent className="max-w-md border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
+          <DialogContent className="max-w-md border-border/80 bg-background text-foreground">
             <DialogHeader>
               <DialogTitle className="text-base font-bold flex items-center gap-2">
-                <CheckCircle2 className="size-5 text-zinc-800 dark:text-zinc-200" />
+                <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400" />
                 <span>Gestión de Sesión Clínica</span>
               </DialogTitle>
-              <DialogDescription className="text-xs text-zinc-500 dark:text-zinc-400">
+              <DialogDescription className="text-xs text-muted-foreground">
                 Paciente: {getPatientById(activeSessionAppointment.patientId)?.name}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-3 py-2 text-xs">
-              <div className="p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 space-y-1.5">
+              <div className="p-3 rounded-lg bg-muted/40 border border-border/70 space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Horario programado:</span>
+                  <span className="text-muted-foreground">Horario programado:</span>
                   <span className="font-mono font-semibold">
                     {formatAppointmentTime(new Date(activeSessionAppointment.startTime))}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Modalidad:</span>
+                  <span className="text-muted-foreground">Modalidad:</span>
                   <span className="font-medium capitalize">
                     {activeSessionAppointment.modality === AppointmentModality.VIRTUAL ? "Videollamada" : "Presencial"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Motivo:</span>
+                  <span className="text-muted-foreground">Motivo:</span>
                   <span className="font-medium truncate max-w-[200px]">
                     {activeSessionAppointment.reason || "Sin especificar"}
                   </span>
@@ -807,15 +814,15 @@ function PsychologistDashboardView({ user }: { user: any }) {
               </div>
 
               {activeSessionAppointment.modality === AppointmentModality.VIRTUAL && (
-                <div className="p-3 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-zinc-100/70 dark:bg-zinc-800/40 flex items-center justify-between">
+                <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Video className="size-4 text-zinc-700 dark:text-zinc-300" />
+                    <Video className="size-4 text-emerald-600 dark:text-emerald-400" />
                     <span className="font-medium text-xs">Enlace de videollamada</span>
                   </div>
                   <Button
                     size="sm"
                     variant="outline"
-                    className="h-7 text-xs border-zinc-300 dark:border-zinc-600"
+                    className="h-7 text-xs border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100/60"
                     onClick={() => {
                       window.open("https://meet.google.com/psi-diag-ses", "_blank")
                     }}
@@ -826,11 +833,11 @@ function PsychologistDashboardView({ user }: { user: any }) {
               )}
             </div>
 
-            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border/60">
               <Button
                 variant="outline"
                 size="sm"
-                className="text-xs border-zinc-300 dark:border-zinc-700"
+                className="text-xs"
                 onClick={() => setActiveSessionAppointment(null)}
               >
                 Cerrar
@@ -840,7 +847,7 @@ function PsychologistDashboardView({ user }: { user: any }) {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="text-xs border-zinc-400 dark:border-zinc-600"
+                  className="text-xs border-amber-400 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300"
                   onClick={() => handleConfirmAppointment(activeSessionAppointment.id)}
                 >
                   Confirmar Cita
@@ -849,7 +856,7 @@ function PsychologistDashboardView({ user }: { user: any }) {
 
               <Button
                 size="sm"
-                className="text-xs bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900"
+                className="text-xs bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500 shadow-xs"
                 onClick={() => handleRegisterAttendance(activeSessionAppointment.id)}
               >
                 Registrar Asistencia
