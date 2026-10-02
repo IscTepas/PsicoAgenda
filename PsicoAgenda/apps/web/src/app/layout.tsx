@@ -53,6 +53,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="es-MX"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <head>
         {!serwistEnabled && (
@@ -74,7 +75,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           />
         )}
       </head>
-      <body className="flex min-h-full flex-col">
+      <body className="flex min-h-full flex-col" suppressHydrationWarning>
         <SerwistProvider swUrl="/sw.js" disable={!serwistEnabled}>
           <Providers>{children}</Providers>
         </SerwistProvider>
