@@ -45,6 +45,15 @@ export const NAV_ITEMS: NavItem[] = [
  */
 export function navItemsForRole(role: UserRole | null | undefined): NavItem[] {
   const activeRole = role ?? UserRole.PSYCHOLOGIST
+  if (activeRole === UserRole.PSYCHOLOGIST) {
+    return [
+      { href: "/dashboard", label: "Inicio", roles: [UserRole.PSYCHOLOGIST] },
+      { href: "/agenda", label: "Agenda", roles: [UserRole.PSYCHOLOGIST] },
+      { href: "/pacientes", label: "Pacientes", roles: [UserRole.PSYCHOLOGIST] },
+      { href: "/reportes", label: "Reportes", roles: [UserRole.PSYCHOLOGIST] },
+      { href: "/perfil", label: "Configuración", roles: [UserRole.PSYCHOLOGIST] },
+    ]
+  }
   return NAV_ITEMS.filter((item) => item.roles.includes(activeRole)).map((item) => {
     if (activeRole === UserRole.PATIENT && item.href === "/agenda") {
       return { ...item, label: "Mis Citas" }

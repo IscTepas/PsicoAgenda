@@ -208,6 +208,20 @@ export const MOCK_APPOINTMENTS: Appointment[] = [
     createdAt: new Date("2024-09-20T10:00:00.000Z"),
     updatedAt: new Date("2024-09-21T10:00:00.000Z"),
   },
+  {
+    id: "apt-8",
+    psychologistId: MOCK_PSYCHOLOGIST.id,
+    patientId: MOCK_PATIENTS[1].id,
+    startTime: new Date(today.getTime() + 9 * 60 * 60 * 1000), // 18:00 hoy
+    durationMinutes: 50,
+    status: AppointmentStatus.CONFIRMED,
+    modality: AppointmentModality.IN_PERSON,
+    attendanceStatus: undefined,
+    reason: "Sesión de cierre semanal y regulación de estrés",
+    notes: "Revisar acuerdos de la sesión previa.",
+    createdAt: new Date("2024-09-26T10:00:00.000Z"),
+    updatedAt: new Date("2024-09-26T10:00:00.000Z"),
+  },
 ]
 
 export const MOCK_NOTIFICATIONS: Notification[] = [

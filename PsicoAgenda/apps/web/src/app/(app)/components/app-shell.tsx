@@ -20,6 +20,7 @@ import {
   Users,
   Bell,
   BarChart3,
+  Settings,
   type LucideIcon,
 } from "lucide-react"
 
@@ -29,7 +30,7 @@ const ICONS_BY_HREF: Record<string, LucideIcon> = {
   "/pacientes": Users,
   "/notificaciones": Bell,
   "/reportes": BarChart3,
-  "/perfil": User,
+  "/perfil": Settings,
 }
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -215,8 +216,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Button>
         </header>
 
-        <main className="flex-1 p-4 lg:p-6">{children}</main>
+        <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">{children}</main>
       </div>
+
+      {/* Menú Inferior (móvil) con enlaces directos: Inicio, Agenda, Pacientes, Reportes y Configuración */}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-background/95 backdrop-blur-md border-t border-border flex items-center justify-around h-16 px-1 safe-area-pb">
+        {filteredNav.map((item) => {
+          const Icon = ICONS_BY_HREF[item.href] ?? PanelLeft
+          const isActive = pathname === item.href
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex flex-col items-center justify-center gap-1 flex-1 py-1.5 text-[10px] font-medium transition-colors",
+                isActive
+                  ? "text-foreground font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Icon className={cn("size-5", isActive ? "stroke-[2.5]" : "stroke-2")} />
+              <span className="truncate max-w-[58px]">{item.label}</span>
+            </Link>
+          )
+        })}
+      </nav>
     </div>
   )
 }
