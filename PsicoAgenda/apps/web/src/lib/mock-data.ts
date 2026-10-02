@@ -413,3 +413,13 @@ export function getLatestHomeworkForPatient(patientId: string): string[] {
   }
   return homeworks
 }
+
+export function getLatestAttendedAppointment(patientId: string): Appointment | undefined {
+  const appointments = MOCK_APPOINTMENTS.filter(
+    (apt) =>
+      apt.patientId === patientId &&
+      (apt.status === AppointmentStatus.COMPLETED || apt.attendanceStatus === AttendanceStatus.ATTENDED)
+  ).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+
+  return appointments[0]
+}
