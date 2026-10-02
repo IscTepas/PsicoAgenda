@@ -2,37 +2,33 @@
 
 import { useState, useMemo } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   Search,
   X,
-  ArrowUpDown,
-  Calendar,
-  CalendarCheck,
-  FileText,
   UserPlus,
+  CalendarCheck,
+  Clock,
+  UserX,
   Phone,
   Mail,
-  User,
-  Shield,
-  SlidersHorizontal,
-  Clock,
   ChevronRight,
-  Sparkles,
+  FileText,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { PageHeader } from "../components/page-header"
-import { type Patient } from "@psicoagenda/shared"
+import { useSession } from "@/lib/use-session"
+import { UserRole, AppointmentStatus } from "@psicoagenda/shared"
 import {
   MOCK_PATIENTS,
+  MOCK_APPOINTMENTS,
   getLatestAttendedAppointment,
-  formatAppointmentTime,
 } from "@/lib/mock-data"
 
-type SortOption = "recientes" | "alfabetico"
-type FilterChip = "todos" | "con-citas" | "sin-citas" | "menores"
+type FilterChip = "todos" | "recientes" | "proxima-cita" | "inactivos"
 
 function getInitials(name: string): string {
   const parts = name.trim().split(" ")
@@ -42,9 +38,8 @@ function getInitials(name: string): string {
   return (name[0] ?? "P").toUpperCase()
 }
 
-function formatFullDate(date: Date): string {
+function formatDate(date: Date): string {
   return date.toLocaleDateString("es-MX", {
-    weekday: "short",
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -52,29 +47,72 @@ function formatFullDate(date: Date): string {
 }
 
 export function PantallaBusquedaPaciente() {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [sortOption, setSortOption] = useState<SortOption>("recientes")
-  const [activeFilter, setActiveFilter] = useState<FilterChip>("todos")
+  const router = useRouter()
+  const { user, isLoading } = useSession()
 
-  // Enriquecer cada paciente con su última cita atendida calculada
+  // Protección de acceso exclusiva para profesional de psicología
+  const effectiveRole =
+    user?.role ??
+    (user?.email?.toLowerCase().includes("paciente")
+      ? UserRole.PATIENT
+      : UserRole.PSYCHOLOGIST)
+
+  if (!isLoading && effectiveRole === UserRole.PATIENT) {
+    router.replace("/dashboard")
+    return null
+  }
+
+  const [searchQuery, setSearchQuery] = useState("")
+  const [activeChip, setActiveChip] = useState<FilterChip>("todos")
+
+  // Enriquecer pacientes con datos de citas calculados
   const enrichedPatients = useMemo(() => {
+    const now = new Date()
+
     return MOCK_PATIENTS.map((patient) => {
       const latestAttended = getLatestAttendedAppointment(patient.id)
+
+      // Cita programada próxima
+      const upcomingApt = MOCK_APPOINTMENTS.filter(
+        (apt) =>
+          apt.patientId === patient.id &&
+          (apt.status === AppointmentStatus.CONFIRMED ||
+            apt.status === AppointmentStatus.PENDING) &&
+          new Date(apt.startTime).getTime() >= now.getTime() - 12 * 60 * 60 * 1000
+      ).sort(
+        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+      )[0]
+
+      // Inactividad: sin consultas en los últimos 30 días o sin consultas
+      const daysSinceLastSession = latestAttended
+        ? Math.floor(
+            (now.getTime() - new Date(latestAttended.startTime).getTime()) /
+              (1000 * 60 * 60 * 24)
+          )
+        : 999
+
+      const isInactive = !latestAttended || daysSinceLastSession > 30
+
       return {
         ...patient,
         latestAttended,
-        effectiveDate: latestAttended ? latestAttended.startTime.getTime() : patient.createdAt.getTime(),
+        upcomingApt,
+        daysSinceLastSession,
+        isInactive,
+        effectiveDate: latestAttended
+          ? new Date(latestAttended.startTime).getTime()
+          : new Date(patient.createdAt).getTime(),
       }
     })
   }, [])
 
-  // Filtrado y ordenamiento de pacientes
+  // Filtrado reactivo de pacientes
   const filteredPatients = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
 
     return enrichedPatients
       .filter((patient) => {
-        // Filtro por término de búsqueda (nombre o ID)
+        // Filtro de texto por nombre, correo o ID
         const matchesQuery =
           !query ||
           patient.name.toLowerCase().includes(query) ||
@@ -84,48 +122,48 @@ export function PantallaBusquedaPaciente() {
 
         if (!matchesQuery) return false
 
-        // Filtro por chip
-        if (activeFilter === "con-citas") return !!patient.latestAttended
-        if (activeFilter === "sin-citas") return !patient.latestAttended
-        if (activeFilter === "menores") return patient.isMinor
+        // Filtro por Chips / Tags requeridos
+        if (activeChip === "recientes") {
+          return !!patient.latestAttended
+        }
+        if (activeChip === "proxima-cita") {
+          return !!patient.upcomingApt
+        }
+        if (activeChip === "inactivos") {
+          return patient.isInactive && !patient.upcomingApt
+        }
 
         return true
       })
       .sort((a, b) => {
-        if (sortOption === "alfabetico") {
-          return a.name.localeCompare(b.name, "es", { sensitivity: "base" })
+        if (activeChip === "recientes") {
+          return b.effectiveDate - a.effectiveDate
         }
-        // "recientes": más recientes primero según su última cita atendida o registro
-        return b.effectiveDate - a.effectiveDate
+        return a.name.localeCompare(b.name, "es", { sensitivity: "base" })
       })
-  }, [enrichedPatients, searchQuery, sortOption, activeFilter])
+  }, [enrichedPatients, searchQuery, activeChip])
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Cabecera Principal */}
       <PageHeader
-        title="Búsqueda de Pacientes"
+        title="Directorio de Pacientes"
         description="Localiza expedientes clínicos, consulta asistencias recientes y gestiona el seguimiento terapéutico."
         actions={
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground hidden sm:inline">
-              {MOCK_PATIENTS.length} pacientes registrados
-            </span>
-            <Button
-              size="sm"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold rounded-xl shadow-xs"
-              asChild
-            >
-              <Link href="/agenda">
-                <Calendar className="mr-1.5 size-3.5" />
-                Nueva Cita
-              </Link>
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold rounded-xl shadow-xs"
+            asChild
+          >
+            <Link href="/agenda">
+              <UserPlus className="mr-1.5 size-3.5" />
+              Nuevo Paciente
+            </Link>
+          </Button>
         }
       />
 
-      {/* SECCIÓN 1: BARRA DE BÚSQUEDA PRINCIPAL GRANDE */}
+      {/* SECCIÓN SUPERIOR: BARRA DE BÚSQUEDA ANCHA Y PROMINENTE */}
       <div className="relative">
         <div className="relative flex items-center">
           <Search className="absolute left-4 size-5 text-muted-foreground pointer-events-none" />
@@ -133,9 +171,9 @@ export function PantallaBusquedaPaciente() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar paciente por nombre o ID (ej. María López, pat-1)..."
-            className="h-13 pl-12 pr-12 text-sm sm:text-base rounded-2xl bg-card border-border/80 shadow-2xs focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary placeholder:text-muted-foreground/70"
-            aria-label="Buscar paciente por nombre o ID"
+            placeholder="Buscar por nombre, correo o ID"
+            className="h-12 sm:h-13 pl-12 pr-12 text-sm sm:text-base rounded-2xl bg-card border-border/80 shadow-2xs focus-visible:ring-2 focus-visible:ring-primary focus-visible:border-primary placeholder:text-muted-foreground/70"
+            aria-label="Buscar por nombre, correo o ID"
           />
           {searchQuery && (
             <button
@@ -150,247 +188,193 @@ export function PantallaBusquedaPaciente() {
         </div>
       </div>
 
-      {/* SECCIÓN 2: FILTROS Y ORDENAMIENTO */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-        {/* Chips de filtro rápido */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          <Button
-            variant={activeFilter === "todos" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveFilter("todos")}
-            className={
-              activeFilter === "todos"
-                ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
-                : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
-            }
-          >
-            Todos ({enrichedPatients.length})
-          </Button>
+      {/* FILTROS RÁPIDOS (CHIPS / TAGS) */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <Button
+          variant={activeChip === "todos" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveChip("todos")}
+          className={
+            activeChip === "todos"
+              ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
+              : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
+          }
+        >
+          Todos ({enrichedPatients.length})
+        </Button>
 
-          <Button
-            variant={activeFilter === "con-citas" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveFilter("con-citas")}
-            className={
-              activeFilter === "con-citas"
-                ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
-                : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
-            }
-          >
-            Con citas atendidas
-          </Button>
+        <Button
+          variant={activeChip === "recientes" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveChip("recientes")}
+          className={
+            activeChip === "recientes"
+              ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
+              : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
+          }
+        >
+          Recientes
+        </Button>
 
-          <Button
-            variant={activeFilter === "sin-citas" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveFilter("sin-citas")}
-            className={
-              activeFilter === "sin-citas"
-                ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
-                : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
-            }
-          >
-            Sin citas previas
-          </Button>
+        <Button
+          variant={activeChip === "proxima-cita" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveChip("proxima-cita")}
+          className={
+            activeChip === "proxima-cita"
+              ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
+              : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
+          }
+        >
+          Con cita próxima
+        </Button>
 
-          <Button
-            variant={activeFilter === "menores" ? "default" : "outline"}
-            size="sm"
-            onClick={() => setActiveFilter("menores")}
-            className={
-              activeFilter === "menores"
-                ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
-                : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
-            }
-          >
-            Menores de edad
-          </Button>
-        </div>
-
-        {/* Filtros de Orden: "Más recientes" o "Alfabético" */}
-        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-          <span className="text-xs text-muted-foreground flex items-center gap-1">
-            <ArrowUpDown className="size-3.5 text-muted-foreground" />
-            Ordenar por:
-          </span>
-          <div className="inline-flex rounded-xl p-0.5 bg-muted/40 border border-border/70">
-            <button
-              type="button"
-              onClick={() => setSortOption("recientes")}
-              className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
-                sortOption === "recientes"
-                  ? "bg-card text-foreground font-semibold shadow-2xs border border-border/50 text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Más recientes
-            </button>
-            <button
-              type="button"
-              onClick={() => setSortOption("alfabetico")}
-              className={`px-3 py-1 text-xs font-medium rounded-lg transition-all ${
-                sortOption === "alfabetico"
-                  ? "bg-card text-foreground font-semibold shadow-2xs border border-border/50 text-primary"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Alfabético
-            </button>
-          </div>
-        </div>
+        <Button
+          variant={activeChip === "inactivos" ? "default" : "outline"}
+          size="sm"
+          onClick={() => setActiveChip("inactivos")}
+          className={
+            activeChip === "inactivos"
+              ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
+              : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
+          }
+        >
+          Inactivos
+        </Button>
       </div>
 
-      {/* SECCIÓN 3: LISTA DE RESULTADOS */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <p className="text-xs font-medium text-muted-foreground">
-            {filteredPatients.length === 1
-              ? "1 paciente encontrado"
-              : `${filteredPatients.length} pacientes encontrados`}
-            {searchQuery && (
-              <span>
-                {" "}para &ldquo;<strong className="text-foreground">{searchQuery}</strong>&rdquo;
-              </span>
-            )}
-          </p>
-        </div>
+      {/* LISTA DE RESULTADOS (DATA GRID / TARJETAS) */}
+      {filteredPatients.length > 0 ? (
+        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredPatients.map((patient) => {
+            const hasAttended = !!patient.latestAttended
+            const hasUpcoming = !!patient.upcomingApt
 
-        {filteredPatients.length > 0 ? (
-          <div className="grid gap-3">
-            {filteredPatients.map((patient) => {
-              const latestAttended = patient.latestAttended
-
-              return (
-                <Card
-                  key={patient.id}
-                  className="border-border/80 bg-card hover:border-primary/40 hover:shadow-sm transition-all rounded-2xl overflow-hidden group"
-                >
-                  <CardContent className="p-4 sm:p-5">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      {/* Información del paciente (Nombre, ID, Badges) */}
-                      <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                        <div className="size-11 sm:size-12 rounded-2xl bg-primary/10 text-primary font-bold text-sm sm:text-base flex items-center justify-center shrink-0 border border-primary/20 shadow-2xs group-hover:scale-105 transition-transform">
-                          {getInitials(patient.name)}
-                        </div>
-
-                        <div className="space-y-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="font-bold text-foreground text-sm sm:text-base truncate group-hover:text-primary transition-colors">
-                              {patient.name}
-                            </h3>
-                            <Badge
-                              variant="outline"
-                              className="font-mono text-[10px] bg-muted/30 border-border/80 px-2 py-0"
-                            >
-                              {patient.id}
-                            </Badge>
-                            {patient.isMinor ? (
-                              <Badge
-                                variant="secondary"
-                                className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20"
-                              >
-                                Menor de edad
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="text-[10px] text-muted-foreground border-border/60"
-                              >
-                                Mayor de edad
-                              </Badge>
-                            )}
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            {patient.phone && (
-                              <span className="flex items-center gap-1">
-                                <Phone className="size-3 text-muted-foreground" />
-                                {patient.phone}
-                              </span>
-                            )}
-                            <span className="flex items-center gap-1">
-                              <Mail className="size-3 text-muted-foreground" />
-                              {patient.email}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Columna Derecha: Última Cita Atendida + Botón Acceso Directo */}
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 shrink-0 border-t sm:border-t-0 pt-3 sm:pt-0 border-border/50">
-                        {/* Bloque: Última Cita Atendida */}
-                        <div className="text-left sm:text-right space-y-1 bg-muted/20 sm:bg-transparent p-2.5 sm:p-0 rounded-xl sm:rounded-none border border-border/40 sm:border-none">
-                          <span className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground block">
-                            Última cita atendida
-                          </span>
-                          {latestAttended ? (
-                            <div className="flex items-center sm:justify-end gap-1.5">
-                              <CalendarCheck className="size-3.5 text-primary shrink-0" />
-                              <span className="text-xs font-medium text-foreground">
-                                {formatFullDate(latestAttended.startTime)}
-                              </span>
-                              <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px] py-0 px-1.5">
-                                Asistió
-                              </Badge>
-                            </div>
-                          ) : (
-                            <div className="flex items-center sm:justify-end gap-1.5 text-xs text-muted-foreground">
-                              <Calendar className="size-3.5 text-muted-foreground shrink-0" />
-                              <span>Sin citas previas</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Botón de Acceso Directo: "Ver Expediente" */}
-                        <Button
-                          size="sm"
-                          asChild
-                          className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold rounded-xl shadow-xs transition-all active:scale-[0.98] w-full sm:w-auto"
-                        >
-                          <Link href={`/pacientes/${patient.id}`}>
-                            <FileText className="mr-1.5 size-3.5" />
-                            Ver Expediente
-                          </Link>
-                        </Button>
-                      </div>
+            return (
+              <Card
+                key={patient.id}
+                className="border-border/70 hover:border-primary/40 transition-all shadow-2xs hover:shadow-xs rounded-2xl flex flex-col justify-between overflow-hidden bg-card"
+              >
+                <CardContent className="p-5 flex flex-col justify-between h-full space-y-4">
+                  {/* Top card: Avatar + Info */}
+                  <div className="flex items-start gap-3.5">
+                    <div className="size-11 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold text-sm shrink-0">
+                      {getInitials(patient.name)}
                     </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h3 className="font-semibold text-sm sm:text-base text-foreground truncate">
+                          {patient.name}
+                        </h3>
+                        {patient.isMinor && (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] px-1.5 py-0 h-4 bg-muted text-muted-foreground"
+                          >
+                            Menor
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {patient.email}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground/80 font-mono mt-0.5">
+                        ID: {patient.id}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Metadatos: Última fecha de consulta */}
+                  <div className="pt-2 border-t border-border/40 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="size-3.5" />
+                        Última consulta:
+                      </span>
+                      <span className="font-medium text-foreground">
+                        {hasAttended
+                          ? formatDate(new Date(patient.latestAttended!.startTime))
+                          : "Sin consultas previas"}
+                      </span>
+                    </div>
+
+                    {hasUpcoming && (
+                      <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
+                        <span className="flex items-center gap-1.5 text-[11px]">
+                          <CalendarCheck className="size-3.5" />
+                          Próxima cita:
+                        </span>
+                        <span className="font-medium text-[11px]">
+                          {formatDate(new Date(patient.upcomingApt!.startTime))}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Botón de acción rápida: Ver Expediente */}
+                  <div className="pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-between h-9 rounded-xl text-xs font-semibold hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
+                      asChild
+                    >
+                      <Link href={`/pacientes/${patient.id}`}>
+                        <span className="flex items-center gap-1.5">
+                          <FileText className="size-3.5" />
+                          Ver Expediente
+                        </span>
+                        <ChevronRight className="size-3.5" />
+                      </Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      ) : (
+        /* ESTADO VACÍO (EMPTY STATE) */
+        <div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-8 sm:p-12 text-center space-y-4">
+          <div className="mx-auto size-12 rounded-2xl bg-muted/60 text-muted-foreground flex items-center justify-center">
+            <UserX className="size-6" />
           </div>
-        ) : (
-          /* Estado Vacío cuando no hay coincidencias */
-          <Card className="border-dashed border-border/80 bg-muted/10 text-center p-8 sm:p-12 rounded-2xl">
-            <div className="flex flex-col items-center max-w-sm mx-auto space-y-3">
-              <div className="size-12 rounded-2xl bg-muted/50 text-muted-foreground flex items-center justify-center">
-                <Search className="size-6 text-muted-foreground/60" />
-              </div>
-              <div className="space-y-1">
-                <h4 className="font-bold text-foreground text-sm sm:text-base">
-                  No se encontraron pacientes
-                </h4>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  No hay coincidencias para &ldquo;
-                  <strong className="text-foreground">{searchQuery}</strong>
-                  &rdquo; con los filtros actuales.
-                </p>
-              </div>
+          <div className="space-y-1 max-w-sm mx-auto">
+            <h3 className="font-semibold text-base text-foreground">
+              No se encontraron pacientes
+            </h3>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              {searchQuery
+                ? `No hay registros clínicos que coincidan con "${searchQuery}".`
+                : "No hay pacientes con el filtro seleccionado en este momento."}
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-2">
+            {searchQuery && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setSearchQuery("")
-                  setActiveFilter("todos")
-                }}
-                className="text-xs rounded-xl mt-2 border-border/80"
+                onClick={() => setSearchQuery("")}
+                className="text-xs rounded-xl h-9"
               >
-                Restablecer búsqueda
+                Limpiar búsqueda
               </Button>
-            </div>
-          </Card>
-        )}
-      </div>
+            )}
+            <Button
+              size="sm"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-9 font-semibold"
+              asChild
+            >
+              <Link href="/agenda">
+                <UserPlus className="mr-1.5 size-3.5" />
+                + Registrar nuevo paciente
+              </Link>
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+export default PantallaBusquedaPaciente
