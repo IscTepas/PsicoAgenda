@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "cd /d H:\\Descargas\\IS\\PsicoAgenda\\PsicoAgenda\\apps\\web && npm run dev"
+      ],
+      "port": 3000
+    }
+  ]
+}

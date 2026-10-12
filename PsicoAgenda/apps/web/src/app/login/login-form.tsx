@@ -86,10 +86,13 @@ export function LoginForm() {
           Ψ
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Iniciar Sesión
+          {APP_NAME}
         </h1>
+        <p className="mt-1 text-sm font-semibold text-foreground/80">
+          Iniciar Sesión
+        </p>
         <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
-          Ingresa tus credenciales para acceder a {APP_NAME}
+          Ingresa tus credenciales para continuar
         </p>
       </div>
 
@@ -196,27 +199,15 @@ export function LoginForm() {
         </form>
       </Form>
 
-      {/* Separador */}
-      <div className="relative my-1 text-center">
-        <div className="absolute inset-0 flex items-center" aria-hidden="true">
-          <div className="w-full border-t border-border" />
-        </div>
-        <span className="relative bg-card px-2 text-xs uppercase tracking-wider text-muted-foreground">
-          o
-        </span>
+      {/* Enlace: Crear cuenta nueva */}
+      <div className="text-center pt-1 border-t border-border">
+        <p className="pt-4 text-sm text-muted-foreground">
+          ¿No tienes una cuenta?{" "}
+          <Link href="/registro" className="font-semibold text-primary hover:underline">
+            Regístrate aquí
+          </Link>
+        </p>
       </div>
-
-      {/* Botón Secundario: Crear cuenta nueva */}
-      <Button
-        variant="outline"
-        size="lg"
-        asChild
-        className="w-full h-11 rounded-xl text-sm font-semibold border-border hover:bg-muted text-foreground"
-      >
-        <Link href="/registro">
-          Crear cuenta nueva
-        </Link>
-      </Button>
 
       {/* Cuentas de demostración en modo development */}
       {process.env.NODE_ENV === "development" && demoAccounts.length > 0 ? (
