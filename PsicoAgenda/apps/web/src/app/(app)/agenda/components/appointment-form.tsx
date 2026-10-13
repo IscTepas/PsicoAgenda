@@ -800,7 +800,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
             {/* Motivo de Consulta (Opcional) */}
             <div className="space-y-1.5">
               <label htmlFor="appointment-reason-textarea" className="text-xs font-medium text-muted-foreground block">
-                Motivo de consulta (Opcional)
+                Motivo de la consulta (Opcional)
               </label>
               <Textarea
                 id="appointment-reason-textarea"
@@ -915,7 +915,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 className="h-10 px-3.5 rounded-xl text-xs font-medium border-border/80 hover:border-primary/50 gap-1.5"
               >
                 <RefreshCw className="size-4 text-muted-foreground" />
-                <span>Reagendar</span>
+                <span>Solicitar Reagendar</span>
               </Button>
             </div>
           ) : (
@@ -947,7 +947,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               {isEdit ? (
                 <>
                   <Save className="size-4" />
-                  <span>Guardar Cambios</span>
+                  <span>Actualizar Cambios</span>
                 </>
               ) : (
                 <>

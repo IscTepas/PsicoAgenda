@@ -26,7 +26,6 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -37,15 +36,12 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import {
-  User,
-  Stethoscope,
   ShieldAlert,
   CheckCircle2,
   Mail,
   Calendar,
   HeartHandshake,
   Loader2,
-  FileBadge,
   Eye,
   EyeOff,
 } from "lucide-react"
@@ -56,7 +52,7 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/client"
  */
 const registerSchema = z
   .object({
-    role: z.enum(["patient", "psychologist"]),
+    role: z.literal("patient"),
     name: z.string().min(2, "El nombre completo debe tener al menos 2 caracteres"),
     email: emailSchema,
     phone: z
@@ -81,11 +77,6 @@ const registerSchema = z
     guardianPhone: z.string().optional(),
     guardianRelationship: z.string().optional(),
     guardianConsent: z.boolean().optional(),
-
-    // Campos de Psicólogo/a
-    licenseNumber: z.string().optional(),
-    specialty: z.string().optional(),
-    bio: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     // Coincidencia de contraseña
@@ -97,79 +88,58 @@ const registerSchema = z
       });
     }
 
-    // Reglas para Paciente
-    if (data.role === "patient") {
-      if (!data.birthDate) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "La fecha de nacimiento es obligatoria",
-          path: ["birthDate"],
-        });
-      }
-
-      if (!data.emergencyContactName || data.emergencyContactName.trim().length < 2) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "El nombre del contacto de emergencia es obligatorio",
-          path: ["emergencyContactName"],
-        });
-      }
-
-      if (!data.emergencyContactPhone || data.emergencyContactPhone.trim().length < 10) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Ingresa un teléfono de emergencia válido (mínimo 10 dígitos)",
-          path: ["emergencyContactPhone"],
-        });
-      }
-
-      // Requisitos si es menor de edad
-      if (data.isMinor) {
-        if (!data.guardianName || data.guardianName.trim().length < 2) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "El nombre del tutor/a legal es obligatorio para menores de edad",
-            path: ["guardianName"],
-          });
-        }
-        if (!data.guardianPhone || data.guardianPhone.trim().length < 10) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "El teléfono del tutor/a legal es obligatorio",
-            path: ["guardianPhone"],
-          });
-        }
-        if (!data.guardianRelationship || data.guardianRelationship.trim().length === 0) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "Especifica el parentesco del tutor legal",
-            path: ["guardianRelationship"],
-          });
-        }
-        if (!data.guardianConsent) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "Se requiere la autorización expresa del tutor legal",
-            path: ["guardianConsent"],
-          });
-        }
-      }
+    if (!data.birthDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "La fecha de nacimiento es obligatoria",
+        path: ["birthDate"],
+      });
     }
 
-    // Reglas para Psicólogo/a
-    if (data.role === "psychologist") {
-      if (!data.licenseNumber || data.licenseNumber.trim().length < 4) {
+    if (!data.emergencyContactName || data.emergencyContactName.trim().length < 2) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "El nombre del contacto de emergencia es obligatorio",
+        path: ["emergencyContactName"],
+      });
+    }
+
+    if (!data.emergencyContactPhone || data.emergencyContactPhone.trim().length < 10) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Ingresa un teléfono de emergencia válido (mínimo 10 dígitos)",
+        path: ["emergencyContactPhone"],
+      });
+    }
+
+    // Requisitos si es menor de edad
+    if (data.isMinor) {
+      if (!data.guardianName || data.guardianName.trim().length < 2) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "Ingresa una cédula profesional válida",
-          path: ["licenseNumber"],
+          message: "El nombre del tutor/a legal es obligatorio para menores de edad",
+          path: ["guardianName"],
         });
       }
-      if (!data.specialty || data.specialty.trim().length === 0) {
+      if (!data.guardianPhone || data.guardianPhone.trim().length < 10) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "Selecciona una especialidad o enfoque principal",
-          path: ["specialty"],
+          message: "El teléfono del tutor/a legal es obligatorio",
+          path: ["guardianPhone"],
+        });
+      }
+      if (!data.guardianRelationship || data.guardianRelationship.trim().length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Especifica el parentesco del tutor legal",
+          path: ["guardianRelationship"],
+        });
+      }
+      if (!data.guardianConsent) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Se requiere la autorización expresa del tutor legal",
+          path: ["guardianConsent"],
         });
       }
     }
@@ -177,26 +147,11 @@ const registerSchema = z
 
 type RegisterValues = z.infer<typeof registerSchema>;
 
-const SPECIALTY_OPTIONS = [
-  "Psicología Clínica",
-  "Terapia Cognitivo-Conductual (TCC)",
-  "Terapia Sistémica y Familiar",
-  "Psicoanálisis y Enfoque Psicodinámico",
-  "Terapia Humanista / Gestalt",
-  "Neuropsicología Clínica",
-  "Psicología Infantil y de la Adolescencia",
-  "Terapia de Pareja y Sexología",
-  "Otra especialidad",
-];
-
 export function RegisterForm() {
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [submittedUser, setSubmittedUser] = useState<{
-    email: string;
-    role: "patient" | "psychologist";
-  } | null>(null);
+  const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
   const configured = isSupabaseConfigured();
 
   const form = useForm<RegisterValues>({
@@ -219,14 +174,10 @@ export function RegisterForm() {
       guardianPhone: "",
       guardianRelationship: "",
       guardianConsent: false,
-      licenseNumber: "",
-      specialty: "",
-      bio: "",
       termsAccepted: true,
     },
   });
 
-  const selectedRole = form.watch("role");
   const watchBirthDate = form.watch("birthDate");
 
   // Detección automática y reactiva de minoría de edad (< 18 años)
@@ -257,29 +208,23 @@ export function RegisterForm() {
         name: values.name,
         phone: values.phone,
         role: values.role,
-      };
-
-      if (values.role === "psychologist") {
-        metadataPayload.license_number = values.licenseNumber;
-        metadataPayload.specialty = values.specialty;
-        metadataPayload.bio = values.bio;
-      } else {
-        metadataPayload.birth_date = values.birthDate;
-        metadataPayload.gender = values.gender;
-        metadataPayload.address = values.address;
-        metadataPayload.is_minor = values.isMinor;
-        metadataPayload.emergency_contact = {
+        birth_date: values.birthDate,
+        gender: values.gender,
+        address: values.address,
+        is_minor: values.isMinor,
+        emergency_contact: {
           name: values.emergencyContactName,
           phone: values.emergencyContactPhone,
           relationship: values.emergencyContactRelationship,
+        },
+      };
+
+      if (values.isMinor) {
+        metadataPayload.guardian = {
+          name: values.guardianName,
+          phone: values.guardianPhone,
+          relationship: values.guardianRelationship,
         };
-        if (values.isMinor) {
-          metadataPayload.guardian = {
-            name: values.guardianName,
-            phone: values.guardianPhone,
-            relationship: values.guardianRelationship,
-          };
-        }
       }
 
       const { error: signUpError } = await client.auth.signUp({
@@ -301,10 +246,7 @@ export function RegisterForm() {
       }
 
       setIsPending(false);
-      setSubmittedUser({
-        email: values.email,
-        role: values.role,
-      });
+      setSubmittedEmail(values.email);
     } catch {
       setError("Ocurrió un error inesperado al conectar con el servicio de autenticación.");
       setIsPending(false);
@@ -312,7 +254,7 @@ export function RegisterForm() {
   }
 
   // Estado de confirmación (Email enviado)
-  if (submittedUser) {
+  if (submittedEmail) {
     return (
       <div className="w-full max-w-md rounded-[28px] bg-card p-8 border border-border shadow-sm text-center flex flex-col items-center gap-4">
         <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-1">
@@ -323,16 +265,14 @@ export function RegisterForm() {
         </h1>
         <div>
           <Badge variant="secondary" className="rounded-full px-3 py-1 font-normal text-xs bg-muted text-foreground">
-            {submittedUser.role === "psychologist"
-              ? "Cuenta de Profesional"
-              : "Cuenta de Paciente"}
+            Cuenta de Paciente
           </Badge>
         </div>
         <p className="text-sm text-muted-foreground">
           Enviamos un enlace seguro de activación a:
         </p>
         <p className="font-semibold text-foreground text-sm bg-muted/60 px-4 py-2 rounded-xl">
-          {submittedUser.email}
+          {submittedEmail}
         </p>
         <p className="text-xs text-muted-foreground leading-relaxed max-w-sm">
           Por motivos de seguridad y confidencialidad clínica, confirma tu cuenta haciendo clic en el enlace recibido antes de iniciar sesión.
@@ -357,10 +297,10 @@ export function RegisterForm() {
           Ψ
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Crear cuenta
+          Crear una nueva cuenta
         </h1>
         <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
-          Selecciona tu perfil y completa tus datos para acceder a {APP_NAME}
+          Completa tus datos para acceder a {APP_NAME}
         </p>
       </div>
 
@@ -382,45 +322,8 @@ export function RegisterForm() {
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* Selector interactivo de perfil */}
-            <div className="space-y-2">
-              <FormLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Tipo de perfil
-              </FormLabel>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => form.setValue("role", "patient")}
-                  className={`flex flex-col items-center justify-center p-3.5 rounded-xl border text-center transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                    selectedRole === "patient"
-                      ? "border-primary bg-primary/10 text-primary font-semibold shadow-xs ring-1 ring-primary"
-                      : "border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                  }`}
-                >
-                  <User className="size-5 mb-1.5" />
-                  <span className="text-sm font-semibold">Soy Paciente</span>
-                  <span className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
-                    Agendar citas y consultas
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => form.setValue("role", "psychologist")}
-                  className={`flex flex-col items-center justify-center p-3.5 rounded-xl border text-center transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary ${
-                    selectedRole === "psychologist"
-                      ? "border-primary bg-primary/10 text-primary font-semibold shadow-xs ring-1 ring-primary"
-                      : "border-border bg-card text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                  }`}
-                >
-                  <Stethoscope className="size-5 mb-1.5" />
-                  <span className="text-sm font-semibold">Soy Profesional</span>
-                  <span className="text-[11px] text-muted-foreground mt-0.5 line-clamp-1">
-                    Gestión clínica y agenda
-                  </span>
-                </button>
-              </div>
-            </div>
+            {/* El alta pública solo crea cuentas de paciente; el rol de
+                psicólogo/a se asigna desde el panel administrativo. */}
 
               {/* SECCIÓN 1: Credenciales y datos básicos */}
               <div className="space-y-4 pt-1">
@@ -439,11 +342,7 @@ export function RegisterForm() {
                       <FormLabel>Nombre completo</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder={
-                            selectedRole === "psychologist"
-                              ? "Lic. Mariana Herrera Morales"
-                              : "Carlos Mendoza Ramos"
-                          }
+                          placeholder="Carlos Mendoza Ramos"
                           autoComplete="name"
                           {...field}
                         />
@@ -498,17 +397,15 @@ export function RegisterForm() {
                     control={form.control}
                     name="password"
                     render={({ field }) => (
-                      <FormItem className="space-y-1.5">
-                        <FormLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          Contraseña
-                        </FormLabel>
+                      <FormItem>
+                        <FormLabel>Contraseña</FormLabel>
                         <div className="relative flex items-center">
                           <FormControl>
                             <Input
                               type={showPassword ? "text" : "password"}
                               placeholder="••••••••"
                               autoComplete="new-password"
-                              className="h-10 pr-10 rounded-xl"
+                              className="pr-10"
                               {...field}
                             />
                           </FormControl>
@@ -538,17 +435,15 @@ export function RegisterForm() {
                     control={form.control}
                     name="confirmPassword"
                     render={({ field }) => (
-                      <FormItem className="space-y-1.5">
-                        <FormLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                          Confirmar contraseña
-                        </FormLabel>
+                      <FormItem>
+                        <FormLabel>Confirmar contraseña</FormLabel>
                         <div className="relative flex items-center">
                           <FormControl>
                             <Input
                               type={showPassword ? "text" : "password"}
                               placeholder="••••••••"
                               autoComplete="new-password"
-                              className="h-10 pr-10 rounded-xl"
+                              className="pr-10"
                               {...field}
                             />
                           </FormControl>
@@ -560,9 +455,8 @@ export function RegisterForm() {
                 </div>
               </div>
 
-              {/* SECCIÓN 2 (PACIENTE): Ficha personal, tutor y contacto de emergencia */}
-              {selectedRole === "patient" ? (
-                <div className="space-y-4 pt-1">
+              {/* SECCIÓN 2: Ficha personal, tutor y contacto de emergencia */}
+              <div className="space-y-4 pt-1">
                   <div className="flex items-center gap-2 pb-1 border-b border-border">
                     <Calendar className="size-3.5 text-primary" />
                     <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -788,90 +682,6 @@ export function RegisterForm() {
                     />
                   </div>
                 </div>
-              ) : null}
-
-              {/* SECCIÓN 2 (PSICÓLOGO/A): Datos profesionales y especialidad */}
-              {selectedRole === "psychologist" ? (
-                <div className="space-y-4 pt-1">
-                  <div className="flex items-center gap-2 pb-1 border-b border-border">
-                    <FileBadge className="size-3.5 text-primary" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Acreditación profesional
-                    </span>
-                  </div>
-
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="licenseNumber"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Cédula profesional</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Ej. 12345678"
-                              autoComplete="off"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormDescription className="text-[11px] text-muted-foreground">
-                            Expedida por la DGP / SEP
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="specialty"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Enfoque / Especialidad</FormLabel>
-                          <Select
-                            onValueChange={field.onChange}
-                            defaultValue={field.value}
-                          >
-                            <FormControl>
-                              <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Selecciona tu enfoque" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {SPECIALTY_OPTIONS.map((opt) => (
-                                <SelectItem key={opt} value={opt}>
-                                  {opt}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <FormField
-                    control={form.control}
-                    name="bio"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          Semblanza profesional <span className="text-muted-foreground font-normal">(Opcional)</span>
-                        </FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder="Describe brevemente tus años de experiencia, áreas clínicas de atención o metodología de trabajo..."
-                            className="min-h-20 resize-none text-sm"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              ) : null}
 
               {/* AVISO DE PRIVACIDAD Y TÉRMINOS */}
               <FormField
@@ -900,34 +710,36 @@ export function RegisterForm() {
                 )}
               />
 
-              {/* BOTÓN PRINCIPAL */}
-              <Button
-                type="submit"
-                size="lg"
-                className="w-full h-11 rounded-xl text-sm font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-[0.98] transition-all"
-                disabled={isPending || !configured}
-              >
-                {isPending ? (
-                  <>
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                    Procesando registro...
-                  </>
-                ) : (
-                  "Registrarse"
-                )}
-              </Button>
+              {/* BOTONES: Registrarse (principal) y Cancelar / Volver al login (secundario) */}
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="w-full h-11 rounded-xl text-sm font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-[0.98] transition-all"
+                  disabled={isPending || !configured}
+                >
+                  {isPending ? (
+                    <>
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                      Procesando registro...
+                    </>
+                  ) : (
+                    "Registrarse"
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  asChild
+                  className="w-full h-11 rounded-xl text-sm font-semibold border-border hover:bg-muted text-foreground"
+                >
+                  <Link href="/login">Cancelar / Volver al login</Link>
+                </Button>
+              </div>
             </form>
           </Form>
-        </div>
-
-        {/* Footer con enlace a Login */}
-        <div className="text-center pt-4 border-t border-border">
-          <p className="text-sm text-muted-foreground">
-            ¿Ya tengo cuenta?{" "}
-            <Link href="/login" className="font-semibold text-primary hover:underline">
-              Iniciar sesión
-            </Link>
-          </p>
         </div>
       </div>
     );

@@ -6,7 +6,7 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": [
         "/c",
-        "cd /d H:\\Descargas\\IS\\PsicoAgenda\\PsicoAgenda\\apps\\web && npm run dev"
+        "cd /d C:\\IS\\PsicoAgenda\\PsicoAgenda\\apps\\web && npm run dev"
       ],
       "port": 3000
     }

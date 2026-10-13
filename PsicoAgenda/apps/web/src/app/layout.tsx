@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { APP_NAME } from "@psicoagenda/shared";
 import { SerwistProvider } from "@/app/serwist";
 import { Providers } from "@/components/providers";
+import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         {!serwistEnabled && (
           <script
             dangerouslySetInnerHTML={{

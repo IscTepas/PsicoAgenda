@@ -20,6 +20,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { PageHeader } from "../components/page-header"
 import { useSession } from "@/lib/use-session"
 import { UserRole, type Patient, AppointmentStatus } from "@psicoagenda/shared"
@@ -30,6 +37,7 @@ import {
 } from "@/lib/mock-data"
 
 type FilterChip = "todos" | "recientes" | "proxima-cita" | "inactivos"
+type SortOption = "alfabetico" | "ultima-sesion"
 
 function getInitials(name: string): string {
   const parts = name.trim().split(" ")
@@ -58,13 +66,9 @@ export default function PantallaBusquedaPaciente() {
       ? UserRole.PATIENT
       : UserRole.PSYCHOLOGIST)
 
-  if (!isLoading && effectiveRole === UserRole.PATIENT) {
-    router.replace("/dashboard")
-    return null
-  }
-
   const [searchQuery, setSearchQuery] = useState("")
   const [activeChip, setActiveChip] = useState<FilterChip>("todos")
+  const [sortBy, setSortBy] = useState<SortOption>("alfabetico")
 
   // Enriquecer pacientes con datos de citas calculados
   const enrichedPatients = useMemo(() => {
@@ -137,12 +141,17 @@ export default function PantallaBusquedaPaciente() {
         return true
       })
       .sort((a, b) => {
-        if (activeChip === "recientes") {
+        if (sortBy === "ultima-sesion") {
           return b.effectiveDate - a.effectiveDate
         }
         return a.name.localeCompare(b.name, "es", { sensitivity: "base" })
       })
-  }, [enrichedPatients, searchQuery, activeChip])
+  }, [enrichedPatients, searchQuery, activeChip, sortBy])
+
+  if (!isLoading && effectiveRole === UserRole.PATIENT) {
+    router.replace("/dashboard")
+    return null
+  }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -189,7 +198,8 @@ export default function PantallaBusquedaPaciente() {
         </div>
       </div>
 
-      {/* FILTROS RÁPIDOS (CHIPS / TAGS) */}
+      {/* FILTROS RÁPIDOS Y ORDENAMIENTO */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         <Button
           variant={activeChip === "todos" ? "default" : "outline"}
@@ -242,6 +252,17 @@ export default function PantallaBusquedaPaciente() {
         >
           Inactivos
         </Button>
+      </div>
+
+        <Select value={sortBy} onValueChange={(val) => setSortBy(val as SortOption)}>
+          <SelectTrigger className="h-8 rounded-xl text-xs border-border/70 w-full sm:w-56 shrink-0">
+            <SelectValue placeholder="Ordenar por" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="alfabetico">Ordenar: Alfabético</SelectItem>
+            <SelectItem value="ultima-sesion">Ordenar: Última sesión registrada</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* LISTA DE RESULTADOS (DATA GRID / TARJETAS) */}
@@ -321,7 +342,7 @@ export default function PantallaBusquedaPaciente() {
                       asChild
                     >
                       <Link href={`/pacientes/${patient.id}`}>
-                        <span>Ver Expediente</span>
+                        <span>Ver Historial Clínico</span>
                         <ChevronRight className="size-3.5" />
                       </Link>
                     </Button>
@@ -339,7 +360,7 @@ export default function PantallaBusquedaPaciente() {
           </div>
           <div className="space-y-1 max-w-sm mx-auto">
             <h3 className="font-semibold text-base text-foreground">
-              No se encontraron pacientes
+              No se encontraron pacientes registrados
             </h3>
             <p className="text-xs sm:text-sm text-muted-foreground">
               {searchQuery

@@ -50,6 +50,7 @@ export function navItemsForRole(role: UserRole | null | undefined): NavItem[] {
       { href: "/dashboard", label: "Inicio", roles: [UserRole.PSYCHOLOGIST] },
       { href: "/agenda", label: "Agenda", roles: [UserRole.PSYCHOLOGIST] },
       { href: "/pacientes", label: "Pacientes", roles: [UserRole.PSYCHOLOGIST] },
+      { href: "/notificaciones", label: "Notificaciones", roles: [UserRole.PSYCHOLOGIST] },
       { href: "/reportes", label: "Reportes", roles: [UserRole.PSYCHOLOGIST] },
       { href: "/perfil", label: "Configuración", roles: [UserRole.PSYCHOLOGIST] },
     ]

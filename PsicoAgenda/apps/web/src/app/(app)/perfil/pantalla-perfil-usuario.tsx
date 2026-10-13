@@ -1,33 +1,54 @@
 "use client"
 
-import { useState, useRef, useId } from "react"
+import { useState, useRef } from "react"
+import Link from "next/link"
 import {
   Camera,
   User,
   Phone,
   Mail,
   CheckCircle2,
+  Globe,
+  Palette,
   Bell,
-  MessageSquare,
   Shield,
-  ShieldCheck,
   Save,
   RotateCcw,
-  Sparkles,
   AlertCircle,
   FileCheck,
   HeartPulse,
+  ChevronRight,
 } from "lucide-react"
 import { UserRole } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { PageHeader } from "../components/page-header"
 import { useSession } from "@/lib/use-session"
+import { useThemePreference } from "@/lib/use-theme"
 import { MOCK_PSYCHOLOGIST, getPatientForUser } from "@/lib/mock-data"
+
+const TIMEZONE_OPTIONS = [
+  { value: "America/Mexico_City", label: "Ciudad de México (CDMX)" },
+  { value: "America/Tijuana", label: "Tijuana" },
+  { value: "America/Cancun", label: "Cancún" },
+  { value: "America/Hermosillo", label: "Hermosillo" },
+] as const
+
+const THEME_OPTIONS = [
+  { value: "light", label: "Claro" },
+  { value: "dark", label: "Oscuro" },
+  { value: "system", label: "Automático (sistema)" },
+] as const
 
 function getInitials(name: string): string {
   const parts = name.trim().split(" ")
@@ -81,19 +102,14 @@ export function PantallaPerfilUsuario() {
   // 2. Foto de perfil
   const [avatarImage, setAvatarImage] = useState<string | null>(null)
 
-  // 3. Ajustes de recordatorios (Toggle switches)
-  const [whatsappNotifications, setWhatsappNotifications] = useState(true)
-  const [emailNotifications, setEmailNotifications] = useState(true)
-  const [scheduleAlerts, setScheduleAlerts] = useState(true)
+  // 3. Preferencias (Zona horaria y tema de interfaz)
+  const [timezone, setTimezone] = useState<string>("America/Mexico_City")
+  const { theme, setTheme } = useThemePreference()
 
   // Estados de retroalimentación
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
-
-  const whatsappSwitchId = useId()
-  const emailSwitchId = useId()
-  const scheduleSwitchId = useId()
 
   // Manejo de carga de foto de perfil
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,7 +135,35 @@ export function PantallaPerfilUsuario() {
     reader.readAsDataURL(file)
   }
 
-  // Guardar Preferencias y Datos
+  // Última versión guardada: permite que "Cancelar" descarte ediciones sin confirmar.
+  const savedSnapshotRef = useRef({
+    name,
+    phone,
+    email,
+    timezone,
+    licenseNumber,
+    specialty,
+    emergencyName,
+    emergencyPhone,
+    avatarImage,
+  })
+
+  const handleCancel = () => {
+    const saved = savedSnapshotRef.current
+    setName(saved.name)
+    setPhone(saved.phone)
+    setEmail(saved.email)
+    setTimezone(saved.timezone)
+    setLicenseNumber(saved.licenseNumber)
+    setSpecialty(saved.specialty)
+    setEmergencyName(saved.emergencyName)
+    setEmergencyPhone(saved.emergencyPhone)
+    setAvatarImage(saved.avatarImage)
+    setValidationError(null)
+    setSaveSuccess(false)
+  }
+
+  // Guardar Cambios (datos personales y preferencias)
   const handleSavePreferences = (e: React.FormEvent) => {
     e.preventDefault()
     setValidationError(null)
@@ -138,6 +182,17 @@ export function PantallaPerfilUsuario() {
 
     // Simulación de guardado con feedback visual
     setTimeout(() => {
+      savedSnapshotRef.current = {
+        name,
+        phone,
+        email,
+        timezone,
+        licenseNumber,
+        specialty,
+        emergencyName,
+        emergencyPhone,
+        avatarImage,
+      }
       setIsSaving(false)
       setSaveSuccess(true)
       // Ocultar mensaje de éxito tras 6 segundos
@@ -152,7 +207,7 @@ export function PantallaPerfilUsuario() {
       {/* Cabecera de Página */}
       <PageHeader
         title="Perfil de Usuario"
-        description="Administra tu información personal, datos de contacto y preferencias de recordatorios clínicos."
+        description="Administra tu información personal, datos de contacto y preferencias de la interfaz."
         actions={
           <Badge
             variant="outline"
@@ -168,10 +223,10 @@ export function PantallaPerfilUsuario() {
         <Alert className="border-primary/40 bg-primary/10 text-foreground rounded-2xl animate-in fade-in-50 duration-200">
           <CheckCircle2 className="size-5 text-primary" />
           <AlertTitle className="font-bold text-foreground">
-            ¡Preferencias guardadas con éxito!
+            ¡Cambios guardados con éxito!
           </AlertTitle>
           <AlertDescription className="text-xs text-muted-foreground">
-            Tus datos personales y la configuración de recordatorios por WhatsApp y Correo han sido actualizados.
+            Tus datos personales y preferencias han sido actualizados.
           </AlertDescription>
         </Alert>
       )}
@@ -226,8 +281,8 @@ export function PantallaPerfilUsuario() {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="absolute -bottom-1 -right-1 p-2 rounded-xl bg-primary text-primary-foreground shadow-md hover:bg-primary/90 transition-transform active:scale-95"
-                  title="Cambiar foto de perfil"
-                  aria-label="Cambiar foto de perfil"
+                  title="Cambiar imagen"
+                  aria-label="Cambiar imagen"
                 >
                   <Camera className="size-4" />
                 </button>
@@ -265,7 +320,7 @@ export function PantallaPerfilUsuario() {
                     className="text-xs rounded-xl border-border/80 h-8"
                   >
                     <Camera className="mr-1.5 size-3.5 text-primary" />
-                    Cambiar foto
+                    Cambiar imagen
                   </Button>
 
                   {avatarImage && (
@@ -418,144 +473,138 @@ export function PantallaPerfilUsuario() {
           </CardContent>
         </Card>
 
-        {/* SECCIÓN 2: AJUSTES (PantallaConfiguraciónRecordatorios) */}
+        {/* SECCIÓN 2: PREFERENCIAS (Zona horaria y tema de interfaz) */}
         <Card className="border-border/80 bg-card rounded-2xl shadow-2xs overflow-hidden">
           <CardHeader className="pb-4 border-b border-border/40 bg-muted/10">
             <div className="flex items-center gap-2.5">
               <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <Bell className="size-4" />
+                <Palette className="size-4" />
               </div>
               <div>
                 <CardTitle className="text-base font-semibold text-foreground">
-                  Configuración de Recordatorios y Notificaciones
+                  Preferencias
                 </CardTitle>
                 <CardDescription className="text-xs text-muted-foreground">
-                  Elige los canales automáticos para recibir alertas de tus citas y actualizaciones terapéuticas
+                  Ajusta tu zona horaria y el diseño de la interfaz
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
 
           <CardContent className="p-5 sm:p-6 space-y-5">
-            {/* 2.1 TOGGLE SWITCH: WHATSAPP */}
-            <div className="flex items-start justify-between gap-4 p-4 rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="size-9 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 border border-emerald-500/20">
-                  <MessageSquare className="size-4" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              {/* Zona Horaria */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Globe className="size-3.5 text-primary" />
+                  Zona Horaria
+                </label>
+                <Select
+                  value={timezone}
+                  onValueChange={(val) => {
+                    setTimezone(val)
+                    setSaveSuccess(false)
+                  }}
+                >
+                  <SelectTrigger className="w-full rounded-xl h-11 text-sm bg-background border-border/80">
+                    <SelectValue placeholder="Selecciona tu zona horaria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TIMEZONE_OPTIONS.map((tz) => (
+                      <SelectItem key={tz.value} value={tz.value}>
+                        {tz.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Usada para mostrar la hora correcta de tus citas.
+                </p>
+              </div>
+
+              {/* Diseño de interfaz (tema) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Palette className="size-3.5 text-primary" />
+                  Diseño de Interfaz
+                </label>
+                <Select value={theme} onValueChange={setTheme}>
+                  <SelectTrigger className="w-full rounded-xl h-11 text-sm bg-background border-border/80">
+                    <SelectValue placeholder="Selecciona un tema" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {THEME_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Se aplica de inmediato, sin esperar a &ldquo;Guardar Cambios&rdquo;.
+                </p>
+              </div>
+            </div>
+
+            <Link
+              href="/notificaciones/configuracion"
+              className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20">
+                  <Bell className="size-4" />
                 </div>
-                <div className="space-y-1">
-                  <label
-                    htmlFor={whatsappSwitchId}
-                    className="text-sm font-semibold text-foreground cursor-pointer block"
-                  >
-                    Recibir notificaciones por WhatsApp
-                  </label>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Envío de recordatorio automático con opción de confirmar asistencia 24 horas antes de cada sesión al número registrado ({phone || "sin teléfono"}).
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Preferencias de Notificaciones
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Canales de WhatsApp/Correo y anticipación de recordatorios
                   </p>
                 </div>
               </div>
-
-              <Switch
-                id={whatsappSwitchId}
-                checked={whatsappNotifications}
-                onCheckedChange={(checked) => {
-                  setWhatsappNotifications(checked)
-                  setSaveSuccess(false)
-                }}
-                className="data-[state=checked]:bg-primary"
-                aria-label="Recibir notificaciones por WhatsApp"
-              />
-            </div>
-
-            {/* 2.2 TOGGLE SWITCH: CORREO */}
-            <div className="flex items-start justify-between gap-4 p-4 rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5 border border-primary/20">
-                  <Mail className="size-4" />
-                </div>
-                <div className="space-y-1">
-                  <label
-                    htmlFor={emailSwitchId}
-                    className="text-sm font-semibold text-foreground cursor-pointer block"
-                  >
-                    Recibir notificaciones por Correo
-                  </label>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Envío de comprobantes de reserva, enlaces para sesiones en línea y resumen de citas a tu bandeja ({email || "sin correo"}).
-                  </p>
-                </div>
-              </div>
-
-              <Switch
-                id={emailSwitchId}
-                checked={emailNotifications}
-                onCheckedChange={(checked) => {
-                  setEmailNotifications(checked)
-                  setSaveSuccess(false)
-                }}
-                className="data-[state=checked]:bg-primary"
-                aria-label="Recibir notificaciones por Correo"
-              />
-            </div>
-
-            {/* 2.3 TOGGLE ADICIONAL: CAMBIOS Y REAGENDAMIENTOS */}
-            <div className="flex items-start justify-between gap-4 p-4 rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="size-9 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5 border border-amber-500/20">
-                  <ShieldCheck className="size-4" />
-                </div>
-                <div className="space-y-1">
-                  <label
-                    htmlFor={scheduleSwitchId}
-                    className="text-sm font-semibold text-foreground cursor-pointer block"
-                  >
-                    Alertas inmediatas de cambio de horario o cancelación
-                  </label>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Notificación instantánea en caso de reprogramación de fecha, hora o aviso por imprevisto clínico.
-                  </p>
-                </div>
-              </div>
-
-              <Switch
-                id={scheduleSwitchId}
-                checked={scheduleAlerts}
-                onCheckedChange={(checked) => {
-                  setScheduleAlerts(checked)
-                  setSaveSuccess(false)
-                }}
-                className="data-[state=checked]:bg-primary"
-                aria-label="Alertas de cambio de horario o cancelación"
-              />
-            </div>
+              <ChevronRight className="size-4 text-muted-foreground shrink-0 group-hover:translate-x-0.5 transition-transform" />
+            </Link>
           </CardContent>
         </Card>
 
-        {/* SECCIÓN 3: BOTÓN PRINCIPAL "GUARDAR PREFERENCIAS" */}
+        {/* SECCIÓN 3: BOTONES "GUARDAR CAMBIOS" Y "CANCELAR" */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
           <p className="text-xs text-muted-foreground">
             Los cambios se aplicarán inmediatamente a tus próximas citas programadas.
           </p>
 
-          <Button
-            type="submit"
-            size="lg"
-            disabled={isSaving}
-            className="w-full sm:w-auto h-11 px-7 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-semibold text-sm shadow-xs transition-all active:scale-[0.98]"
-          >
-            {isSaving ? (
-              <span className="flex items-center gap-2">
-                <span className="size-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                Guardando preferencias...
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <Save className="size-4" />
-                Guardar Preferencias
-              </span>
-            )}
-          </Button>
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={handleCancel}
+              disabled={isSaving}
+              className="flex-1 sm:flex-none h-11 px-6 rounded-xl border-border/80 font-semibold text-sm"
+            >
+              Cancelar
+            </Button>
+
+            <Button
+              type="submit"
+              size="lg"
+              disabled={isSaving}
+              className="flex-1 sm:flex-none h-11 px-7 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-semibold text-sm shadow-xs transition-all active:scale-[0.98]"
+            >
+              {isSaving ? (
+                <span className="flex items-center gap-2">
+                  <span className="size-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  Guardando...
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <Save className="size-4" />
+                  Guardar Cambios
+                </span>
+              )}
+            </Button>
+          </div>
         </div>
       </form>
     </div>

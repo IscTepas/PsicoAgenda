@@ -382,11 +382,11 @@ export function AgendaClient() {
             )}
           </div>
 
-          {/* Botón destacado "+ Nueva Cita / Solicitar Cita" */}
+          {/* Botón destacado "+ Programar Cita / + Solicitar Cita" */}
           <Button asChild className="h-9 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shrink-0">
             <Link href="/agenda/nueva" className="flex items-center gap-2">
               <Plus className="size-4 stroke-[2.5]" />
-              <span className="font-medium">{isPatient ? "Solicitar Cita" : "Nueva Cita"}</span>
+              <span className="font-medium">{isPatient ? "Solicitar Cita" : "Programar Cita"}</span>
             </Link>
           </Button>
         </div>

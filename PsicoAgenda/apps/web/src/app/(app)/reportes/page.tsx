@@ -52,10 +52,18 @@ export type ReportAppointment = {
   time: string // HH:mm
   patientId: string
   patientName: string
-  status: "attended" | "cancelled" | "pending"
+  status: "attended" | "cancelled" | "no_show" | "pending"
   fee: number
   modality: "in_person" | "virtual"
+  serviceType: "individual" | "pareja" | "evaluacion" | "seguimiento"
   reason: string
+}
+
+const SERVICE_TYPE_LABELS: Record<ReportAppointment["serviceType"], string> = {
+  individual: "Terapia Individual",
+  pareja: "Terapia de Pareja",
+  evaluacion: "Evaluación Inicial",
+  seguimiento: "Seguimiento",
 }
 
 // Datos realistas del consultorio para el período actual
@@ -69,6 +77,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 800,
     modality: "in_person",
+    serviceType: "individual",
     reason: "Sesión 1 - Técnicas de relajación",
   },
   {
@@ -80,6 +89,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 850,
     modality: "virtual",
+    serviceType: "evaluacion",
     reason: "Evaluación inicial y encuadre",
   },
   {
@@ -91,6 +101,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 900,
     modality: "in_person",
+    serviceType: "individual",
     reason: "Terapia infanto-juvenil",
   },
   {
@@ -102,6 +113,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 800,
     modality: "in_person",
+    serviceType: "seguimiento",
     reason: "Reestructuración cognitiva",
   },
   {
@@ -113,6 +125,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "cancelled",
     fee: 0,
     modality: "virtual",
+    serviceType: "seguimiento",
     reason: "Cancelación con aviso previo por trabajo",
   },
   {
@@ -124,6 +137,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 900,
     modality: "in_person",
+    serviceType: "individual",
     reason: "Manejo emocional y juego guiado",
   },
   {
@@ -135,6 +149,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 800,
     modality: "in_person",
+    serviceType: "seguimiento",
     reason: "Revisión de tareas conductuales",
   },
   {
@@ -146,6 +161,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 850,
     modality: "virtual",
+    serviceType: "seguimiento",
     reason: "Estrategias de afrontamiento",
   },
   {
@@ -154,9 +170,10 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     time: "16:00",
     patientId: "patient-3",
     patientName: "Sofía Martínez",
-    status: "cancelled",
+    status: "no_show",
     fee: 0,
     modality: "in_person",
+    serviceType: "individual",
     reason: "Inasistencia por enfermedad escolar",
   },
   {
@@ -168,6 +185,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 800,
     modality: "in_person",
+    serviceType: "seguimiento",
     reason: "Seguimiento clínico semanal",
   },
   {
@@ -179,6 +197,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 850,
     modality: "virtual",
+    serviceType: "seguimiento",
     reason: "Avances en regulación del estrés",
   },
   {
@@ -190,6 +209,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 900,
     modality: "in_person",
+    serviceType: "seguimiento",
     reason: "Cierre de módulo conductual",
   },
   {
@@ -201,6 +221,7 @@ const INITIAL_RECORDS: ReportAppointment[] = [
     status: "attended",
     fee: 800,
     modality: "in_person",
+    serviceType: "evaluacion",
     reason: "Evaluación de progreso terapéutico",
   },
 ]
@@ -221,6 +242,19 @@ function formatCurrency(amount: number): string {
   }).format(amount)
 }
 
+function statusLabel(status: ReportAppointment["status"]): string {
+  switch (status) {
+    case "attended":
+      return "Asistida"
+    case "cancelled":
+      return "Cancelada"
+    case "no_show":
+      return "Inasistencia"
+    default:
+      return "Pendiente"
+  }
+}
+
 function formatDate(dateStr: string, timeStr?: string): string {
   const [year, month, day] = dateStr.split("-").map(Number)
   const d = new Date(year, month - 1, day)
@@ -236,13 +270,15 @@ export default function ReportsPage() {
   // Filtros activos
   const [fromDate, setFromDate] = useState("2026-09-01")
   const [toDate, setToDate] = useState("2026-09-30")
-  const [statusFilter, setStatusFilter] = useState<"all" | "attended" | "cancelled">("all")
+  const [statusFilter, setStatusFilter] = useState<"all" | "attended" | "cancelled" | "no_show">("all")
+  const [serviceTypeFilter, setServiceTypeFilter] = useState<"all" | ReportAppointment["serviceType"]>("all")
 
   // Estado aplicado (se confirma al hacer clic en "Generar Reporte")
   const [appliedFilters, setAppliedFilters] = useState({
     fromDate: "2026-09-01",
     toDate: "2026-09-30",
-    status: "all" as "all" | "attended" | "cancelled",
+    status: "all" as "all" | "attended" | "cancelled" | "no_show",
+    serviceType: "all" as "all" | ReportAppointment["serviceType"],
   })
 
   const [notification, setNotification] = useState<string | null>(null)
@@ -256,6 +292,7 @@ export default function ReportsPage() {
         fromDate,
         toDate,
         status: statusFilter,
+        serviceType: serviceTypeFilter,
       })
       setIsGenerating(false)
       setNotification("Reporte generado con los criterios seleccionados.")
@@ -271,8 +308,10 @@ export default function ReportsPage() {
       if (appliedFilters.toDate && item.date > appliedFilters.toDate) return false
 
       // Filtro de estado
-      if (appliedFilters.status === "attended" && item.status !== "attended") return false
-      if (appliedFilters.status === "cancelled" && item.status !== "cancelled") return false
+      if (appliedFilters.status !== "all" && item.status !== appliedFilters.status) return false
+
+      // Filtro de tipo de servicio
+      if (appliedFilters.serviceType !== "all" && item.serviceType !== appliedFilters.serviceType) return false
 
       return true
     })
@@ -281,7 +320,9 @@ export default function ReportsPage() {
   // Cálculo de KPIs
   const totalConsultations = filteredRecords.length
   const totalAttended = filteredRecords.filter((r) => r.status === "attended").length
-  const totalCancelled = filteredRecords.filter((r) => r.status === "cancelled").length
+  const totalCancelled = filteredRecords.filter(
+    (r) => r.status === "cancelled" || r.status === "no_show",
+  ).length
   const attendanceRate =
     totalConsultations > 0
       ? Math.round((totalAttended / totalConsultations) * 100 * 10) / 10
@@ -290,12 +331,13 @@ export default function ReportsPage() {
 
   // Exportar a Excel (CSV real)
   const handleExportCSV = () => {
-    const headers = ["Fecha", "Hora", "Paciente", "Estado", "Modalidad", "Motivo", "Honorario (MXN)"]
+    const headers = ["Fecha", "Hora", "Paciente", "Estado", "Tipo de Servicio", "Modalidad", "Motivo", "Honorario (MXN)"]
     const rows = filteredRecords.map((r) => [
       r.date,
       r.time,
       `"${r.patientName}"`,
-      r.status === "attended" ? "Asistida" : "Cancelada",
+      statusLabel(r.status),
+      SERVICE_TYPE_LABELS[r.serviceType],
       r.modality === "in_person" ? "Presencial" : "Virtual",
       `"${r.reason}"`,
       r.fee.toFixed(2),
@@ -390,7 +432,7 @@ export default function ReportsPage() {
           <span className="text-xs text-muted-foreground/80">• Personaliza el período y criterio</span>
         </div>
 
-        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4 items-end">
+        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 items-end">
           {/* Selector Fecha Desde */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-foreground">
@@ -420,7 +462,7 @@ export default function ReportsPage() {
           {/* Selector Estado de Cita */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-foreground">
-              Estado de Cita
+              Estado de la Cita
             </label>
             <Select
               value={statusFilter}
@@ -439,6 +481,36 @@ export default function ReportsPage() {
                 <SelectItem value="cancelled" className="text-xs">
                   Canceladas
                 </SelectItem>
+                <SelectItem value="no_show" className="text-xs">
+                  Inasistencias
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Selector Tipo de Servicio */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">
+              Tipo de Servicio
+            </label>
+            <Select
+              value={serviceTypeFilter}
+              onValueChange={(val) => setServiceTypeFilter(val as typeof serviceTypeFilter)}
+            >
+              <SelectTrigger className="w-full rounded-xl border-border/60 text-xs h-9 bg-background focus:ring-primary/40">
+                <SelectValue placeholder="Tipo de servicio" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="all" className="text-xs">
+                  Todos los servicios
+                </SelectItem>
+                {(Object.keys(SERVICE_TYPE_LABELS) as Array<ReportAppointment["serviceType"]>).map(
+                  (key) => (
+                    <SelectItem key={key} value={key} className="text-xs">
+                      {SERVICE_TYPE_LABELS[key]}
+                    </SelectItem>
+                  ),
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -586,7 +658,7 @@ export default function ReportsPage() {
                         No se encontraron consultas para este criterio
                       </p>
                       <p className="text-xs text-muted-foreground max-w-sm">
-                        Prueba ampliando el rango de fechas o seleccionando "Todas las citas" en el estado.
+                        Prueba ampliando el rango de fechas o seleccionando &ldquo;Todas las citas&rdquo; en el estado.
                       </p>
                     </div>
                   </TableCell>
@@ -641,6 +713,11 @@ export default function ReportsPage() {
                         <span className="inline-flex items-center gap-1 rounded-full border border-destructive/20 bg-destructive/10 px-2.5 py-0.5 text-[11px] font-medium text-destructive">
                           <XCircle className="size-3" />
                           Cancelada
+                        </span>
+                      ) : item.status === "no_show" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-orange-500/20 bg-orange-500/10 px-2.5 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300">
+                          <XCircle className="size-3" />
+                          Inasistencia
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
