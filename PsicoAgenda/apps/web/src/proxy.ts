@@ -1,5 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { tryFastAuthCheck } from "@/lib/supabase/fast-auth-check";
+import { withTimeout, TimeoutError, STALE_SUPABASE_AUTH_COOKIE, AUTH_CHECK_TIMEOUT_MS } from "@/lib/with-timeout";
 
 const PROTECTED_PREFIXES = [
   "/dashboard",
@@ -16,6 +18,19 @@ const isSupabaseConfigured = () =>
   Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   );
+
+/**
+ * Borra las cookies de sesión que quedaron caducas tras un timeout de red: sin
+ * esto, cada navegación futura volvería a pagar el mismo costo de reintentos
+ * del SDK contra un proveedor inalcanzable.
+ */
+function clearStaleAuthCookies(request: NextRequest, response: NextResponse) {
+  for (const cookie of request.cookies.getAll()) {
+    if (STALE_SUPABASE_AUTH_COOKIE.test(cookie.name)) {
+      response.cookies.set(cookie.name, "", { path: "/", maxAge: 0 });
+    }
+  }
+}
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -59,20 +74,47 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  // `getUser()` valida el token contra el proveedor. Es una ida a la red por petición:
-  // es el precio de no decidir la identidad a partir de una bandera que el navegador
-  // puede falsear (antes bastaba con que existiera una cookie centinela).
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Vía rápida: valida la firma y expiración del token localmente (sin red) a
+  // partir de la cookie. Si la sesión sigue vigente, esto basta y nunca se
+  // llega a tocar la red, ni siquiera cuando el proveedor está inalcanzable.
+  let user: { id: string; email?: string } | null = await tryFastAuthCheck(
+    supabase,
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    (name) => request.cookies.get(name)?.value,
+  );
+
+  let authTimedOut = false;
+
+  if (!user) {
+    // La vía rápida no pudo confirmar la sesión (token ausente, vencido o
+    // inválido): `getUser()` valida contra el proveedor y, si hace falta,
+    // refresca el token. Es el precio de no decidir la identidad a partir de
+    // una bandera que el navegador puede falsear. Se acota con un timeout
+    // porque, sin él, un refresh contra un proveedor inalcanzable reintenta
+    // con backoff exponencial hasta 30s.
+    try {
+      const result = await withTimeout(supabase.auth.getUser(), AUTH_CHECK_TIMEOUT_MS);
+      user = result.data.user;
+    } catch (error) {
+      if (error instanceof TimeoutError) {
+        authTimedOut = true;
+      } else {
+        throw error;
+      }
+    }
+  }
 
   if (isProtected && !user) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    const redirectResponse = NextResponse.redirect(new URL("/login", request.url));
+    if (authTimedOut) clearStaleAuthCookies(request, redirectResponse);
+    return redirectResponse;
   }
 
   if (isAuthPath && user) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
+
+  if (authTimedOut) clearStaleAuthCookies(request, response);
 
   return response;
 }
