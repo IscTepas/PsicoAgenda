@@ -1,4 +1,5 @@
 import Link from "next/link"
+import Image from "next/image"
 import { APP_NAME } from "@psicoagenda/shared"
 import { ArrowLeft, ShieldCheck } from "lucide-react"
 import { LoginForm } from "./login-form"
@@ -21,9 +22,7 @@ export default function LoginPage() {
         </Link>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-          <div className="size-6 rounded-md bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
-            Ψ
-          </div>
+          <Image src="/images/psicoagenda-icon.png" alt="" width={36} height={32} className="h-8 w-9 object-contain" />
           <span>{APP_NAME}</span>
         </div>
       </header>

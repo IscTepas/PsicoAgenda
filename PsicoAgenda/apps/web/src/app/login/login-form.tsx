@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { z } from "zod"
@@ -80,14 +81,16 @@ export function LoginForm() {
 
   return (
     <div className="w-full max-w-[420px] rounded-[28px] bg-card p-7 sm:p-9 border border-border shadow-sm flex flex-col gap-6">
-      {/* Cabecera con isotipo verde y blanco de PsicoAgenda */}
+      {/* Cabecera con el logo de PsicoAgenda */}
       <div className="text-center flex flex-col items-center">
-        <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary text-2xl font-bold shadow-2xs mb-3">
-          Ψ
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          {APP_NAME}
-        </h1>
+        <Image
+          src="/images/psicoagenda-logo.png"
+          alt={APP_NAME}
+          width={167}
+          height={116}
+          className="mb-1 h-[116px] w-[167px] object-contain"
+          priority
+        />
         <p className="mt-1 text-sm font-semibold text-foreground/80">
           Iniciar Sesión
         </p>
@@ -97,7 +100,10 @@ export function LoginForm() {
       </div>
 
       {error ? (
-        <Alert variant="destructive" className="rounded-xl">
+        <Alert
+          variant="destructive"
+          className="rounded-xl animate-in fade-in slide-in-from-top-1 duration-200"
+        >
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
@@ -119,16 +125,13 @@ export function LoginForm() {
             control={form.control}
             name="email"
             render={({ field }) => (
-              <FormItem className="space-y-1.5">
-                <FormLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Correo electrónico
-                </FormLabel>
+              <FormItem>
+                <FormLabel>Correo electrónico</FormLabel>
                 <FormControl>
                   <Input
                     type="email"
                     placeholder="tu@correo.com"
                     autoComplete="username"
-                    className="h-10 rounded-xl"
                     {...field}
                   />
                 </FormControl>
@@ -142,19 +145,15 @@ export function LoginForm() {
             control={form.control}
             name="password"
             render={({ field }) => (
-              <FormItem className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <FormLabel className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Contraseña
-                  </FormLabel>
-                </div>
+              <FormItem>
+                <FormLabel>Contraseña</FormLabel>
                 <div className="relative flex items-center">
                   <FormControl>
                     <Input
                       type={showPassword ? "text" : "password"}
                       placeholder="••••••••"
                       autoComplete="current-password"
-                      className="h-10 pr-10 rounded-xl"
+                      className="pr-10"
                       {...field}
                     />
                   </FormControl>
@@ -211,12 +210,12 @@ export function LoginForm() {
 
       {/* Cuentas de demostración en modo development */}
       {process.env.NODE_ENV === "development" && demoAccounts.length > 0 ? (
-        <div className="rounded-2xl bg-primary/5 p-3.5 border border-primary/20 space-y-2 mt-2">
+        <div className="rounded-2xl bg-muted/40 p-3.5 border border-border space-y-2 mt-2">
           <div className="flex items-center justify-between px-0.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-primary">
-              Cuentas Demo (1-clic)
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Cuentas demo (1-clic)
             </span>
-            <span className="text-[10px] text-muted-foreground">Desarrollo</span>
+            <span className="text-[10px] text-muted-foreground/70">Desarrollo</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

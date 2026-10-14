@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { APP_NAME, UserRole } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
@@ -93,9 +94,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             href="/dashboard"
             className="flex items-center gap-2.5 font-semibold text-foreground tracking-tight transition-opacity"
           >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs font-bold text-sm">
-              P
-            </span>
+            <Image
+              src="/images/psicoagenda-icon.png"
+              alt=""
+              width={32}
+              height={28}
+              className="h-7 w-8 shrink-0 object-contain"
+              priority
+            />
             <span
               className={cn(
                 "whitespace-nowrap font-semibold text-sm tracking-tight text-foreground transition-opacity",

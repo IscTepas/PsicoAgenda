@@ -1,4 +1,5 @@
 import Link from "next/link"
+import Image from "next/image"
 import {
   CalendarDays,
   Clock,
@@ -71,9 +72,14 @@ export default function Home() {
       <header className="sticky top-0 z-40 border-b border-border/70 bg-card/85 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-2xs group-hover:scale-105 transition-transform">
-              Ψ
-            </div>
+            <Image
+              src="/images/psicoagenda-icon.png"
+              alt=""
+              width={40}
+              height={35}
+              className="h-[35px] w-10 shrink-0 object-contain group-hover:scale-105 transition-transform"
+              priority
+            />
             <span className="font-heading text-lg font-bold tracking-tight text-foreground">
               {APP_NAME}
             </span>
@@ -317,9 +323,7 @@ export default function Home() {
       <footer className="border-t border-border/70 py-8 bg-card text-xs text-muted-foreground">
         <div className="mx-auto max-w-6xl px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="size-6 rounded-lg bg-primary text-primary-foreground font-bold text-xs flex items-center justify-center">
-              Ψ
-            </div>
+            <Image src="/images/psicoagenda-icon.png" alt="" width={28} height={25} className="h-[25px] w-7 object-contain" />
             <span className="font-semibold text-foreground">{APP_NAME}</span>
             <span>© {new Date().getFullYear()}</span>
             <span>· Práctica Clínica Psicológica</span>
