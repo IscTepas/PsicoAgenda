@@ -12,305 +12,493 @@ datasource db {
 }
 
 // La URL de conexión se configura en prisma.config.ts (no en el schema) para Prisma 7.
+//
+// ESQUEMA EN ESPAÑOL
+// -------------------
+// La base de datos manda: sus tablas, columnas y enums están en español
+// (`usuarios.correo`, `psicologos.cedula_profesional`, `rol_usuario` = PSICOLOGO...).
+// Los nombres de campo en TypeScript se mantienen en inglés y la traducción vive
+// en `@@map`/`@map`, de modo que el código de la API no cambia al cambiar de base.
+//
+// Excepciones conscientes respecto del DDL existente:
+//   - Los `@default(...)` añaden cláusulas DEFAULT que el DDL actual no tiene.
+//     Es intencional: el valor lo pone quien inserta (Prisma o los triggers) y
+//     documenta la intención en la propia base.
+//   - Los índices parciales y GiST no son expresables en Prisma; van en la
+//     migración baseline (y por eso `migrate dev` reportaría drift: se usa
+//     `migrate diff` + `migrate deploy`, sin base sombra).
+//   - Las vistas `vw_*` tampoco son modelables: idem, van en la baseline.
 
 // --- Usuarios y roles ---
 
 /// Perfil espejado de la identidad administrada por el proveedor de identidad.
 /// Los `id` son los UUID de `auth.users` y los mantiene un trigger
-/// `AFTER INSERT OR UPDATE ON auth.users` (ver la migración `*_auth_user_profile_sync`).
+/// `AFTER INSERT OR UPDATE ON auth.users` (ver `prisma/supabase/auth_user_triggers.sql`).
 /// No guarda contraseñas: el cifrado y la verificación de credenciales, el MFA y
 /// la verificación de correo los resuelve el proveedor de identidad.
 /// Prisma nunca referencia `auth` en el datasource: el proveedor modifica sus
 /// schemas y referenciarlos genera drift que `migrate dev` intentaría revertir.
 model User {
-  id    String   @id
-  email String   @unique
-  name  String
-  phone String?
-  role  UserRole @default(PATIENT)
+  id    String   @id @db.Uuid
+  email String   @unique(map: "usuarios_correo_key") @map("correo")
+  name  String   @map("nombre_completo")
+  phone String?  @map("telefono")
+  role  UserRole @default(PATIENT) @map("rol")
+
   /// Refleja `banned_until` de la identidad: una cuenta bloqueada deja de ser usable.
-  isActive    Boolean   @default(true) @map("is_active")
-  lastLoginAt DateTime? @map("last_login_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  isActive Boolean @default(true) @map("activo")
+  timeZone String  @default("UTC") @map("zona_horaria")
+  photoUrl String? @map("foto_perfil_url")
+
+  notifyWhatsapp Boolean @default(false) @map("notificar_whatsapp")
+  notifyEmail    Boolean @default(true) @map("notificar_correo")
+  uiPreferences  Json?   @map("preferencias_interfaz")
+
+  lastLoginAt DateTime? @map("ultimo_acceso") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("creado_en") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
   psychologist Psychologist?
   patient      Patient?
-  reports      Report[]
 
-  @@map("users")
+  reports         Report[]            @relation("ReportGenerator")
+  notifications   Notification[]
+  auditLogs       AuditLog[]            @relation("AuditUser")
+  revisions       LogEntryRevision[]    @relation("RevisionEditor")
+  cancelledCites  Appointment[]         @relation("AppointmentCanceller")
+
+  @@map("usuarios")
 }
 
 enum UserRole {
-  PSYCHOLOGIST
-  PATIENT
-  ADMIN
+  PSYCHOLOGIST @map("PSICOLOGO")
+  PATIENT      @map("PACIENTE")
+  ADMIN        @map("ADMINISTRADOR")
+
+  @@map("rol_usuario")
 }
 
 model Psychologist {
-  id            String    @id @default(uuid())
-  userId        String    @unique @map("user_id")
-  licenseNumber String    @map("license_number")
-  specialty     String?
-  bio           String?
-  /// Patients menores de edad bajo responsabilidad legal de este profesional.
-  minorPatients Patient[] @relation("MinorPatients")
+  id            String  @id @db.Uuid
+  userId        String  @unique(map: "psicologos_usuario_id_key") @db.Uuid @map("usuario_id")
+  licenseNumber String  @unique(map: "psicologos_cedula_profesional_key") @map("cedula_profesional")
+  specialty     String? @map("especialidad")
+  yearsExperience Int?  @map("anios_experiencia")
+  bio           String? @map("biografia")
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  appointments Appointment[]
-  logEntries   LogEntry[]
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
-  @@unique([licenseNumber])
-  @@map("psychologists")
+  /// Pacientes menores de edad bajo responsabilidad legal de este profesional.
+  minorPatients Patient[]
+  appointments  Appointment[]
+  logEntries    LogEntry[]
+  schedule      PsychologistSchedule[]
+  requests      AppointmentRequest[]
+  reports       Report[]
+
+  @@map("psicologos")
 }
 
 model Patient {
-  id              String    @id @default(uuid())
-  userId          String    @unique @map("user_id")
-  birthDate       DateTime? @map("birth_date") @db.Date
-  gender          String?
-  address         String?
-  /// Responsable legal cuando el paciente es menor de edad (RD-11).
-  isMinor         Boolean   @default(false) @map("is_minor")
-  legalGuardianId String?   @map("legal_guardian_id")
-  /// Psicólogo responsable de los menores de edad a su cargo.
-  psychologistId  String?   @map("psychologist_id")
+  id     String    @id @db.Uuid
+  userId String    @unique(map: "pacientes_usuario_id_key") @db.Uuid @map("usuario_id")
+  birthDate DateTime? @db.Date @map("fecha_nacimiento")
+  gender  String? @map("sexo")
+  address String? @map("direccion")
 
-  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  legalGuardian     LegalGuardian?     @relation("GuardianPatients", fields: [legalGuardianId], references: [id])
-  psychologist      Psychologist?      @relation("MinorPatients", fields: [psychologistId], references: [id])
+  /// Responsable legal cuando el paciente es menor de edad (RD-11).
+  legalGuardianId String? @db.Uuid @map("tutor_legal_id")
+  /// Psicólogo responsable del paciente.
+  psychologistId  String? @db.Uuid @map("psicologo_id")
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  legalGuardian LegalGuardian? @relation("GuardianPatients", fields: [legalGuardianId], references: [id], onDelete: Restrict)
+  psychologist  Psychologist?  @relation(fields: [psychologistId], references: [id], onDelete: Restrict)
+
   emergencyContacts EmergencyContact[]
   appointments      Appointment[]
   clinicalRecord    ClinicalRecord?
   consents          InformedConsent[]
-  notifications     Notification[]
+  requests          AppointmentRequest[]
 
-  @@index([psychologistId])
-  @@map("patients")
+  @@index([psychologistId], map: "pacientes_psicologo_id_idx")
+  @@index([legalGuardianId], map: "pacientes_tutor_legal_id_idx")
+  @@map("pacientes")
 }
 
 model LegalGuardian {
-  id           String   @id @default(uuid())
-  name         String
-  email        String?
-  phone        String?
-  relationship String?
-  documentId   String?  @map("document_id")
-  createdAt    DateTime @default(now()) @map("created_at")
+  id           String   @id @db.Uuid
+  name         String   @map("nombre_completo")
+  email        String?  @map("correo")
+  phone        String?  @map("telefono")
+  relationship String?  @map("parentesco")
+  documentId   String?  @map("documento_identidad")
+  createdAt    DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
 
   patients Patient[]         @relation("GuardianPatients")
   consents InformedConsent[] @relation("GuardianConsents")
 
-  @@map("legal_guardians")
+  @@map("tutores_legales")
 }
 
 model EmergencyContact {
-  id           String   @id @default(uuid())
-  patientId    String   @map("patient_id")
-  name         String
-  phone        String
-  relationship String?
-  isPrimary    Boolean  @default(false) @map("is_primary")
-  createdAt    DateTime @default(now()) @map("created_at")
+  id           String   @id @db.Uuid
+  patientId    String   @db.Uuid @map("paciente_id")
+  name         String   @map("nombre_completo")
+  phone        String   @map("telefono")
+  relationship String?  @map("parentesco")
+  isPrimary    Boolean  @default(false) @map("es_principal")
+  createdAt    DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
 
   patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
 
-  @@index([patientId])
-  @@map("emergency_contacts")
+  @@index([patientId], map: "contactos_emergencia_paciente_id_idx")
+  // El índice parcial `ux_contacto_principal` (solo el contacto marcado como
+  // principal por paciente) no es expresable en Prisma: va en la baseline.
+  @@map("contactos_emergencia")
 }
 
 // --- Agenda ---
 
+model AppointmentRequest {
+  id             String       @id @db.Uuid
+  patientId      String       @db.Uuid @map("paciente_id")
+  psychologistId String       @db.Uuid @map("psicologo_id")
+  requestedStart DateTime     @map("inicio_solicitado") @db.Timestamptz(3)
+  sessionType    SessionType  @map("tipo_sesion")
+  reason         String?      @map("motivo")
+  status         RequestStatus @default(PENDING) @map("estado")
+  createdAt      DateTime     @default(now()) @map("creado_en") @db.Timestamptz(3)
+  handledAt      DateTime?    @map("atendida_en") @db.Timestamptz(3)
+
+  patient      Patient       @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  psychologist Psychologist  @relation(fields: [psychologistId], references: [id], onDelete: Restrict)
+  appointment  Appointment?
+
+  @@index([patientId], map: "solicitudes_cita_paciente_id_idx")
+  @@index([psychologistId, status], map: "solicitudes_cita_psicologo_id_estado_idx")
+  @@map("solicitudes_cita")
+}
+
+enum RequestStatus {
+  PENDING   @map("PENDIENTE")
+  ACCEPTED  @map("ACEPTADA")
+  REJECTED  @map("RECHAZADA")
+  CANCELLED @map("CANCELADA")
+
+  @@map("estado_solicitud")
+}
+
 model Appointment {
-  id               String              @id @default(uuid())
-  psychologistId   String              @map("psychologist_id")
-  patientId        String              @map("patient_id")
-  startTime        DateTime            @map("start_time")
-  durationMinutes  Int                 @default(50) @map("duration_minutes")
-  status           AppointmentStatus   @default(PENDING)
-  modality         AppointmentModality @default(IN_PERSON)
-  reason           String?
-  notes            String?
-  /// Confirmación de asistencia del paciente.
-  attendanceStatus AttendanceStatus?   @map("attendance_status")
-  createdAt        DateTime            @default(now()) @map("created_at")
-  updatedAt        DateTime            @updatedAt @map("updated_at")
+  id               String            @id @db.Uuid
+  psychologistId   String            @db.Uuid @map("psicologo_id")
+  patientId        String            @db.Uuid @map("paciente_id")
+  requestId        String?           @unique(map: "citas_solicitud_id_key") @db.Uuid @map("solicitud_id")
+  start            DateTime          @map("inicio") @db.Timestamptz(3)
+  end              DateTime          @map("fin") @db.Timestamptz(3)
+  status           AppointmentStatus @default(PENDING) @map("estado")
+  modality         AppointmentModality @default(IN_PERSON) @map("modalidad")
+  sessionType      SessionType       @map("tipo_sesion")
+  reason           String?           @map("motivo")
+  internalNotes    String?           @map("notas_internas")
+  cancelReason     String?           @map("motivo_cancelacion")
+  cancelledById    String?           @db.Uuid @map("cancelada_por_id")
+  cancelledAt      DateTime?         @map("cancelada_en") @db.Timestamptz(3)
+  createdAt        DateTime          @default(now()) @map("creado_en") @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  psychologist      Psychologist       @relation(fields: [psychologistId], references: [id], onDelete: Cascade)
-  patient           Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  logEntries        LogEntry[]
-  notifications     Notification[]
-  honorariumPayment HonorariumPayment?
+  psychologist Psychologist @relation(fields: [psychologistId], references: [id], onDelete: Restrict)
+  patient      Patient      @relation(fields: [patientId], references: [id], onDelete: Restrict)
+  request      AppointmentRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  cancelledBy  User?        @relation("AppointmentCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
 
-  @@index([psychologistId, startTime])
-  @@index([patientId, startTime])
-  @@map("appointments")
+  logEntries     LogEntry[]
+  notifications  Notification[]
+  honorariumPay  HonorariumPayment?
+
+  @@index([patientId, start], map: "citas_paciente_id_inicio_idx")
+  @@index([psychologistId, start], map: "citas_psicologo_id_inicio_idx")
+  @@index([status, start], map: "idx_citas_estado_inicio")
+  // Los índices GiST anti-solape (`ex_citas_*_sin_empalme`, sobre
+  // tstzrange(inicio, fin)) no son expresables en Prisma: van en la baseline.
+  @@map("citas")
 }
 
 enum AppointmentStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-  COMPLETED
-  NO_SHOW
+  PENDING   @map("PENDIENTE")
+  CONFIRMED @map("CONFIRMADA")
+  CANCELLED @map("CANCELADA")
+  COMPLETED @map("COMPLETADA")
+  NO_SHOW   @map("NO_ASISTIO")
+
+  @@map("estado_cita")
 }
 
 enum AppointmentModality {
-  IN_PERSON
-  VIRTUAL
+  IN_PERSON @map("PRESENCIAL")
+  VIRTUAL   @map("VIRTUAL")
+
+  @@map("modalidad_cita")
 }
 
-enum AttendanceStatus {
-  ATTENDED
-  NO_SHOW
+enum SessionType {
+  INDIVIDUAL
+  PAIR             @map("PAREJA")
+  FAMILY           @map("FAMILIAR")
+  INITIAL_CONSULTATION @map("CONSULTA_INICIAL")
+
+  @@map("tipo_sesion")
+}
+
+model PsychologistSchedule {
+  id             String  @id @db.Uuid
+  psychologistId String  @db.Uuid @map("psicologo_id")
+  dayOfWeek      Int     @db.SmallInt @map("dia_semana")
+  startTime      DateTime @db.Time(0) @map("hora_inicio")
+  endTime        DateTime @db.Time(0) @map("hora_fin")
+  active         Boolean @default(true) @map("activo")
+
+  psychologist Psychologist @relation(fields: [psychologistId], references: [id], onDelete: Cascade)
+
+  @@unique([psychologistId, dayOfWeek, startTime], map: "horarios_psicologo_psicologo_id_dia_semana_hora_inicio_key")
+  @@map("horarios_psicologo")
 }
 
 // --- Expediente clínico ---
 
 model ClinicalRecord {
-  id                  String       @id @default(uuid())
-  patientId           String       @unique @map("patient_id")
-  openedAt            DateTime     @default(now()) @map("opened_at")
-  diagnosis           String?
-  background          String?
-  generalObservations String?      @map("general_observations")
-  status              RecordStatus @default(ACTIVE)
-  updatedAt           DateTime     @updatedAt @map("updated_at")
+  id                  String       @id @db.Uuid
+  patientId           String       @unique(map: "expedientes_clinicos_paciente_id_key") @db.Uuid @map("paciente_id")
+  openedAt            DateTime     @default(now()) @map("abierto_en") @db.Timestamptz(3)
+  reason              String?      @map("motivo_consulta")
+  background          String?      @map("antecedentes")
+  diagnosis           String?      @map("diagnostico")
+  generalObservations String?      @map("observaciones_generales")
+  status              RecordStatus @default(ACTIVE) @map("estado")
+  /// Plazo de retención del expediente (RD de conservación de historia clínica).
+  retainUntil         DateTime?    @db.Date @map("conservar_hasta")
+  updatedAt           DateTime     @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  patient    Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient    Patient    @relation(fields: [patientId], references: [id], onDelete: Restrict)
   logEntries LogEntry[]
 
-  @@map("clinical_records")
+  @@map("expedientes_clinicos")
 }
 
 enum RecordStatus {
-  ACTIVE
-  INACTIVE
+  ACTIVE   @map("ACTIVO")
+  INACTIVE @map("INACTIVO")
+
+  @@map("estado_expediente")
 }
 
 model LogEntry {
-  id               String   @id @default(uuid())
-  clinicalRecordId String   @map("clinical_record_id")
-  appointmentId    String?  @map("appointment_id")
-  sessionDate      DateTime @default(now()) @map("session_date")
-  sessionNotes     String   @map("session_notes")
-  psychologistId   String   @map("psychologist_id")
-  version          Int      @default(1)
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  id                String   @id @db.Uuid
+  clinicalRecordId  String   @db.Uuid @map("expediente_id")
+  appointmentId     String?  @db.Uuid @map("cita_id")
+  psychologistId    String   @db.Uuid @map("psicologo_id")
+  sessionDate       DateTime @default(now()) @map("fecha_sesion") @db.Timestamptz(3)
+  sessionNotes      String   @map("notas_sesion")
+  objectives        String?  @map("objetivos_trabajados")
+  nextSessionPlan   String?  @map("plan_proxima_sesion")
+  generalState      String?  @map("estado_general")
+  progress          String?  @map("progreso")
+  version           Int      @default(1)
+  createdAt         DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  clinicalRecord ClinicalRecord @relation(fields: [clinicalRecordId], references: [id], onDelete: Cascade)
+  clinicalRecord ClinicalRecord @relation(fields: [clinicalRecordId], references: [id], onDelete: Restrict)
   appointment    Appointment?   @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-  psychologist   Psychologist   @relation(fields: [psychologistId], references: [id])
+  psychologist   Psychologist   @relation(fields: [psychologistId], references: [id], onDelete: Restrict)
 
-  @@index([clinicalRecordId, sessionDate])
-  @@map("log_entries")
+  revisions LogEntryRevision[]
+
+  @@index([clinicalRecordId, sessionDate], map: "entradas_bitacora_expediente_id_fecha_sesion_idx")
+  @@index([appointmentId], map: "entradas_bitacora_cita_id_idx")
+  @@index([psychologistId], map: "entradas_bitacora_psicologo_id_idx")
+  @@map("entradas_bitacora")
+}
+
+/// Historial de versiones de una entrada de bitácora.
+model LogEntryRevision {
+  id              String   @id @db.Uuid
+  entryId         String   @db.Uuid @map("entrada_id")
+  version         Int
+  sessionNotes    String   @map("notas_sesion")
+  objectives      String?  @map("objetivos_trabajados")
+  nextSessionPlan String?  @map("plan_proxima_sesion")
+  modifiedById    String?  @db.Uuid @map("modificado_por_id")
+  modifiedAt      DateTime @default(now()) @map("modificado_en") @db.Timestamptz(3)
+
+  entry      LogEntry @relation(fields: [entryId], references: [id], onDelete: Restrict)
+  modifiedBy User?    @relation("RevisionEditor", fields: [modifiedById], references: [id], onDelete: SetNull)
+
+  @@unique([entryId, version], map: "revisiones_bitacora_entrada_id_version_key")
+  @@index([modifiedById], map: "revisiones_bitacora_modificado_por_id_idx")
+  @@map("revisiones_bitacora")
 }
 
 model InformedConsent {
-  id              String        @id @default(uuid())
-  patientId       String        @map("patient_id")
-  signedAt        DateTime      @default(now()) @map("signed_at")
-  document        String
-  documentUrl     String?       @map("document_url")
+  id              String        @id @db.Uuid
+  patientId       String        @db.Uuid @map("paciente_id")
+  signedAt        DateTime      @default(now()) @map("firmado_en") @db.Timestamptz(3)
+  document        String        @map("documento")
+  documentUrl     String?       @map("documento_url")
   /// Tutor legal que firma cuando el paciente es menor de edad (RD-11).
-  legalGuardianId String?       @map("legal_guardian_id")
-  status          ConsentStatus @default(SIGNED)
-  withdrawnAt     DateTime?     @map("withdrawn_at")
-  createdAt       DateTime      @default(now()) @map("created_at")
+  legalGuardianId String?       @db.Uuid @map("tutor_legal_id")
+  status          ConsentStatus @default(SIGNED) @map("estado")
+  withdrawnAt     DateTime?     @map("retirado_en") @db.Timestamptz(3)
+  createdAt       DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
 
-  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Restrict)
   legalGuardian LegalGuardian? @relation("GuardianConsents", fields: [legalGuardianId], references: [id], onDelete: SetNull)
 
-  @@index([patientId, signedAt])
-  @@index([legalGuardianId])
-  @@map("informed_consents")
+  @@index([patientId, signedAt], map: "consentimientos_informados_paciente_id_firmado_en_idx")
+  @@index([legalGuardianId], map: "consentimientos_informados_tutor_legal_id_idx")
+  @@map("consentimientos_informados")
 }
 
 enum ConsentStatus {
-  SIGNED
-  WITHDRAWN
-  EXPIRED
+  SIGNED   @map("FIRMADO")
+  WITHDRAWN @map("RETIRADO")
+  EXPIRED  @map("VENCIDO")
+
+  @@map("estado_consentimiento")
 }
 
 // --- Notificaciones ---
 
 model Notification {
-  id            String              @id @default(uuid())
-  patientId     String?             @map("patient_id")
-  appointmentId String?             @map("appointment_id")
-  channel       NotificationChannel
-  subject       String
-  message       String
-  status        NotificationStatus  @default(PENDING)
-  scheduledFor  DateTime?           @map("scheduled_for")
-  sentAt        DateTime?           @map("sent_at")
+  id            String           @id @db.Uuid
+  userId        String           @db.Uuid @map("usuario_id")
+  appointmentId String?          @db.Uuid @map("cita_id")
+  type          NotificationType @map("tipo")
+  channel       NotificationChannel @map("canal")
+  subject       String           @map("asunto")
+  message       String           @map("mensaje")
+  status        NotificationStatus @default(PENDING) @map("estado")
+  scheduledFor  DateTime?        @map("programada_para") @db.Timestamptz(3)
+  sentAt        DateTime?        @map("enviada_en") @db.Timestamptz(3)
   error         String?
-  attempts      Int                 @default(0)
-  createdAt     DateTime            @default(now()) @map("created_at")
+  attempts      Int              @default(0) @map("intentos")
+  createdAt     DateTime         @default(now()) @map("creado_en") @db.Timestamptz(3)
 
-  patient     Patient?     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
 
-  @@index([status, scheduledFor])
-  @@map("notifications")
+  @@index([userId], map: "notificaciones_usuario_id_idx")
+  @@index([appointmentId], map: "notificaciones_cita_id_idx")
+  @@index([status, scheduledFor], map: "notificaciones_estado_programada_para_idx")
+  // `idx_notificaciones_pendientes` (parcial, WHERE estado = PENDIENTE) va en la baseline.
+  @@map("notificaciones")
+}
+
+enum NotificationType {
+  REMINDER     @map("RECORDATORIO")
+  CONFIRMATION @map("CONFIRMACION")
+  CHANGE       @map("CAMBIO")
+  CANCELLATION @map("CANCELACION")
+
+  @@map("tipo_notificacion")
 }
 
 enum NotificationChannel {
   WHATSAPP
-  EMAIL
+  EMAIL @map("CORREO")
+
+  @@map("canal_notificacion")
 }
 
 enum NotificationStatus {
-  PENDING
-  SENT
-  FAILED
-  CANCELLED
+  PENDING   @map("PENDIENTE")
+  SENT      @map("ENVIADA")
+  FAILED    @map("FALLIDA")
+  CANCELLED @map("CANCELADA")
+
+  @@map("estado_envio")
 }
 
 // --- Reportes y honorarios ---
 
 model Report {
-  id            String       @id @default(uuid())
-  type          String
-  periodStart   DateTime     @map("period_start") @db.Date
-  periodEnd     DateTime     @map("period_end") @db.Date
-  generatedAt   DateTime     @default(now()) @map("generated_at")
-  format        ReportFormat
-  fileUrl       String?      @map("file_url")
-  generatedById String?      @map("generated_by_id")
+  id            String     @id @db.Uuid
+  type          ReportType @map("tipo")
+  psychologistId String?    @db.Uuid @map("psicologo_id")
+  periodStart   DateTime   @db.Date @map("periodo_inicio")
+  periodEnd     DateTime   @db.Date @map("periodo_fin")
+  format        ReportFormat @map("formato")
+  fileUrl       String?    @map("url_archivo")
+  generatedById String?    @db.Uuid @map("generado_por_id")
+  generatedAt   DateTime   @default(now()) @map("generado_en") @db.Timestamptz(3)
 
-  generatedBy User? @relation(fields: [generatedById], references: [id], onDelete: SetNull)
+  psychologist Psychologist? @relation(fields: [psychologistId], references: [id], onDelete: SetNull)
+  generatedBy  User?         @relation("ReportGenerator", fields: [generatedById], references: [id], onDelete: SetNull)
 
-  @@index([generatedAt])
-  @@index([generatedById])
-  @@map("reports")
+  @@index([generatedAt], map: "reportes_generado_en_idx")
+  @@index([psychologistId], map: "reportes_psicologo_id_idx")
+  @@index([generatedById], map: "reportes_generado_por_id_idx")
+  @@map("reportes")
+}
+
+enum ReportType {
+  CITAS_PERIODO
+  ASISTENCIA_CANCELACIONES
+  PACIENTES_ATENDIDOS
+  HONORARIOS
+
+  @@map("tipo_reporte")
 }
 
 enum ReportFormat {
   PDF
   XLSX
+
+  @@map("formato_reporte")
 }
 
 /// Control administrativo del estado de pago de honorarios (RD-14).
 /// No constituye facturación electrónica.
 model HonorariumPayment {
-  id            String        @id @default(uuid())
-  appointmentId String        @unique @map("appointment_id")
-  amount        Decimal       @db.Decimal(12, 2)
-  status        PaymentStatus @default(PENDING)
-  paidAt        DateTime?     @map("paid_at")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
+  id            String        @id @db.Uuid
+  appointmentId String        @unique(map: "pagos_honorarios_cita_id_key") @db.Uuid @map("cita_id")
+  amount        Decimal       @db.Decimal(12, 2) @map("monto")
+  status        PaymentStatus @default(PENDING) @map("estado")
+  paidAt        DateTime?     @map("pagado_en") @db.Timestamptz(3)
+  createdAt     DateTime      @default(now()) @map("creado_en") @db.Timestamptz(3)
+  updatedAt     DateTime      @updatedAt @map("actualizado_en") @db.Timestamptz(3)
 
-  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
 
-  @@index([status, paidAt])
-  @@map("honorarium_payments")
+  @@index([status, paidAt], map: "pagos_honorarios_estado_pagado_en_idx")
+  @@map("pagos_honorarios")
 }
 
 enum PaymentStatus {
-  PENDING
-  PAID
-  WAIVED
+  PENDING @map("PENDIENTE")
+  PAID    @map("PAGADO")
+  WAIVED  @map("CONDONADO")
+
+  @@map("estado_pago")
+}
+
+// --- Auditoría ---
+
+/// Trazas de acciones sensibles sobre el dominio (acceso, cambios de estado,
+/// altas y bajas de cuentas). Solo la escribe el backend.
+model AuditLog {
+  id       String  @id @db.Uuid
+  userId   String? @db.Uuid @map("usuario_id")
+  action   String  @map("accion")
+  entity   String  @map("entidad")
+  entityId String? @map("entidad_id")
+  detail   Json?   @map("detalle")
+  ip       String?
+  createdAt DateTime @default(now()) @map("creado_en") @db.Timestamptz(3)
+
+  user User? @relation("AuditUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId], map: "registros_auditoria_usuario_id_idx")
+  @@index([createdAt], map: "registros_auditoria_creado_en_idx")
+  @@index([entity, entityId], map: "registros_auditoria_entidad_entidad_id_idx")
+  @@map("registros_auditoria")
 }

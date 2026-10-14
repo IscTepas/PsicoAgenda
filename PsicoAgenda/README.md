@@ -33,6 +33,7 @@ Sistema orientado a profesionistas de la psicología para la gestión integral d
 | `openspec/config.yaml` | Configuración de OpenSpec (schema `spec-driven`, idioma `es`) |
 | `apps/api/` | Backend Express 5 + TypeScript + Prisma 7 |
 | `apps/api/prisma/supabase/bootstrap.sql` | Alta del rol `prisma` en Supabase (SQL Editor) |
+| `apps/api/prisma/supabase/grants.sql` | Devuelve a `postgres` los privilegios sobre el esquema, tras `migrate deploy` |
 | `apps/web/` | Frontend Next.js 16 + Tailwind v4 + shadcn/ui + PWA Serwist |
 | `packages/shared/` | Tipos, esquemas Zod y constantes compartidas |
 | `.opencode/` | Slash commands y skills de OpenSpec para opencode |
@@ -71,7 +72,7 @@ El sistema persiste en el PostgreSQL gestionado de Supabase y delega credenciale
 
 - **La API es la única vía de acceso a los datos.** Las tablas de `public` no tienen RLS y el rol `prisma` es su único propietario, así que `anon`, `authenticated` y `service_role` no tienen **ningún** privilegio sobre ellas. Aun así la Data API está **desactivada** (el proyecto no expone `public`), de modo que PostgREST tampoco publica el esquema OpenAPI con los nombres de tabla y columna. El orden y la comprobación están en el paso 3.
 - **El rol de negocio viaja en `app_metadata.role`**, que el cliente no puede editar. El claim `role` de nivel superior del JWT vale `authenticated` y es el rol de PostgreSQL, no el de negocio. Ojo al casing: el claim llega en **MAYÚSCULAS** (`PSYCHOLOGIST`) porque lo escribe el enum de la base, mientras que `UserRole` de `@psicoagenda/shared` usa minúsculas; el backend lo cruza en `toBusinessRole` (`apps/api/src/utils/jwt.ts`).
-- **`public.users` es un perfil espejado** de la identidad: sus `id` son los UUID de `auth.users` (columna `text`, sin FK) y los triggers mantienen sincronizados `email`, `name`, `role`, `is_active` y `last_login_at`. Prisma nunca referencia los schemas `auth` ni `storage`.
+- **`public.usuarios` es un perfil espejado** de la identidad: sus `id` son los UUID de `auth.users` (columna `uuid`, sin FK) y los triggers mantienen sincronizados `correo`, `nombre_completo`, `rol`, `activo` y `ultimo_acceso`. El esquema está en **español** (16 tablas + 4 vistas `vw_*`) y el modelo de Prisma usa nombres de campo en inglés con `@map`/`@@map`, de modo que el código TypeScript no cambia. `rol` es el enum español (`PACIENTE`/`PSICOLOGO`/`ADMINISTRADOR`): el claim del JWT sigue en inglés y el trigger lo traduce al escribir la fila. Prisma nunca referencia los schemas `auth` ni `storage`.
 - **Cifrado en tránsito:** la conexión usa un `pg.PoolConfig` con `ssl: { rejectUnauthorized: false }` (ver `apps/api/src/lib/prisma.ts`). Endurecimiento pendiente: `rejectUnauthorized: true` con el `root.crt` que Supabase publica en el dashboard.
 - **Fechas:** todo se almacena en **UTC** y se convierte en la presentación. No se mezclan horas locales en los datos.
 
@@ -110,7 +111,7 @@ Cómo comprobarlo. Con la *publishable* key (la que viaja en el navegador):
 curl -s "$SUPABASE_URL/rest/v1/" -H "apikey: $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
 
 # 404: ya no resuelve la tabla, porque no busca en `public`
-curl -s "$SUPABASE_URL/rest/v1/users?select=id" -H "apikey: $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
+curl -s "$SUPABASE_URL/rest/v1/usuarios?select=id" -H "apikey: $NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
 ```
 
 Un `404` en la segunda es el resultado correcto, no un descuido: significa que PostgREST ya no resuelve `public`. Si devolviera `200`, o si `claim y perfil` salieran con datos, habría que revisar el paso.
@@ -127,29 +128,36 @@ cp apps/web/.env.example apps/web/.env
 `DATABASE_URL` usa **Supavisor en modo sesión**:
 
 ```bash
-DATABASE_URL="postgresql://prisma.<REF>:<CONTRASENA>@aws-0-<region>.pooler.supabase.com:5432/postgres"
+DATABASE_URL="postgresql://prisma.<REF>:<CONTRASENA>@aws-<N>-<region>.pooler.supabase.com:5432/postgres"
 ```
 
 - El usuario es `<rol>.<ref_del_proyecto>`, no solo el rol: Supavisor enruta por tenant y rechaza la conexión si falta el ref (`ENOTFOUND: tenant/user ...`).
-- El host del pooler es `aws-0-<region>.pooler.supabase.com` (región en Project Settings → Database).
+- El host del pooler es `aws-<N>-<region>.pooler.supabase.com`. El índice `N` **no se adivina**: el `aws-0` que circula por los ejemplos no tiene por qué ser el del proyecto y un índice equivocado da `ENOTFOUND: tenant/user ... not found`. Se copia de Project Settings → Database. En este proyecto es `aws-1-ca-central-1`.
 - El modo directo (`db.<ref>.supabase.co`) es IPv6 y no es alcanzable desde entornos sin IPv6 global.
 - El modo transacción (puerto 6543) queda descartado: no soporta sentencias preparadas, que Prisma emite por debajo.
 - **No agregues `pgbouncer=true`**: desactiva el caché de planes preparados y solo hace falta en modo transacción.
 - **La URL no debe llevar parámetros `ssl*`**: `pg-connection-string` los traduce a `verify-full` y falla contra el certificado de Supabase con `SELF_SIGNED_CERT_IN_CHAIN`. El TLS se configura en el `PoolConfig`, no en la cadena.
 
-**5. Aplicar el esquema y generar el cliente:**
+**5. Aplicar el esquema, devolver los privilegios a `postgres` y generar el cliente:**
 
 ```bash
-# Desarrollo: usa una base sombra para detectar problemas antes de aplicar
-npm run prisma:migrate
-
-# Publicación: solo migraciones pendientes, nunca crea base sombra
+# Aplica la única migración (la baseline del esquema en español). No crea base sombra.
 npm run prisma:migrate:deploy --workspace=apps/api
+
+# `prisma` es dueño de las tablas que acaba de crear, así que `postgres` (el rol del
+# SQL Editor) se queda sin escritura sobre ellas. Este GRANT se la devuelve.
+npx prisma db execute --file prisma/supabase/grants.sql
 
 npm run prisma:generate
 ```
 
-**Plan B para la base sombra.** `migrate dev` necesita una base sombra: `@prisma/adapter-pg` la crea como `prisma_migrate_shadow_db_<uuid>` en el mismo servidor, y por eso el rol `prisma` necesita `createdb`. Si falla (Supabase tuvo un bug de `statement timeout` al crearla y eliminarla), configura un segundo proyecto:
+**Sobre la baseline.** `prisma/migrations/20261013000000_baseline_esquema_espanol` contiene los 16 modelos de `schema.prisma` **más** los objetos que Prisma 7 no sabe modelar: los 17 CHECK de negocio, los índices parciales y GiST (el anti-solape de citas), las 4 vistas `vw_*` y las 4 funciones de sincronización con `auth.users`. Por eso **no** se usa `migrate dev`: compara `schema.prisma` contra una base sombra y reportaría drift en todo lo escrito a mano. El flujo del proyecto es `migrate diff` + `migrate deploy`, sin base sombra:
+
+```bash
+npx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script -o baseline_ddl.sql
+```
+
+**Si de verdad hace falta `migrate dev`** (una migración nueva sobre el esquema), hay que asumir el drift de los objetos escritos a mano o moverlos a su propia migración. La base sombra la crea `@prisma/adapter-pg` como `prisma_migrate_shadow_db_<uuid>`; si Supabase la rechaza por `statement timeout`, queda el respaldo del `shadowDatabaseUrl`:
 
 ```ts
 // apps/api/prisma.config.ts
@@ -159,11 +167,9 @@ datasource: {
 }
 ```
 
-La alternativa estable es `prisma migrate diff` + `prisma migrate deploy`, que no necesita base sombra.
-
 **6. Activar los triggers de perfil.** Ejecutar `apps/api/prisma/supabase/auth_user_triggers.sql` en el SQL Editor del dashboard (Dashboard → SQL Editor), que corre como `postgres`.
 
-Van aparte de las migraciones a propósito: los triggers se crean sobre `auth.users`, que es propiedad de `supabase_auth_admin`, y para eso hacen falta privilegios que el rol `prisma` no tiene ni puede recibir. Si el DDL estuviera en `prisma/migrations/`, `migrate deploy` fallaría con `permission denied for schema auth` y bloquearía **todas** las migraciones posteriores. Las funciones sí las crea Prisma (la migración `*_auth_user_profile_sync`); solo los disparadores se aplican con `postgres`.
+Van aparte de las migraciones a propósito: los triggers se crean sobre `auth.users`, que es propiedad de `supabase_auth_admin`, y para eso hacen falta privilegios que el rol `prisma` no tiene ni puede recibir. Si el DDL estuviera en `prisma/migrations/`, `migrate deploy` fallaría con `permission denied for schema auth` y bloquearía **todas** las migraciones posteriores. Las funciones sí las crea Prisma (viven en la baseline `20261013000000_baseline_esquema_espanol`); solo los disparadores se aplican con `postgres`.
 
 `migrate status` no cubre este archivo. Si lo editas, vuelve a aplicarlo: es idempotente.
 
@@ -180,11 +186,13 @@ Comprobación de que el espejo funciona: registra un usuario y verifica que apar
 ```sql
 SELECT a.email,
        a.raw_app_meta_data ->> 'role' AS claim,
-       u.role::text                    AS perfil
-  FROM auth.users a JOIN public.users u ON u.id = a.id::text;
+       u.rol::text                    AS perfil
+  FROM auth.users a JOIN public.usuarios u ON u.id = a.id;
 ```
 
-Si `claim` sale `NULL` y `perfil` sale `PATIENT`, la API responderá `401` a una sesión válida. Es el síntoma del bug que corrigió `20260930000000_seed_default_business_role`.
+Tienen que coincidir salvo por el idioma del enum: `PATIENT`/`PACIENTE`, `PSYCHOLOGIST`/`PSICOLOGO`, `ADMIN`/`ADMINISTRADOR`.
+
+Si `claim` sale `NULL` y `perfil` sale `PACIENTE`, la API responderá `401` a una sesión válida. Es el síntoma del bug que corrigió el sembrado `seed_business_role` (hoy vive en la baseline).
 
 **7. Verificar la conexión:** `GET /api/health` ejecuta una consulta real y responde `200` con `database: "up"`, o `503` con `database: "down"` si falla.
 
@@ -194,8 +202,8 @@ Si `claim` sale `NULL` y `perfil` sale `PATIENT`, la API responderá `401` a una
 
 Fallan en silencio si el snapshot no está limpio, y los dos casos que se encontraron costaron una sesión de depuración:
 
-- **En un `AFTER DELETE`, `NEW` es `NULL`.** La fila borrada vive en `OLD`. Un `WHERE id = new.id` no casa con nada: la baja devolvía `200` pero dejaba el perfil con su correo original e `is_active = true`.
-- **El cast `::text` es obligatorio.** `public.users.id` es `text` y `auth.users.id` es `uuid`; PostgreSQL no define el operador `text = uuid` y la baja reventaba con `operator does not exist`.
+- **En un `AFTER DELETE`, `NEW` es `NULL`.** La fila borrada vive en `OLD`. Un `WHERE id = new.id` no casa con nada: la baja devolvía `200` pero dejaba el perfil con su correo original y `activo = true`.
+- **`id` es `uuid` en los dos lados.** `public.usuarios.id` y `auth.users.id` son `uuid`, así que las funciones comparan sin cast. Si alguna vez se cambia el perfil a `id text`, reaparece el `operator does not exist` en la baja: el cambio arrastra a las cuatro funciones.
 
 Ninguno de los dos se detecta en el alta, porque en un `AFTER INSERT` `NEW` sí está poblado y en el `INSERT` existe una conversión de asignación de `uuid` a `text`. Conviene ejercitar la baja a mano tras tocar estas funciones.
 
@@ -204,6 +212,8 @@ Ninguno de los dos se detecta en el alta, porque en un `AFTER INSERT` `NEW` sí 
 La API lee el rol de negocio del claim `app_metadata.role` y **falla cerrada** si no lo encuentra. Ese rol lo escribe un disparador `BEFORE INSERT` sobre `auth.users`, que siembra `PATIENT` cuando el alta no declara ninguno.
 
 Sin ese sembrado, el alta quedaba a medias: el perfil espejado sí recibía `PATIENT`, pero el JWT salía sin rol, así que `GET /api/auth/me` respondía `401 "No autenticado"` con una sesión perfectamente válida. El síntoma es desconcertante porque el alta devuelve éxito, el perfil aparece con el rol correcto en la base y el usuario entra al panel; lo único que falla es la API. Se detectó recorriendo el alta real contra el proyecto, no en las pruebas: los tests unitarios pasaban porque usaban un token con el rol ya puesto a mano.
+
+El sembrado deja `app_metadata.role` en inglés (`PATIENT`) porque es el claim que leen la API y la web. La traducción al enum español (`PACIENTE`) la hace `handle_new_user` al escribir `public.usuarios.rol`, así que los dos sitios quedan coherentes por construcción.
 
 Dos decisiones de diseño detrás del arreglo:
 
@@ -239,7 +249,7 @@ UPDATE auth.users
  WHERE email = 'profesional@ejemplo.com';
 ```
 
-3. **El perfil espejado se actualiza solo**: el trigger `on_auth_user_updated` copia el rol a `public.users`.
+3. **El perfil espejado se actualiza solo**: el trigger `on_auth_user_updated` copia el rol a `public.usuarios.rol`, ya traducido al enum español (`PSYCHOLOGIST` → `PSICOLOGO`).
 4. **Cerrar y volver a iniciar sesión.** El rol viaja en el JWT, así que una sesión abierta conserva el rol anterior hasta que caduca o se renueva. Sin este paso, `/api/auth/me` sigue devolviendo el rol viejo y parece que la promoción no surtió efecto.
 
 Los valores válidos son `PATIENT`, `PSYCHOLOGIST` y `ADMIN`, en mayúsculas. El JWT los lleva tal cual porque los escribe el enum de la base, y la API los cruza con `toBusinessRole` en `apps/api/src/utils/jwt.ts`.
@@ -290,10 +300,14 @@ npm run prisma:generate
 ### 5. Ejecutar migraciones (requiere el proyecto de Supabase)
 
 ```bash
-npm run prisma:migrate
+npm run prisma:migrate:deploy --workspace=apps/api
+npx prisma db execute --file prisma/supabase/grants.sql
 ```
 
-> Esto es la **primera** aplicación del esquema: la base queda vacía y el seed es un placeholder. Los datos de ejemplo se agregarán en changes posteriores.
+> La baseline deja el esquema completo (16 tablas + 4 vistas) y vacío. Los triggers
+> de `auth.users` no van aquí: se aplican con `postgres` en el paso 6 del orden de
+> arranque. El seed sigue siendo un placeholder; las cuentas de ejemplo están en
+> `.env.credenciales`.
 
 ### 6. Levantar en desarrollo
 
@@ -339,7 +353,7 @@ Debe devolver: `7 passed, 0 failed`, una capacidad por cada fila de la tabla de 
 | `npm test` | Tests del backend |
 | `npm run build` | Build completo (shared → api → web + service worker) |
 | `npm run prisma:generate` | Genera el cliente de Prisma 7 |
-| `npm run prisma:migrate` | Ejecuta migraciones en desarrollo (requiere base sombra) |
+| `npm run prisma:migrate` | Ejecuta `migrate dev` (solo para migraciones nuevas; con la baseline escrita a mano reporta drift) |
 | `npm run prisma:migrate:deploy --workspace=apps/api` | Aplica solo las migraciones pendientes (publicación) |
 
 ## Flujo de trabajo con OpenSpec

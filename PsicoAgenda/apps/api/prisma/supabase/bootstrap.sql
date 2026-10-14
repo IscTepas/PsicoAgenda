@@ -70,5 +70,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
 -- sobre ella exige privilegios que el rol `prisma` no tiene ni puede recibir, de
 -- modo que `migrate deploy` fallaría con `permission denied for schema auth` y
 -- bloquearía las migraciones siguientes. Las FUNCIONES sí se definen en una
--- migración (`*_auth_user_profile_sync`), pero los disparadores se crean aparte,
--- con `postgres`, desde `prisma/supabase/auth_user_triggers.sql`.
+-- migración (`20261013000000_baseline_esquema_espanol`), pero los disparadores se
+-- crean aparte, con `postgres`, desde `prisma/supabase/auth_user_triggers.sql`.
