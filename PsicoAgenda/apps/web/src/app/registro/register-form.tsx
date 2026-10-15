@@ -6,7 +6,7 @@ import { useState, useMemo, useEffect } from "react"
 import { z } from "zod"
 import { emailSchema, passwordSchema, APP_NAME } from "@psicoagenda/shared"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
@@ -168,7 +168,7 @@ export function RegisterForm() {
     },
   });
 
-  const watchBirthDate = form.watch("birthDate");
+  const watchBirthDate = useWatch({ control: form.control, name: "birthDate" });
 
   // Detección automática y reactiva de minoría de edad (< 18 años)
   const isMinor = useMemo(() => {

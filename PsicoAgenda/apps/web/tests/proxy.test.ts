@@ -12,8 +12,14 @@ vi.mock("@supabase/ssr", () => ({
   createServerClient: () => ({
     auth: {
       getUser,
+      // La vía rápida (`tryFastAuthCheck`) valida el token desde la cookie. Estas
+      // pruebas no traen cookie de sesión, así que la vía rápida nunca confirma y
+      // la decisión queda, como se pretende verificar, en manos de `getUser`.
+      getClaims: vi.fn().mockResolvedValue({ data: null, error: { message: "no session" } }),
     },
   }),
+  combineChunks: async () => null,
+  stringFromBase64URL: (value: string) => value,
 }));
 
 const { proxy } = await import("@/proxy");

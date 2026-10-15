@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -24,12 +24,14 @@ import {
 } from "@/components/ui/select"
 import { PageHeader } from "../components/page-header"
 import { useSession } from "@/lib/use-session"
-import { UserRole, AppointmentStatus } from "@psicoagenda/shared"
 import {
-  MOCK_PATIENTS,
-  MOCK_APPOINTMENTS,
-  getLatestAttendedAppointment,
-} from "@/lib/mock-data"
+  UserRole,
+  AppointmentStatus,
+  AttendanceStatus,
+  type Appointment,
+  type Patient,
+} from "@psicoagenda/shared"
+import { appointmentService, patientService } from "@/services"
 
 type FilterChip = "todos" | "recientes" | "proxima-cita" | "inactivos"
 type SortOption = "alfabetico" | "ultima-sesion"
@@ -65,23 +67,57 @@ export default function PantallaBusquedaPaciente() {
   const [activeChip, setActiveChip] = useState<FilterChip>("todos")
   const [sortBy, setSortBy] = useState<SortOption>("alfabetico")
 
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [isDataLoading, setIsDataLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    Promise.all([patientService.list(), appointmentService.list()])
+      .then(([patientRows, appointmentRows]) => {
+        if (cancelled) return
+        setPatients(patientRows)
+        setAppointments(appointmentRows)
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("No se pudo cargar el directorio de pacientes.")
+      })
+      .finally(() => {
+        if (!cancelled) setIsDataLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // Enriquecer pacientes con datos de citas calculados
   const enrichedPatients = useMemo(() => {
     const now = new Date()
 
-    return MOCK_PATIENTS.map((patient) => {
-      const latestAttended = getLatestAttendedAppointment(patient.id)
+    return patients.map((patient) => {
+      const attended = appointments
+        .filter(
+          (apt) =>
+            apt.patientId === patient.id &&
+            (apt.status === AppointmentStatus.COMPLETED ||
+              apt.attendanceStatus === AttendanceStatus.ATTENDED)
+        )
+        .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+      const latestAttended = attended[0]
 
       // Buscar cita programada próxima
-      const upcomingApt = MOCK_APPOINTMENTS.filter(
-        (apt) =>
-          apt.patientId === patient.id &&
-          (apt.status === AppointmentStatus.CONFIRMED ||
-            apt.status === AppointmentStatus.PENDING) &&
-          new Date(apt.startTime).getTime() >= now.getTime() - 12 * 60 * 60 * 1000
-      ).sort(
-        (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
-      )[0]
+      const upcomingApt = appointments
+        .filter(
+          (apt) =>
+            apt.patientId === patient.id &&
+            (apt.status === AppointmentStatus.CONFIRMED ||
+              apt.status === AppointmentStatus.PENDING) &&
+            new Date(apt.startTime).getTime() >= now.getTime() - 12 * 60 * 60 * 1000
+        )
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0]
 
       // Inactividad: sin consultas en los últimos 30 días o sin consultas
       const daysSinceLastSession = latestAttended
@@ -104,7 +140,7 @@ export default function PantallaBusquedaPaciente() {
           : new Date(patient.createdAt).getTime(),
       }
     })
-  }, [])
+  }, [patients, appointments])
 
   // Filtrado reactivo de pacientes
   const filteredPatients = useMemo(() => {
@@ -155,6 +191,18 @@ export default function PantallaBusquedaPaciente() {
         title="Directorio de Pacientes"
         description="Localiza expedientes clínicos, consulta asistencias recientes y gestiona el seguimiento terapéutico."
       />
+
+      {loadError && (
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {loadError}
+        </div>
+      )}
+
+      {isDataLoading && (
+        <div className="py-16 text-center text-sm text-muted-foreground">
+          Cargando pacientes…
+        </div>
+      )}
 
       {/* SECCIÓN SUPERIOR: BARRA DE BÚSQUEDA ANCHA Y PROMINENTE */}
       <div className="relative">
@@ -249,7 +297,7 @@ export default function PantallaBusquedaPaciente() {
       </div>
 
       {/* LISTA DE RESULTADOS (DATA GRID / TARJETAS) */}
-      {filteredPatients.length > 0 ? (
+      {isDataLoading ? null : filteredPatients.length > 0 ? (
         <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredPatients.map((patient) => {
             const hasAttended = !!patient.latestAttended

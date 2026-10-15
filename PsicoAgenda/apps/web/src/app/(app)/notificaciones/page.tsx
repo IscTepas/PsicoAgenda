@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { BellOff, CheckCheck, Settings2 } from "lucide-react"
-import { NotificationStatus } from "@psicoagenda/shared"
+import { NotificationStatus, type Notification } from "@psicoagenda/shared"
 import {
   Card,
   CardContent,
@@ -13,7 +13,8 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "../components/page-header"
-import { MOCK_NOTIFICATIONS, formatShortDate } from "@/lib/mock-data"
+import { formatShortDate } from "@/lib/format"
+import { notificationService } from "@/services"
 
 // Mismo estilo de estado que el resto de la app: pastilla gris + punto de color.
 const STATUS_PILL: Record<NotificationStatus, { label: string; dot: string }> = {
@@ -24,11 +25,34 @@ const STATUS_PILL: Record<NotificationStatus, { label: string; dot: string }> = 
 }
 
 export default function NotificationsPage() {
-  // Las primeras dos (ya enviadas) arrancan sin leer para poder demostrar el flujo;
-  // en producción este estado vendría del backend, no de un cálculo local.
-  const [unreadIds, setUnreadIds] = useState<Set<string>>(
-    () => new Set(MOCK_NOTIFICATIONS.map((n) => n.id)),
-  )
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // El estado de lectura es local a la sesión; el backend aún no persiste "leído".
+  const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    let cancelled = false
+
+    notificationService
+      .list()
+      .then((rows) => {
+        if (cancelled) return
+        setNotifications(rows)
+        setUnreadIds(new Set(rows.map((n) => n.id)))
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("No se pudieron cargar las notificaciones.")
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const unreadCount = unreadIds.size
 
@@ -72,7 +96,15 @@ export default function NotificationsPage() {
         }
       />
 
-      {MOCK_NOTIFICATIONS.length === 0 ? (
+      {isLoading ? (
+        <div className="py-16 text-center text-sm text-muted-foreground">Cargando avisos…</div>
+      ) : loadError ? (
+        <div className="flex flex-col items-center justify-center text-center py-16 px-6 rounded-2xl border border-dashed border-border/80 bg-muted/10">
+          <BellOff className="size-8 text-muted-foreground mb-3" />
+          <p className="text-sm font-semibold text-foreground">No se pudieron cargar los avisos</p>
+          <p className="text-xs text-muted-foreground mt-1 max-w-xs">{loadError}</p>
+        </div>
+      ) : notifications.length === 0 ? (
         <div className="flex flex-col items-center justify-center text-center py-16 px-6 rounded-2xl border border-dashed border-border/80 bg-muted/10">
           <BellOff className="size-8 text-muted-foreground mb-3" />
           <p className="text-sm font-semibold text-foreground">No tienes avisos</p>
@@ -82,7 +114,7 @@ export default function NotificationsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {MOCK_NOTIFICATIONS.map((notification) => {
+          {notifications.map((notification) => {
             const status = STATUS_PILL[notification.status]
             const isUnread = unreadIds.has(notification.id)
             return (

@@ -38,16 +38,20 @@ interface ApiErrorBody {
 }
 
 /**
- * Resuelve la credencial de acceso vigente. En el servidor se lee de la sesión
- * suprabase-js; en el navegador, del cliente compartido.
+ * Resuelve la credencial de acceso vigente en el navegador, leyéndola del cliente
+ * compartido de Supabase.
+ *
+ * En el servidor devuelve `null` a propósito: este módulo también entra en el grafo
+ * de los Client Components, así que no puede depender de `@/lib/supabase/server`
+ * (que importa `next/headers`, prohibido fuera de Server Components). Los Server
+ * Components inyectan la credencial explícitamente (`token`), resuelta por
+ * `@/lib/api-client.server`.
  */
 async function resolveAccessToken(): Promise<string | null> {
-  const client =
-    typeof window === "undefined"
-      ? await (await import("@/lib/supabase/server")).createClient()
-      : (await import("@/lib/supabase/client")).createClient();
+  if (typeof window === "undefined") return null;
 
-  const { data } = await client.auth.getSession();
+  const { createClient } = await import("@/lib/supabase/client");
+  const { data } = await createClient().auth.getSession();
   return data.session?.access_token ?? null;
 }
 

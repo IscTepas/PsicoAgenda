@@ -28,6 +28,7 @@ import {
   AttendanceStatus,
   UserRole,
   type Appointment,
+  type Patient,
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -48,13 +49,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
-import {
-  MOCK_PATIENTS,
-  MOCK_APPOINTMENTS,
-  MOCK_PSYCHOLOGIST,
-  getPatientById,
-  getPatientForUser,
-} from "@/lib/mock-data"
+import { appointmentService, patientService } from "@/services"
 
 const AVAILABLE_HOURS = [
   "08:00",
@@ -70,7 +65,7 @@ const AVAILABLE_HOURS = [
   "18:00",
 ]
 
-const DURATION_OPTIONS = [30, 45, 50, 60]
+const DURATION_OPTIONS = [45, 50, 60]
 
 const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -122,13 +117,43 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const { user } = useSession()
   const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
   const isPatient = effectiveRole === UserRole.PATIENT
-  const currentPatient = React.useMemo(() => getPatientForUser(user), [user])
 
-  // Pre-selected patient from props or query param (or locked to currentPatient if isPatient)
+  // Datos reales de la API. `patients` es el directorio visible según el rol: el
+  // psicólogo ve todos; un paciente, solo su propio registro.
+  const [patients, setPatients] = React.useState<Patient[]>([])
+  const [appointments, setAppointments] = React.useState<Appointment[]>([])
+  const [isLoadingData, setIsLoadingData] = React.useState(true)
+  const [isSaving, setIsSaving] = React.useState(false)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setIsLoadingData(true)
+      setLoadError(null)
+      try {
+        const data = await patientService.list()
+        if (!cancelled) setPatients(data)
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : "No se pudieron cargar los pacientes")
+        }
+      } finally {
+        if (!cancelled) setIsLoadingData(false)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Pre-selected patient from props or query param. El paciente queda fijado a su
+  // propio registro cuando el directorio carga.
   const paramPatientId = searchParams.get("patientId")
-  const defaultPatientId = isPatient
-    ? currentPatient.id
-    : initialAppointment?.patientId || paramPatientId || ""
+  const defaultPatientId = initialAppointment?.patientId || paramPatientId || ""
 
   // Form State
   const [selectedPatientId, setSelectedPatientId] = React.useState<string>(defaultPatientId)
@@ -184,22 +209,51 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     return isSameDay(new Date(initialAppointment.startTime), today)
   }, [initialAppointment, today])
 
+  // El paciente autenticado solo puede agendarse a sí mismo: el directorio visible
+  // para él contiene únicamente su registro, así que la selección se deriva en vez
+  // de sincronizarse por efecto.
+  const lockedPatientId = isPatient ? (patients[0]?.id ?? "") : selectedPatientId
+
+  // Citas del día seleccionado: alimentan el mapa de disponibilidad horaria. Se
+  // piden acotadas por fecha para no traer la agenda completa.
+  React.useEffect(() => {
+    let cancelled = false
+
+    const start = new Date(selectedDate)
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(selectedDate)
+    end.setHours(23, 59, 59, 999)
+
+    appointmentService
+      .list({ from: start, to: end })
+      .then((data) => {
+        if (!cancelled) setAppointments(data)
+      })
+      .catch(() => {
+        if (!cancelled) setAppointments([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedDate])
+
   // Selected Patient Object
   const selectedPatient = React.useMemo(() => {
-    return MOCK_PATIENTS.find((p) => p.id === selectedPatientId)
-  }, [selectedPatientId])
+    return patients.find((p) => p.id === lockedPatientId)
+  }, [patients, lockedPatientId])
 
   // Autocomplete patient filter
   const filteredPatients = React.useMemo(() => {
-    if (!patientSearch.trim()) return MOCK_PATIENTS
+    if (!patientSearch.trim()) return patients
     const q = patientSearch.toLowerCase().trim()
-    return MOCK_PATIENTS.filter(
+    return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.email.toLowerCase().includes(q) ||
         (p.phone && p.phone.includes(q))
     )
-  }, [patientSearch])
+  }, [patients, patientSearch])
 
   // Slot Availability Map for the selected date
   const slotAvailability = React.useMemo(() => {
@@ -207,7 +261,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
     AVAILABLE_HOURS.forEach((hourStr) => {
       const hourNum = parseInt(hourStr.split(":")[0], 10)
-      const existing = MOCK_APPOINTMENTS.find((apt) => {
+      const existing = appointments.find((apt) => {
         // Exclude current appointment when in edit mode
         if (isEdit && apt.id === initialAppointment?.id) return false
         const aptDate = new Date(apt.startTime)
@@ -215,7 +269,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       })
 
       if (existing) {
-        const patient = getPatientById(existing.patientId)
+        const patient = patients.find((p) => p.id === existing.patientId)
         map[hourStr] = {
           available: false,
           conflictWith: patient?.name || "Cita ocupada",
@@ -226,7 +280,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     })
 
     return map
-  }, [selectedDate, isEdit, initialAppointment])
+  }, [appointments, patients, selectedDate, isEdit, initialAppointment])
 
   // Handle date change from input
   const handleDateChange = (val: string) => {
@@ -247,11 +301,12 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   }
 
   // Form Submission
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage(null)
+    setSuccessMessage(null)
 
-    if (!selectedPatientId) {
+    if (!lockedPatientId) {
       setErrorMessage("Por favor selecciona un paciente antes de continuar.")
       return
     }
@@ -273,38 +328,93 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       return
     }
 
-    // Simulate saving
-    setSuccessMessage(isEdit ? "¡Cita actualizada exitosamente!" : "¡Cita agendada exitosamente!")
-    setTimeout(() => {
-      router.push("/agenda")
-    }, 1000)
+    const [hour, minute] = selectedHour.split(":").map(Number)
+    const startTime = new Date(selectedDate)
+    startTime.setHours(hour, minute, 0, 0)
+
+    setIsSaving(true)
+    try {
+      if (isEdit && initialAppointment) {
+        await appointmentService.update(initialAppointment.id, {
+          startTime,
+          durationMinutes,
+          modality,
+          reason: reason || undefined,
+        })
+
+        // El estado administrativo viaja por su propio endpoint; solo se llama si
+        // el usuario lo cambió respecto a la cita original.
+        if (status !== initialAppointment.status && status !== AppointmentStatus.CANCELLED) {
+          await appointmentService.changeStatus(initialAppointment.id, status)
+        }
+
+        setSuccessMessage("¡Cita actualizada exitosamente!")
+      } else {
+        await appointmentService.create({
+          patientId: lockedPatientId,
+          startTime,
+          durationMinutes,
+          modality,
+          reason: reason || undefined,
+        })
+        setSuccessMessage("¡Cita agendada exitosamente!")
+      }
+
+      setTimeout(() => {
+        router.push("/agenda")
+      }, 900)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "No se pudo guardar la cita")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // Confirm Cancellation
-  const handleConfirmCancel = () => {
+  const handleConfirmCancel = async () => {
     if (!cancellationReason.trim()) {
       setCancelError("Debes especificar un motivo para cancelar la cita.")
       return
     }
 
-    setStatus(AppointmentStatus.CANCELLED)
-    setIsCancelModalOpen(false)
-    setSuccessMessage("La cita ha sido cancelada correctamente.")
-    setTimeout(() => {
-      router.push("/agenda")
-    }, 1200)
+    if (!initialAppointment) return
+
+    setIsSaving(true)
+    try {
+      await appointmentService.cancel(initialAppointment.id, cancellationReason.trim())
+      setStatus(AppointmentStatus.CANCELLED)
+      setIsCancelModalOpen(false)
+      setSuccessMessage("La cita ha sido cancelada correctamente.")
+      setTimeout(() => {
+        router.push("/agenda")
+      }, 1100)
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : "No se pudo cancelar la cita")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // Attendance Registration
-  const handleRecordAttendance = (attended: boolean) => {
-    if (attended) {
-      setAttendance(AttendanceStatus.ATTENDED)
-      setStatus(AppointmentStatus.COMPLETED)
-      setSuccessMessage("Asistencia registrada: Paciente asistió a la sesión.")
-    } else {
-      setAttendance(AttendanceStatus.NO_SHOW)
-      setStatus(AppointmentStatus.NO_SHOW)
-      setSuccessMessage("Asistencia registrada: Paciente no asistió.")
+  const handleRecordAttendance = async (attended: boolean) => {
+    if (!initialAppointment) return
+
+    const nextStatus = attended ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW
+
+    setIsSaving(true)
+    try {
+      await appointmentService.changeStatus(initialAppointment.id, nextStatus)
+      setAttendance(attended ? AttendanceStatus.ATTENDED : AttendanceStatus.NO_SHOW)
+      setStatus(nextStatus)
+      setSuccessMessage(
+        attended
+          ? "Asistencia registrada: Paciente asistió a la sesión."
+          : "Asistencia registrada: Paciente no asistió.",
+      )
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "No se pudo registrar la asistencia")
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -363,6 +473,17 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           <AlertCircle className="size-5 shrink-0" />
           <p className="text-sm font-medium">{errorMessage}</p>
         </div>
+      )}
+
+      {loadError && (
+        <div role="alert" className="p-4 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 flex items-center gap-3 animate-in fade-in-50">
+          <AlertCircle className="size-5 shrink-0" />
+          <p className="text-sm font-medium">{loadError}</p>
+        </div>
+      )}
+
+      {isLoadingData && !loadError && (
+        <p className="text-xs text-muted-foreground">Cargando datos de la agenda…</p>
       )}
 
       {/* SECCIÓN DESTACADA: REGISTRAR ASISTENCIA (Solo si es el día de la cita y no es paciente) */}
@@ -459,7 +580,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 {isPatient ? (
                   <div className="text-xs text-muted-foreground self-end sm:self-center">
                     <span>Terapeuta: </span>
-                    <strong className="text-foreground">{MOCK_PSYCHOLOGIST.name}</strong>
+                    <strong className="text-foreground">Tu terapeuta asignado</strong>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 self-end sm:self-center">
@@ -933,6 +1054,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
             <Button
               type="submit"
+              disabled={isSaving}
               className="h-10 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm font-semibold text-sm gap-2"
             >
               {isEdit ? (

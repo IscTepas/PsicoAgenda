@@ -20,12 +20,14 @@ import {
   XCircle,
   HelpCircle,
   Check,
+  Stethoscope,
 } from "lucide-react"
 import {
   AppointmentStatus,
   AppointmentModality,
   UserRole,
   type Appointment,
+  type Patient,
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -56,14 +58,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useSession } from "@/lib/use-session"
-import {
-  MOCK_APPOINTMENTS,
-  MOCK_PSYCHOLOGIST,
-  getPatientById,
-  getPatientForUser,
-  formatAppointmentTime,
-  formatShortDate,
-} from "@/lib/mock-data"
+import { formatAppointmentTime, formatShortDate } from "@/lib/format"
+import { appointmentService, patientService } from "@/services"
 
 type CalendarView = "mes" | "semana" | "dia"
 
@@ -202,16 +198,46 @@ export function AgendaClient() {
   const { user } = useSession()
   const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
   const isPatient = effectiveRole === UserRole.PATIENT
-  const currentPatient = React.useMemo(() => getPatientForUser(user), [user])
   const isHydrated = React.useSyncExternalStore(subscribeNoop, () => true, () => false)
 
-  // Restrict appointments: Patients only see their own appointments!
-  const baseAppointments = React.useMemo(() => {
-    if (isPatient) {
-      return MOCK_APPOINTMENTS.filter((apt) => apt.patientId === currentPatient.id)
+  const [appointments, setAppointments] = React.useState<Appointment[]>([])
+  const [patientsById, setPatientsById] = React.useState<Record<string, Patient>>({})
+  const [isLoadingData, setIsLoadingData] = React.useState(true)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
+
+  // La API ya acota por rol: un paciente solo recibe sus citas. El cliente no
+  // vuelve a filtrar por paciente, solo presenta lo que la sesión puede ver.
+  React.useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setIsLoadingData(true)
+      setLoadError(null)
+      try {
+        const [appointmentsData, patientsData] = await Promise.all([
+          appointmentService.list(),
+          patientService.list(),
+        ])
+        if (cancelled) return
+        setAppointments(appointmentsData)
+        setPatientsById(Object.fromEntries(patientsData.map((p) => [p.id, p])))
+      } catch (error) {
+        if (cancelled) return
+        setLoadError(error instanceof Error ? error.message : "No se pudieron cargar las citas")
+      } finally {
+        if (!cancelled) setIsLoadingData(false)
+      }
     }
-    return MOCK_APPOINTMENTS
-  }, [isPatient, currentPatient.id])
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const patientById = React.useCallback((id: string) => patientsById[id], [patientsById])
+
+  const baseAppointments = appointments
 
   const [currentDate, setCurrentDate] = React.useState<Date>(new Date())
   const [view, setView] = React.useState<CalendarView>("semana")
@@ -220,8 +246,7 @@ export function AgendaClient() {
   const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(null)
   const [datePickerOpen, setDatePickerOpen] = React.useState(false)
 
-  const psychologistName = user?.name || MOCK_PSYCHOLOGIST.name
-  const greetingName = isPatient ? currentPatient.name : psychologistName
+  const greetingName = user?.name ?? "Bienvenido"
 
   // Appointments today for header stats
   const today = React.useMemo(() => new Date(), [])
@@ -240,7 +265,7 @@ export function AgendaClient() {
       // Search filter
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim()
-        const patient = getPatientById(apt.patientId)
+        const patient = patientById(apt.patientId)
         const patientName = patient?.name?.toLowerCase() ?? ""
         const reason = apt.reason?.toLowerCase() ?? ""
         const notes = apt.notes?.toLowerCase() ?? ""
@@ -257,7 +282,7 @@ export function AgendaClient() {
 
       return true
     })
-  }, [baseAppointments, selectedStatus, searchQuery])
+  }, [baseAppointments, selectedStatus, searchQuery, patientById])
 
   // Próximas citas: de hoy en adelante, en orden cronológico
   const upcomingAppointments = React.useMemo(() => {
@@ -337,7 +362,7 @@ export function AgendaClient() {
     }
   }, [view, currentDate])
 
-  if (!isHydrated) {
+  if (!isHydrated || isLoadingData) {
     return (
       <div className="space-y-6" aria-busy="true">
         <div className="h-[86px] border-b border-border/60" />
@@ -349,6 +374,13 @@ export function AgendaClient() {
 
   return (
     <div className="space-y-6">
+      {loadError && (
+        <div role="alert" className="p-4 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 flex items-center gap-3">
+          <AlertCircle className="size-5 shrink-0" />
+          <p className="text-sm font-medium">{loadError}</p>
+        </div>
+      )}
+
       {/* 1. CABECERA: Saludo al usuario, barra de búsqueda rápida y botón + Nueva Cita */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-border/60 pb-5">
         <div className="space-y-1">
@@ -363,7 +395,7 @@ export function AgendaClient() {
           <p className="text-sm text-muted-foreground">
             {isPatient ? (
               <>
-                Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span> programadas para hoy. Consulta tus sesiones con {MOCK_PSYCHOLOGIST.name}.
+                Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span> programadas para hoy. Consulta tus sesiones programadas.
               </>
             ) : (
               <>
@@ -645,7 +677,7 @@ export function AgendaClient() {
                       <div className="p-2 sm:p-3 flex flex-col gap-2">
                         {slotAppointments.length > 0 ? (
                           slotAppointments.map((apt) => {
-                            const patient = getPatientById(apt.patientId)
+                            const patient = patientById(apt.patientId)
                             const status = STATUS_CONFIG[apt.status]
 
                             return (
@@ -762,7 +794,7 @@ export function AgendaClient() {
                     <div className="p-2 space-y-2 flex-1">
                       {dayAppointments.length > 0 ? (
                         dayAppointments.map((apt) => {
-                          const patient = getPatientById(apt.patientId)
+                          const patient = patientById(apt.patientId)
                           const status = STATUS_CONFIG[apt.status]
 
                           return (
@@ -872,7 +904,7 @@ export function AgendaClient() {
                       {/* Event Chips */}
                       <div className="space-y-1 flex-1 overflow-y-auto">
                         {dayAppointments.slice(0, 3).map((apt) => {
-                          const patient = getPatientById(apt.patientId)
+                          const patient = patientById(apt.patientId)
                           const status = STATUS_CONFIG[apt.status]
 
                           return (
@@ -925,7 +957,7 @@ export function AgendaClient() {
       >
         <DialogContent className="sm:max-w-md p-6 bg-card border-border/80">
           {selectedAppointment && (() => {
-            const patient = getPatientById(selectedAppointment.patientId)
+            const patient = patientById(selectedAppointment.patientId)
             const status = STATUS_CONFIG[selectedAppointment.status]
 
             return (
@@ -955,14 +987,14 @@ export function AgendaClient() {
                     <div className="p-3.5 rounded-xl bg-muted/40 border border-border/60 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="size-10 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm font-heading">
-                          AG
+                          <Stethoscope className="size-5" />
                         </div>
                         <div>
                           <div className="font-heading font-semibold text-foreground text-sm">
-                            {MOCK_PSYCHOLOGIST.name}
+                            Profesional tratante
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {MOCK_PSYCHOLOGIST.specialty} · {MOCK_PSYCHOLOGIST.licenseNumber}
+                            Sesión asignada por tu profesional de salud mental
                           </div>
                         </div>
                       </div>
@@ -1119,7 +1151,7 @@ export function AgendaClient() {
               <TableBody>
                 {upcomingAppointments.length > 0 ? (
                   upcomingAppointments.map((apt) => {
-                    const patient = getPatientById(apt.patientId)
+                    const patient = patientById(apt.patientId)
                     const status = STATUS_CONFIG[apt.status]
 
                     return (

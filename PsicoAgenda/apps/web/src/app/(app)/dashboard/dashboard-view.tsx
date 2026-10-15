@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useRef, useSyncExternalStore } from "react"
+import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
 import Link from "next/link"
 import {
   Bell,
@@ -20,6 +20,7 @@ import {
   AttendanceStatus,
   UserRole,
   type Appointment,
+  type Patient,
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import {
@@ -32,15 +33,8 @@ import {
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
 import { cn } from "@/lib/utils"
-import {
-  MOCK_APPOINTMENTS,
-  MOCK_PSYCHOLOGIST,
-  formatAppointmentTime,
-  formatShortDate,
-  getPatientById,
-  getPatientForUser,
-  getLatestHomeworkForPatient,
-} from "@/lib/mock-data"
+import { formatAppointmentTime, formatShortDate } from "@/lib/format"
+import { appointmentService, patientService } from "@/services"
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
@@ -210,11 +204,13 @@ const TIMELINE_TONE: Record<AppointmentStatus, string> = {
  */
 function DayTimeline({
   appointments,
+  patientById,
   now,
   highlightId,
   onSelect,
 }: {
   appointments: Appointment[]
+  patientById: Map<string, Patient>
   now: Date | null
   highlightId?: string
   onSelect: (apt: Appointment) => void
@@ -253,7 +249,7 @@ function DayTimeline({
           const start = new Date(apt.startTime)
           const left = toPct(start)
           const width = Math.max(toPct(getEndTime(apt)) - left, 3)
-          const patientName = getPatientById(apt.patientId)?.name ?? "Paciente"
+          const patientName = patientById.get(apt.patientId)?.name ?? "Paciente"
 
           return (
             <button
@@ -316,11 +312,41 @@ const FILTER_EMPTY_COPY: Record<AgendaFilter, string> = {
 type SessionUser = ReturnType<typeof useSession>["user"]
 
 function PsychologistDashboardView({ user }: { user: SessionUser }) {
-  const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS)
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [patients, setPatients] = useState<Patient[]>([])
   const [agendaFilter, setAgendaFilter] = useState<AgendaFilter>("all")
   const [activeSessionAppointment, setActiveSessionAppointment] = useState<Appointment | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const listRef = useRef<HTMLElement>(null)
+
+  const [isDataLoading, setIsDataLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    Promise.all([appointmentService.list(), patientService.list()])
+      .then(([appointmentRows, patientRows]) => {
+        if (cancelled) return
+        setAppointments(appointmentRows)
+        setPatients(patientRows)
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("No se pudieron cargar tus datos. Intenta recargar la página.")
+      })
+      .finally(() => {
+        if (!cancelled) setIsDataLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const patientById = useMemo(
+    () => new Map(patients.map((patient) => [patient.id, patient])),
+    [patients],
+  )
 
   // Mini-calendario state
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date())
@@ -331,7 +357,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const clock = now ?? today
 
   // Nombre y saludo personalizado: "Hola, Psic. [Nombre]"
-  const rawName = user?.name || MOCK_PSYCHOLOGIST.name
+  const rawName = user?.name || "Psicólogo"
   const cleanName = rawName.replace(/^(Dra\.|Dr\.|Psic\.|Lic\.)\s*/i, "")
   const psychologistGreeting = `Hola, Psic. ${cleanName}`
 
@@ -354,7 +380,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
     openToday.find((apt) => new Date(apt.startTime) <= clock && clock < getEndTime(apt)) ?? null
   const upcomingAppointment = openToday.find((apt) => new Date(apt.startTime) > clock) ?? null
   const focusAppointment = currentAppointment ?? upcomingAppointment
-  const focusPatient = focusAppointment ? getPatientById(focusAppointment.patientId) : undefined
+  const focusPatient = focusAppointment ? patientById.get(focusAppointment.patientId) : undefined
   // Sesiones que ya terminaron pero siguen abiertas: falta registrar asistencia.
   const unregisteredToday = openToday.filter((apt) => getEndTime(apt) <= clock)
 
@@ -468,25 +494,27 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
     setTimeout(() => setActionNotice(null), 3500)
   }
 
-  const handleRegisterAttendance = (aptId: string) => {
-    setAppointments((prev) =>
-      prev.map((apt) =>
-        apt.id === aptId ? { ...apt, status: AppointmentStatus.COMPLETED } : apt
-      )
-    )
-    setActiveSessionAppointment(null)
-    showNotice("Asistencia registrada. La sesión quedó como completada.")
+  const handleRegisterAttendance = async (aptId: string) => {
+    try {
+      const updated = await appointmentService.changeStatus(aptId, AppointmentStatus.COMPLETED)
+      setAppointments((prev) => prev.map((apt) => (apt.id === aptId ? updated : apt)))
+      setActiveSessionAppointment(null)
+      showNotice("Asistencia registrada. La sesión quedó como completada.")
+    } catch {
+      showNotice("No se pudo registrar la asistencia. Intenta de nuevo.")
+    }
   }
 
-  const handleConfirmAppointment = (aptId: string) => {
-    setAppointments((prev) =>
-      prev.map((apt) =>
-        apt.id === aptId ? { ...apt, status: AppointmentStatus.CONFIRMED } : apt
-      )
-    )
-    setActiveSessionAppointment(null)
-    const name = getPatientById(appointments.find((a) => a.id === aptId)?.patientId ?? "")?.name
-    showNotice(name ? `Cita con ${name} confirmada.` : "Cita confirmada.")
+  const handleConfirmAppointment = async (aptId: string) => {
+    try {
+      const updated = await appointmentService.changeStatus(aptId, AppointmentStatus.CONFIRMED)
+      setAppointments((prev) => prev.map((apt) => (apt.id === aptId ? updated : apt)))
+      setActiveSessionAppointment(null)
+      const name = patientById.get(appointments.find((a) => a.id === aptId)?.patientId ?? "")?.name
+      showNotice(name ? `Cita con ${name} confirmada.` : "Cita confirmada.")
+    } catch {
+      showNotice("No se pudo confirmar la cita. Intenta de nuevo.")
+    }
   }
 
   const formattedMonth = capitalize(
@@ -629,7 +657,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                 className="@3xl:shrink-0"
                 onClick={() => setActiveSessionAppointment(unregisteredToday[0])}
               >
-                Registrar {getPatientById(unregisteredToday[0].patientId)?.name.split(" ")[0] ?? "sesión"}
+                Registrar {patientById.get(unregisteredToday[0].patientId)?.name.split(" ")[0] ?? "sesión"}
               </Button>
             </>
           ) : (
@@ -944,7 +972,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
               <ul className="space-y-1">
                 {pendingQueue.map((apt) => {
                   const start = new Date(apt.startTime)
-                  const patientName = getPatientById(apt.patientId)?.name ?? "Paciente"
+          const patientName = patientById.get(apt.patientId)?.name ?? "Paciente"
                   return (
                     <li
                       key={apt.id}

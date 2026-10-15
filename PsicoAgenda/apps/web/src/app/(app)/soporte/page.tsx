@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
   LifeBuoy,
@@ -10,12 +11,50 @@ import {
   ChevronLeft,
   Clock,
 } from "lucide-react"
+import { UserRole, type PsychologistProfile } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { PageHeader } from "../components/page-header"
-import { MOCK_PSYCHOLOGIST } from "@/lib/mock-data"
+import { useSession } from "@/lib/use-session"
+import { patientService, psychologistService } from "@/services"
+
+function getInitials(name: string): string {
+  const parts = name.replace(/^(Dra\.|Dr\.|Psic\.|Lic\.)\s*/i, "").trim().split(" ")
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+  return (parts[0]?.[0] ?? "P").toUpperCase()
+}
 
 export default function SoportePage() {
+  const { user, isLoading } = useSession()
+  const [therapist, setTherapist] = useState<PsychologistProfile | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  const isPatient = user?.role === UserRole.PATIENT
+
+  useEffect(() => {
+    if (isLoading || !user) return
+    let cancelled = false
+
+    const load = async () => {
+      try {
+        if (isPatient) {
+          const me = await patientService.getMe()
+          if (!me.psychologistId) return
+          setTherapist(await psychologistService.getById(me.psychologistId))
+        } else {
+          setTherapist(await psychologistService.getMe())
+        }
+      } catch {
+        if (!cancelled) setLoadError("No se pudieron cargar los datos del profesional.")
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [isLoading, user, isPatient])
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       <PageHeader
@@ -50,39 +89,56 @@ export default function SoportePage() {
             </div>
           </CardHeader>
           <CardContent className="p-5 space-y-4 text-xs">
-            <div className="flex items-center gap-3">
-              <div className="size-11 rounded-xl bg-primary/10 text-primary font-bold text-sm flex items-center justify-center shrink-0">
-                AG
-              </div>
-              <div className="space-y-0.5">
-                <p className="font-bold text-foreground text-sm">{MOCK_PSYCHOLOGIST.name}</p>
-                <p className="text-muted-foreground">{MOCK_PSYCHOLOGIST.specialty} • {MOCK_PSYCHOLOGIST.licenseNumber}</p>
-              </div>
-            </div>
+            {loadError ? (
+              <p className="text-muted-foreground">{loadError}</p>
+            ) : !therapist ? (
+              <p className="text-muted-foreground">
+                {isLoading ? "Cargando…" : "Sin profesional asignado por ahora."}
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="size-11 rounded-xl bg-primary/10 text-primary font-bold text-sm flex items-center justify-center shrink-0">
+                    {getInitials(therapist.name)}
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-foreground text-sm">{therapist.name}</p>
+                    {therapist.specialty && (
+                      <p className="text-muted-foreground">
+                        {therapist.specialty}
+                        {therapist.licenseNumber ? ` • ${therapist.licenseNumber}` : ""}
+                      </p>
+                    )}
+                  </div>
+                </div>
 
-            <div className="space-y-2 p-3.5 rounded-xl bg-muted/20 border border-border/50">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  <Phone className="size-3.5 text-primary" />
-                  Teléfono consultorio:
-                </span>
-                <span className="font-mono font-semibold text-foreground">{MOCK_PSYCHOLOGIST.phone}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  <Mail className="size-3.5 text-primary" />
-                  Correo de contacto:
-                </span>
-                <span className="font-medium text-foreground">{MOCK_PSYCHOLOGIST.email}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  <Clock className="size-3.5 text-primary" />
-                  Horario de atención:
-                </span>
-                <span className="text-foreground">Lun a Vie · 09:00 - 19:00</span>
-              </div>
-            </div>
+                <div className="space-y-2 p-3.5 rounded-xl bg-muted/20 border border-border/50">
+                  {therapist.phone && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground flex items-center gap-2">
+                        <Phone className="size-3.5 text-primary" />
+                        Teléfono consultorio:
+                      </span>
+                      <span className="font-mono font-semibold text-foreground">{therapist.phone}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground flex items-center gap-2">
+                      <Mail className="size-3.5 text-primary" />
+                      Correo de contacto:
+                    </span>
+                    <span className="font-medium text-foreground">{therapist.email}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground flex items-center gap-2">
+                      <Clock className="size-3.5 text-primary" />
+                      Horario de atención:
+                    </span>
+                    <span className="text-foreground">Lun a Vie · 09:00 - 19:00</span>
+                  </div>
+                </div>
+              </>
+            )}
 
             <p className="text-[11px] text-muted-foreground leading-relaxed">
               💡 Para reprogramar o solicitar una nueva sesión, puedes hacerlo directamente desde la sección de{" "}

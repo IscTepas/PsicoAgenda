@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation"
-import { APP_NAME, UserRole } from "@psicoagenda/shared"
+import { APP_NAME } from "@psicoagenda/shared"
 import { AppointmentForm } from "../components/appointment-form"
-import { getAppointmentById, getPatientForUser } from "@/lib/mock-data"
-import { createClient } from "@/lib/supabase/server"
-import { readIdentity } from "@/lib/session"
+import { appointmentService } from "@/services"
+import { ApiError } from "@/lib/api-client"
+import { getServerAccessToken } from "@/lib/api-client.server"
 
 export const metadata = {
   title: `Gestión de Cita | ${APP_NAME}`,
@@ -16,24 +16,18 @@ export default async function AppointmentDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const appointment = getAppointmentById(id)
+  const token = await getServerAccessToken()
 
-  if (!appointment) {
-    notFound()
-  }
-
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  const sessionUser = readIdentity(user)
-
-  // Si es paciente, solo puede ver y gestionar sus propias citas
-  if (sessionUser?.role === UserRole.PATIENT) {
-    const patient = getPatientForUser(sessionUser)
-    if (appointment.patientId !== patient.id) {
+  let appointment
+  try {
+    appointment = await appointmentService.get(id, token ?? undefined)
+  } catch (error) {
+    // La API es la autoridad: 404 si no existe y 403 si es de otro paciente o
+    // profesional. En ambos casos la cita no debe mostrarse.
+    if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
       notFound()
     }
+    throw error
   }
 
   return <AppointmentForm initialAppointment={appointment} />
