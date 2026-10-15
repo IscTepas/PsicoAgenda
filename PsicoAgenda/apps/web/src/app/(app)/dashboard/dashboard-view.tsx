@@ -12,7 +12,6 @@ import {
   FileText,
   MapPin,
   Plus,
-  UserPlus,
   Video,
 } from "lucide-react"
 import {
@@ -526,12 +525,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
             <Link href="/reportes">
               <FileText />
               Generar reporte
-            </Link>
-          </Button>
-          <Button asChild variant="outline" className="flex-1 sm:flex-none">
-            <Link href="/pacientes/nuevo?desde=inicio">
-              <UserPlus />
-              Nuevo paciente
             </Link>
           </Button>
           <Button asChild className="flex-1 sm:flex-none">

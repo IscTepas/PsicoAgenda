@@ -299,6 +299,9 @@ The ledger. A `dl` with a top hairline and `divide-y` between rows; each row is 
 ### Segmented Control
 A `muted` track with 4px padding and 14px radius; options are 12px medium grey text. The selected option becomes a white surface with ink text and the selected-segment shadow. Selection is marked by surface, not by color; counts sit beside labels in tabular grey.
 
+### Date Picker
+Dates are chosen from a `Calendar` (`src/components/ui/calendar.tsx`) inside a `Popover` (`src/components/ui/popover.tsx`, Radix), never from a bare native field. The trigger is the date itself as a ghost button with a chevron that flips when open. The calendar is Spanish with Monday first: today in a filled teal circle, the selected day tinted teal at 10%, a teal dot under days that have appointments, month chevrons, and a "Hoy" shortcut. Arrow keys move between days, PageUp/PageDown change month, Enter picks. The popover opens from its trigger with a fade and 95% zoom (150ms) and closes on pick, Escape, or an outside click.
+
 ### Navigation
 - **Public header:** sticky translucent white bar, icon logo (40x35) plus the `Wordmark` at 18px, section anchors as 14px grey links with 10px-radius `muted` hover, ghost "Iniciar sesión" and primary "Crear cuenta" at `sm` size. Anchors hide below `md`.
 - **App sidebar:** 240px (72px collapsed), translucent `card` material, icon plus the `Wordmark` at 15px (the word hides when collapsed), items 14px medium with 18px icons and 14px radius, at least 40px tall; the active item is a teal fill with white text and stays active on the section's subpages (`/agenda/nueva` keeps Agenda selected). On desktop it is sticky at full viewport height so it never scrolls away. The footer is the signed-in person (initials avatar, name, role) and links to Perfil.

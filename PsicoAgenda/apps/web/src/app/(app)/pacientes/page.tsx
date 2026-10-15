@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation"
 import {
   Search,
   X,
-  UserPlus,
   CalendarCheck,
   ChevronRight,
   Clock,
@@ -155,18 +154,6 @@ export default function PantallaBusquedaPaciente() {
       <PageHeader
         title="Directorio de Pacientes"
         description="Localiza expedientes clínicos, consulta asistencias recientes y gestiona el seguimiento terapéutico."
-        actions={
-          <Button
-            size="sm"
-            className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold rounded-xl shadow-xs"
-            asChild
-          >
-            <Link href="/pacientes/nuevo">
-              <UserPlus className="mr-1.5 size-3.5" />
-              Nuevo paciente
-            </Link>
-          </Button>
-        }
       />
 
       {/* SECCIÓN SUPERIOR: BARRA DE BÚSQUEDA ANCHA Y PROMINENTE */}
@@ -364,8 +351,8 @@ export default function PantallaBusquedaPaciente() {
                 : "No hay pacientes con el filtro seleccionado en este momento."}
             </p>
           </div>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-2">
-            {searchQuery && (
+          {searchQuery && (
+            <div className="flex justify-center pt-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -374,18 +361,8 @@ export default function PantallaBusquedaPaciente() {
               >
                 Limpiar búsqueda
               </Button>
-            )}
-            <Button
-              size="sm"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-9 font-semibold"
-              asChild
-            >
-              <Link href="/pacientes/nuevo">
-                <UserPlus className="mr-1.5 size-3.5" />
-                Registrar nuevo paciente
-              </Link>
-            </Button>
-          </div>
+            </div>
+          )}
         </div>
       )}
     </div>

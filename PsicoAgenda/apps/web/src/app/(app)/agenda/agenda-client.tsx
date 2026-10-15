@@ -8,6 +8,7 @@ import {
   Plus,
   Search,
   X,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Video,
@@ -29,6 +30,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Card,
   CardContent,
@@ -56,7 +59,6 @@ import { useSession } from "@/lib/use-session"
 import {
   MOCK_APPOINTMENTS,
   MOCK_PSYCHOLOGIST,
-  MOCK_CLINICAL_RECORD,
   getPatientById,
   getPatientForUser,
   formatAppointmentTime,
@@ -216,6 +218,7 @@ export function AgendaClient() {
   const [selectedStatus, setSelectedStatus] = React.useState<string>("ALL")
   const [searchQuery, setSearchQuery] = React.useState<string>("")
   const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(null)
+  const [datePickerOpen, setDatePickerOpen] = React.useState(false)
 
   const psychologistName = user?.name || MOCK_PSYCHOLOGIST.name
   const greetingName = isPatient ? currentPatient.name : psychologistName
@@ -255,6 +258,15 @@ export function AgendaClient() {
       return true
     })
   }, [baseAppointments, selectedStatus, searchQuery])
+
+  // Próximas citas: de hoy en adelante, en orden cronológico
+  const upcomingAppointments = React.useMemo(() => {
+    const startOfToday = new Date(today)
+    startOfToday.setHours(0, 0, 0, 0)
+    return filteredAppointments
+      .filter((apt) => apt.startTime >= startOfToday)
+      .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
+  }, [filteredAppointments, today])
 
   // Counts by status
   const counts = React.useMemo(() => {
@@ -516,9 +528,30 @@ export function AgendaClient() {
                 <ChevronRight className="size-4" />
               </Button>
             </div>
-            <span className="text-sm font-semibold text-foreground px-1 select-none">
-              {headerDateLabel}
-            </span>
+            {/* La fecha abre un calendario para saltar a cualquier día */}
+            <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-sm font-semibold text-foreground transition-colors hover:bg-muted active:bg-muted/80 outline-none focus-visible:ring-3 focus-visible:ring-ring/40 data-[state=open]:bg-muted"
+                  aria-label={`${headerDateLabel}. Elegir fecha`}
+                >
+                  {headerDateLabel}
+                  <ChevronDown className="size-3.5 text-muted-foreground transition-transform duration-200 [[data-state=open]_&]:rotate-180" aria-hidden="true" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end">
+                <Calendar
+                  key={currentDate.toDateString()}
+                  selected={currentDate}
+                  hasMarker={(day) => baseAppointments.some((apt) => isSameDay(apt.startTime, day))}
+                  onSelect={(day) => {
+                    setCurrentDate(day)
+                    setDatePickerOpen(false)
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
 
           {/* Pestañas de alternancia: Mes / Semana / Día */}
@@ -898,7 +931,7 @@ export function AgendaClient() {
             return (
               <>
                 <DialogHeader className="space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between pr-8">
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-foreground/80">
                       <span className={`size-1.5 rounded-full ${status.dotClass}`} aria-hidden="true" />
                       {status.label}
@@ -951,8 +984,12 @@ export function AgendaClient() {
                             {patient?.name ?? "Paciente no asignado"}
                           </div>
                           <div className="text-xs text-muted-foreground flex items-center gap-2">
-                            <span>{patient?.gender === "femenino" ? "Femenino" : "Masculino"}</span>
-                            {patient?.phone && <span>· {patient.phone}</span>}
+                            {[
+                              patient?.gender && patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1),
+                              patient?.phone,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </div>
                         </div>
                       </div>
@@ -1020,21 +1057,6 @@ export function AgendaClient() {
                       </p>
                     )}
                   </div>
-
-                  {/* Diagnóstico / Expediente clínico asociado */}
-                  <div className="p-3 rounded-xl bg-primary/[0.04] border border-primary/20 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-medium text-primary">
-                        Expediente Clínico
-                      </div>
-                      <div className="text-xs font-medium text-foreground">
-                        {MOCK_CLINICAL_RECORD.diagnosis}
-                      </div>
-                    </div>
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
-                      Activo
-                    </span>
-                  </div>
                 </div>
 
                 <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 border-t border-border/60 pt-4">
@@ -1074,11 +1096,11 @@ export function AgendaClient() {
               Próximas citas programadas
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              Listado tabular rápido de sesiones de pacientes
+              De hoy en adelante, en orden cronológico
             </CardDescription>
           </div>
           <Badge variant="outline" className="text-xs">
-            {filteredAppointments.length} citas filtradas
+            {upcomingAppointments.length} {upcomingAppointments.length === 1 ? "cita próxima" : "citas próximas"}
           </Badge>
         </CardHeader>
         <CardContent className="p-0">
@@ -1095,8 +1117,8 @@ export function AgendaClient() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAppointments.length > 0 ? (
-                  filteredAppointments.map((apt) => {
+                {upcomingAppointments.length > 0 ? (
+                  upcomingAppointments.map((apt) => {
                     const patient = getPatientById(apt.patientId)
                     const status = STATUS_CONFIG[apt.status]
 
@@ -1153,7 +1175,9 @@ export function AgendaClient() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={6} className="h-32 text-center text-muted-foreground text-sm">
-                      No se encontraron citas con los filtros o búsqueda actuales.
+                      {searchQuery || selectedStatus !== "ALL"
+                        ? "Ninguna cita próxima coincide con los filtros o la búsqueda."
+                        : "No hay citas próximas."}
                     </TableCell>
                   </TableRow>
                 )}
