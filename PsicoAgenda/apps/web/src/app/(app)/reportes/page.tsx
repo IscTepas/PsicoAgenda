@@ -9,10 +9,7 @@ import {
   FileSpreadsheet,
   FileText,
   Filter,
-  CheckCircle2,
   XCircle,
-  Clock,
-  ArrowUpDown,
   RefreshCw,
   TrendingUp,
   DollarSign,
@@ -21,7 +18,6 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
@@ -398,7 +394,7 @@ export default function ReportsPage() {
                 onClick={handleExportCSV}
                 className="rounded-lg text-xs font-medium cursor-pointer gap-2 py-2"
               >
-                <FileSpreadsheet className="size-4 text-emerald-600" />
+                <FileSpreadsheet className="size-4 text-primary" />
                 <span>Exportar a Excel (.CSV)</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -534,7 +530,7 @@ export default function ReportsPage() {
         {/* KPI 1: Total de Consultas */}
         <div className="rounded-2xl border border-border/50 bg-card p-4 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+            <span className="text-xs font-medium text-muted-foreground">
               Total de consultas
             </span>
             <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -552,10 +548,10 @@ export default function ReportsPage() {
         {/* KPI 2: Tasa de Asistencia */}
         <div className="rounded-2xl border border-border/50 bg-card p-4 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+            <span className="text-xs font-medium text-muted-foreground">
               Tasa de Asistencia
             </span>
-            <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <TrendingUp className="size-3.5" />
             </div>
           </div>
@@ -570,7 +566,7 @@ export default function ReportsPage() {
         {/* KPI 3: Total Canceladas */}
         <div className="rounded-2xl border border-border/50 bg-card p-4 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+            <span className="text-xs font-medium text-muted-foreground">
               Total Canceladas
             </span>
             <div className="flex size-7 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
@@ -595,7 +591,7 @@ export default function ReportsPage() {
         {/* KPI 4 (Complementario de valor): Total Honorarios */}
         <div className="rounded-2xl border border-border/50 bg-card p-4 transition-all shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+            <span className="text-xs font-medium text-muted-foreground">
               Total Honorarios
             </span>
             <div className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -705,23 +701,23 @@ export default function ReportsPage() {
                     {/* Columna: Estado */}
                     <TableCell className="py-3.5">
                       {item.status === "attended" ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                          <CheckCircle2 className="size-3" />
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-medium text-foreground/80">
+                          <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
                           Asistida
                         </span>
                       ) : item.status === "cancelled" ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-destructive/20 bg-destructive/10 px-2.5 py-0.5 text-[11px] font-medium text-destructive">
-                          <XCircle className="size-3" />
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-medium text-foreground/80">
+                          <span className="size-1.5 rounded-full bg-destructive" aria-hidden="true" />
                           Cancelada
                         </span>
                       ) : item.status === "no_show" ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-orange-500/20 bg-orange-500/10 px-2.5 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300">
-                          <XCircle className="size-3" />
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-medium text-foreground/80">
+                          <span className="size-1.5 rounded-full bg-muted-foreground/50" aria-hidden="true" />
                           Inasistencia
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                          <Clock className="size-3" />
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-medium text-foreground/80">
+                          <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
                           Pendiente
                         </span>
                       )}

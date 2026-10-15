@@ -121,7 +121,7 @@ export function RecoverForm() {
     const provider = findMailProvider(submittedEmail)
 
     return (
-      <div className="flex w-full max-w-[420px] flex-col gap-6 rounded-[28px] border border-border bg-card p-7 shadow-sm animate-in fade-in duration-300 sm:p-9">
+      <div className="flex w-full max-w-[420px] flex-col gap-6 rounded-4xl border border-border bg-card p-7 shadow-sm animate-in fade-in duration-300 sm:p-9">
         <div className="flex flex-col items-center text-center">
           <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary animate-in zoom-in-75 duration-300">
             <MailCheck className="size-7" />
@@ -205,7 +205,7 @@ export function RecoverForm() {
   }
 
   return (
-    <div className="flex w-full max-w-[420px] flex-col gap-6 rounded-[28px] border border-border bg-card p-7 shadow-sm sm:p-9">
+    <div className="flex w-full max-w-[420px] flex-col gap-6 rounded-4xl border border-border bg-card p-7 shadow-sm sm:p-9">
       {/* Cabecera con el logo de PsicoAgenda */}
       <div className="flex flex-col items-center text-center">
         <Image

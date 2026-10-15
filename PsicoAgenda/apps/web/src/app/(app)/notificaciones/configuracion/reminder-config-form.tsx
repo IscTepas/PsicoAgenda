@@ -65,8 +65,8 @@ export function ReminderConfigForm() {
   return (
     <div className="space-y-6">
       {saveSuccessMessage && (
-        <Alert className="border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 rounded-2xl py-3 animate-in fade-in-50">
-          <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
+        <Alert className="border-primary/20 bg-primary/10 text-foreground rounded-2xl py-3 animate-in fade-in-50">
+          <CheckCircle2 className="size-4 text-primary" />
           <AlertTitle className="font-semibold text-xs sm:text-sm">Preferencias actualizadas</AlertTitle>
           <AlertDescription className="text-xs">{saveSuccessMessage}</AlertDescription>
         </Alert>
@@ -93,7 +93,7 @@ export function ReminderConfigForm() {
           {/* Canales de comunicación */}
           <div className="space-y-4">
             <div className="space-y-1">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
                 <Smartphone className="size-3.5" />
                 Canales de comunicación
               </h3>
@@ -103,7 +103,7 @@ export function ReminderConfigForm() {
               <div className="flex items-start justify-between p-4 rounded-xl border border-border/60 bg-muted/20 hover:bg-muted/30 transition-colors">
                 <div className="space-y-1 pr-3">
                   <div className="flex items-center gap-2">
-                    <MessageSquare className="size-4 text-emerald-600 dark:text-emerald-400" />
+                    <MessageSquare className="size-4 text-primary" />
                     <span className="text-sm font-semibold text-foreground">
                       Recibir notificaciones por WhatsApp
                     </span>
@@ -147,7 +147,7 @@ export function ReminderConfigForm() {
           {/* Anticipación de avisos */}
           <div className="space-y-4 pt-2 border-t border-border/40">
             <div className="space-y-1">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
                 <Clock className="size-3.5" />
                 Anticipación de avisos
               </h3>

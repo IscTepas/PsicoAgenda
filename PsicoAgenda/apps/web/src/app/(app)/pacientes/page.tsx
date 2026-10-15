@@ -7,14 +7,10 @@ import {
   Search,
   X,
   UserPlus,
-  Calendar,
   CalendarCheck,
   ChevronRight,
   Clock,
   UserX,
-  Shield,
-  Phone,
-  Mail,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -29,7 +25,7 @@ import {
 } from "@/components/ui/select"
 import { PageHeader } from "../components/page-header"
 import { useSession } from "@/lib/use-session"
-import { UserRole, type Patient, AppointmentStatus } from "@psicoagenda/shared"
+import { UserRole, AppointmentStatus } from "@psicoagenda/shared"
 import {
   MOCK_PATIENTS,
   MOCK_APPOINTMENTS,
@@ -165,9 +161,9 @@ export default function PantallaBusquedaPaciente() {
             className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold rounded-xl shadow-xs"
             asChild
           >
-            <Link href="/agenda">
+            <Link href="/pacientes/nuevo">
               <UserPlus className="mr-1.5 size-3.5" />
-              Nuevo Paciente
+              Nuevo paciente
             </Link>
           </Button>
         }
@@ -321,7 +317,7 @@ export default function PantallaBusquedaPaciente() {
                     </div>
 
                     {hasUpcoming && (
-                      <div className="flex items-center justify-between text-emerald-600 dark:text-emerald-400">
+                      <div className="flex items-center justify-between text-primary">
                         <span className="flex items-center gap-1.5 text-[11px]">
                           <CalendarCheck className="size-3.5" />
                           Próxima cita:
@@ -384,9 +380,9 @@ export default function PantallaBusquedaPaciente() {
               className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-9 font-semibold"
               asChild
             >
-              <Link href="/agenda">
+              <Link href="/pacientes/nuevo">
                 <UserPlus className="mr-1.5 size-3.5" />
-                + Registrar nuevo paciente
+                Registrar nuevo paciente
               </Link>
             </Button>
           </div>

@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-14T00:00:00Z",
+  "title": "Design System: PsicoAgenda",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Consultorio Teal", "canonical": "oklch(0.51 0.096 184)", "dark": "oklch(0.65 0.12 184)", "tonalRamp": ["oklch(0.15 0.03 184)", "oklch(0.26 0.05 184)", "oklch(0.38 0.075 184)", "oklch(0.51 0.096 184)", "oklch(0.62 0.09 184)", "oklch(0.73 0.07 184)", "oklch(0.85 0.045 184)", "oklch(0.95 0.018 184)"] },
+      "primary-foreground": { "role": "primary", "displayName": "Primary Foreground", "canonical": "oklch(0.985 0 0)", "dark": "oklch(0.985 0 0)" },
+      "background": { "role": "neutral", "displayName": "Clinic White", "canonical": "oklch(1 0 0)", "dark": "oklch(0.145 0 0)" },
+      "foreground": { "role": "neutral", "displayName": "Ink", "canonical": "oklch(0.145 0 0)", "dark": "oklch(0.985 0 0)", "tonalRamp": ["oklch(0.145 0 0)", "oklch(0.205 0 0)", "oklch(0.269 0 0)", "oklch(0.439 0 0)", "oklch(0.556 0 0)", "oklch(0.708 0 0)", "oklch(0.922 0 0)", "oklch(0.97 0 0)"] },
+      "card": { "role": "neutral", "displayName": "Card White", "canonical": "oklch(1 0 0)", "dark": "oklch(0.205 0 0)" },
+      "muted": { "role": "neutral", "displayName": "Waiting-Room Grey", "canonical": "oklch(0.97 0 0)", "dark": "oklch(0.269 0 0)" },
+      "muted-foreground": { "role": "neutral", "displayName": "Note Grey", "canonical": "oklch(0.556 0 0)", "dark": "oklch(0.708 0 0)" },
+      "secondary-foreground": { "role": "neutral", "displayName": "Soft Ink", "canonical": "oklch(0.205 0 0)", "dark": "oklch(0.985 0 0)" },
+      "border": { "role": "neutral", "displayName": "Hairline", "canonical": "oklch(0.922 0 0)", "dark": "oklch(1 0 0 / 10%)" },
+      "sidebar": { "role": "neutral", "displayName": "Sidebar Paper", "canonical": "oklch(0.985 0 0)", "dark": "oklch(0.205 0 0)" },
+      "destructive": { "role": "signal", "displayName": "Destructive Red", "canonical": "oklch(0.577 0.245 27.325)", "dark": "oklch(0.704 0.191 22.216)", "tonalRamp": ["oklch(0.15 0.06 27)", "oklch(0.27 0.11 27)", "oklch(0.4 0.17 27)", "oklch(0.577 0.245 27.325)", "oklch(0.66 0.19 25)", "oklch(0.76 0.13 24)", "oklch(0.86 0.07 22)", "oklch(0.95 0.025 20)"] },
+      "chart-1": { "role": "data", "displayName": "Chart Teal Light", "canonical": "oklch(0.7 0.11 184)" },
+      "chart-2": { "role": "data", "displayName": "Chart Blue-Teal", "canonical": "oklch(0.62 0.09 200)" },
+      "chart-3": { "role": "data", "displayName": "Chart Green-Teal", "canonical": "oklch(0.55 0.08 160)" },
+      "chart-4": { "role": "data", "displayName": "Chart Leaf", "canonical": "oklch(0.72 0.12 150)" },
+      "chart-5": { "role": "data", "displayName": "Chart Deep Teal", "canonical": "oklch(0.45 0.07 190)" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Home greeting only; 2.25rem mobile, 3rem sm, 3.5rem md." },
+      "headline": { "displayName": "Headline", "purpose": "Home section titles and closing band; app greetings at 1.5-1.875rem." },
+      "title": { "displayName": "Title", "purpose": "Person names in the ficha and dashboard focus card." },
+      "title-sm": { "displayName": "Title Small", "purpose": "Service names, dialog titles, card headings." },
+      "body-lg": { "displayName": "Body Large", "purpose": "Supporting line under the display greeting, muted." },
+      "body": { "displayName": "Body", "purpose": "Paragraphs, capped at 65ch." },
+      "value": { "displayName": "Value", "purpose": "Right side of label/value rows; tabular numerals." },
+      "label": { "displayName": "Label", "purpose": "Left side of label/value rows, nav links, field labels (500)." },
+      "caption": { "displayName": "Caption", "purpose": "Status pills, segmented options, calendar days." }
+    },
+    "shadows": [
+      { "name": "hairline-lift", "value": "0 1px rgb(0 0 0 / 0.05)", "purpose": "Primary and outline buttons." },
+      { "name": "selected-segment", "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)", "purpose": "Selected segmented-control option; active sidebar item." },
+      { "name": "ficha-float", "value": "0 1px 2px rgb(0 0 0 / 0.04), 0 12px 32px -12px rgb(0 0 0 / 0.08)", "purpose": "Home ficha card only." },
+      { "name": "auth-card", "value": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)", "purpose": "Centered card on login, registro, recuperar." },
+      { "name": "dialog", "value": "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)", "purpose": "Modal dialogs over a 40% black overlay." }
+    ],
+    "motion": [
+      { "name": "state-change", "value": "150ms", "purpose": "Buttons, inputs, nav items, segmented control." },
+      { "name": "press", "value": "scale(0.98)", "purpose": "Active state of buttons and tappable rows." },
+      { "name": "ease-disclosure", "value": "320ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "FAQ details height animation; reduced-motion gated." },
+      { "name": "icon-rotate", "value": "300ms ease-out, rotate(45deg)", "purpose": "Disclosure plus icon turning to x." },
+      { "name": "fade-in", "value": "200-300ms", "purpose": "Notices, alerts, hydrated live status." },
+      { "name": "live-ping", "value": "animate-ping, opacity 0.5-0.6", "purpose": "Halo on live/open dot; hidden under reduced motion." },
+      { "name": "smooth-anchor", "value": "scroll-behavior: smooth", "purpose": "In-page anchors; reduced-motion gated." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ],
+    "assets": [
+      { "path": "public/images/psicoagenda-logo.png", "kind": "logo-lockup", "provenance": "Pre-existing raster supplied by the user." },
+      { "path": "public/images/psicoagenda-icon.png", "kind": "logo-icon", "provenance": "Pre-existing raster supplied by the user." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main action on any screen; teal fill, 14px radius.",
+      "html": "<button class=\"ds-btn-primary\">Crear cuenta para agendar <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 12h14\"/><path d=\"m12 5 7 7-7 7\"/></svg></button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 14px; border: 1px solid transparent; background: var(--primary, oklch(0.51 0.096 184)); color: var(--primary-foreground, oklch(0.985 0 0)); font: 500 14px/1 Geist, ui-sans-serif, system-ui, sans-serif; box-shadow: 0 1px rgb(0 0 0 / 0.05); cursor: pointer; transition: all 150ms; } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary, oklch(0.51 0.096 184)) 90%, transparent); } .ds-btn-primary:focus-visible { outline: none; border-color: var(--ring, oklch(0.51 0.096 184)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.51 0.096 184)) 40%, transparent); } .ds-btn-primary:active { transform: scale(0.98); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action beside a primary; white with hairline border.",
+      "html": "<button class=\"ds-btn-outline\">Cómo llegar</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 14px; border: 1px solid var(--border, oklch(0.922 0 0)); background: var(--card, oklch(1 0 0)); color: var(--foreground, oklch(0.145 0 0)); font: 500 14px/1 Geist, ui-sans-serif, system-ui, sans-serif; box-shadow: 0 1px rgb(0 0 0 / 0.05); cursor: pointer; transition: all 150ms; } .ds-btn-outline:hover { background: var(--muted, oklch(0.97 0 0)); } .ds-btn-outline:focus-visible { outline: none; border-color: var(--ring, oklch(0.51 0.096 184)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.51 0.096 184)) 40%, transparent); } .ds-btn-outline:active { transform: scale(0.98); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Tertiary action; transparent until hovered.",
+      "html": "<button class=\"ds-btn-ghost\">Ya tengo cuenta</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; height: 40px; padding: 0 16px; border-radius: 14px; border: 1px solid transparent; background: transparent; color: var(--foreground, oklch(0.145 0 0)); font: 500 14px/1 Geist, ui-sans-serif, system-ui, sans-serif; cursor: pointer; transition: all 150ms; } .ds-btn-ghost:hover { background: var(--muted, oklch(0.97 0 0)); } .ds-btn-ghost:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.51 0.096 184)) 40%, transparent); } .ds-btn-ghost:active { transform: scale(0.98); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Form field with label; teal border and ring on focus.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">Correo electrónico</span><input class=\"ds-input\" type=\"email\" placeholder=\"tu@correo.com\"></label>",
+      "css": ".ds-field { display: grid; gap: 8px; font-family: Geist, ui-sans-serif, system-ui, sans-serif; } .ds-field-label { font-size: 14px; font-weight: 500; color: var(--foreground, oklch(0.145 0 0)); } .ds-input { height: 40px; padding: 8px 14px; border-radius: 14px; border: 1px solid var(--input, oklch(0.922 0 0)); background: var(--card, oklch(1 0 0)); color: var(--foreground, oklch(0.145 0 0)); font-size: 14px; outline: none; transition: all 150ms; } .ds-input::placeholder { color: var(--muted-foreground, oklch(0.556 0 0)); } .ds-input:focus-visible { border-color: var(--primary, oklch(0.51 0.096 184)); box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary, oklch(0.51 0.096 184)) 20%, transparent); }"
+    },
+    {
+      "name": "Ficha Card (Label/Value Rows)",
+      "kind": "card",
+      "refersTo": "surface-card-hero",
+      "description": "Signature ledger: initials avatar, name, then hairline-divided label/value rows.",
+      "html": "<article class=\"ds-ficha\"><div class=\"ds-ficha-head\"><div class=\"ds-avatar\">AG</div><div><h2 class=\"ds-ficha-name\">Dra. Ana García</h2><p class=\"ds-ficha-spec\">Psicología clínica</p></div></div><dl class=\"ds-rows\"><div class=\"ds-row\"><dt>Modalidad</dt><dd>Consultorio y en línea</dd></div><div class=\"ds-row\"><dt>Duración</dt><dd>50 minutos</dd></div><div class=\"ds-row\"><dt>Horario</dt><dd>Lun a vie, 9:00 a.m. a 7:00 p.m.</dd></div></dl></article>",
+      "css": ".ds-ficha { font-family: Geist, ui-sans-serif, system-ui, sans-serif; background: var(--card, oklch(1 0 0)); color: var(--foreground, oklch(0.145 0 0)); border: 1px solid var(--border, oklch(0.922 0 0)); border-radius: 22px; padding: 32px; box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 12px 32px -12px rgb(0 0 0 / 0.08); max-width: 560px; } .ds-ficha-head { display: flex; align-items: center; gap: 16px; } .ds-avatar { display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 9999px; background: color-mix(in oklch, var(--primary, oklch(0.51 0.096 184)) 10%, transparent); color: var(--primary, oklch(0.51 0.096 184)); font-size: 18px; font-weight: 600; flex-shrink: 0; } .ds-ficha-name { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.025em; } .ds-ficha-spec { margin: 0; font-size: 14px; color: var(--muted-foreground, oklch(0.556 0 0)); } .ds-rows { margin: 24px 0 0; border-top: 1px solid var(--border, oklch(0.922 0 0)); } .ds-row { display: grid; grid-template-columns: 9rem 1fr; gap: 24px; padding: 16px 0; border-bottom: 1px solid var(--border, oklch(0.922 0 0)); } .ds-row:last-child { border-bottom: none; } .ds-row dt { font-size: 14px; color: var(--muted-foreground, oklch(0.556 0 0)); } .ds-row dd { margin: 0; font-size: 15px; font-weight: 500; line-height: 1.375; font-variant-numeric: tabular-nums; }"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "Neutral pill with colored dot; the only status treatment.",
+      "html": "<div class=\"ds-pills\"><span class=\"ds-pill\"><span class=\"ds-dot\" style=\"background: var(--primary, oklch(0.51 0.096 184))\"></span>Confirmada</span><span class=\"ds-pill\"><span class=\"ds-dot\" style=\"background: #f59e0b\"></span>Por confirmar</span><span class=\"ds-pill\"><span class=\"ds-dot\" style=\"background: var(--destructive, oklch(0.577 0.245 27.325))\"></span>Cancelada</span></div>",
+      "css": ".ds-pills { display: flex; gap: 8px; flex-wrap: wrap; } .ds-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 9999px; background: color-mix(in oklch, var(--muted, oklch(0.97 0 0)) 70%, transparent); color: color-mix(in oklch, var(--foreground, oklch(0.145 0 0)) 80%, transparent); font: 500 12px/1.33 Geist, ui-sans-serif, system-ui, sans-serif; } .ds-dot { width: 6px; height: 6px; border-radius: 9999px; }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "custom",
+      "refersTo": "segmented-control",
+      "description": "Filter toggle; selection marked by white surface, not color.",
+      "html": "<div class=\"ds-seg\"><button class=\"ds-seg-opt\" aria-pressed=\"true\">Todas <span>6</span></button><button class=\"ds-seg-opt\" aria-pressed=\"false\">Confirmadas <span>4</span></button><button class=\"ds-seg-opt\" aria-pressed=\"false\">Por confirmar <span>2</span></button></div>",
+      "css": ".ds-seg { display: inline-flex; padding: 4px; border-radius: 14px; background: var(--muted, oklch(0.97 0 0)); font-family: Geist, ui-sans-serif, system-ui, sans-serif; } .ds-seg-opt { border: 0; background: transparent; padding: 6px 12px; border-radius: 10px; font-size: 12px; font-weight: 500; color: var(--muted-foreground, oklch(0.556 0 0)); cursor: pointer; transition: all 150ms; } .ds-seg-opt span { margin-left: 6px; font-variant-numeric: tabular-nums; color: var(--muted-foreground, oklch(0.556 0 0)); } .ds-seg-opt:hover { color: var(--foreground, oklch(0.145 0 0)); } .ds-seg-opt[aria-pressed=\"true\"] { background: var(--card, oklch(1 0 0)); color: var(--foreground, oklch(0.145 0 0)); box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); } .ds-seg-opt:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.51 0.096 184)) 40%, transparent); }"
+    },
+    {
+      "name": "Live Status",
+      "kind": "custom",
+      "refersTo": "live-status",
+      "description": "Open-now / in-session line with pinging teal dot.",
+      "html": "<p class=\"ds-live\"><span class=\"ds-live-dot\"><span class=\"ds-live-ping\"></span><span class=\"ds-live-core\"></span></span><strong>Abierto ahora</strong><span class=\"ds-live-detail\">· hasta las 7:00 p.m.</span></p>",
+      "css": ".ds-live { display: flex; align-items: center; gap: 8px; height: 20px; margin: 0; font: 400 14px/1 Geist, ui-sans-serif, system-ui, sans-serif; } .ds-live strong { font-weight: 500; color: var(--primary, oklch(0.51 0.096 184)); } .ds-live-detail { color: var(--muted-foreground, oklch(0.556 0 0)); } .ds-live-dot { position: relative; display: flex; width: 8px; height: 8px; } .ds-live-core { position: relative; width: 8px; height: 8px; border-radius: 9999px; background: var(--primary, oklch(0.51 0.096 184)); } .ds-live-ping { position: absolute; inset: 0; border-radius: 9999px; background: var(--primary, oklch(0.51 0.096 184)); opacity: 0.5; animation: ds-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite; } @keyframes ds-ping { 75%, 100% { transform: scale(2); opacity: 0; } } @media (prefers-reduced-motion: reduce) { .ds-live-ping { display: none; } }"
+    },
+    {
+      "name": "Public Header",
+      "kind": "nav",
+      "refersTo": "nav-public",
+      "description": "Sticky translucent header with wordmark, anchors, ghost and primary actions.",
+      "html": "<header class=\"ds-nav\"><span class=\"ds-nav-brand\">PsicoAgenda</span><nav class=\"ds-nav-links\"><a href=\"#\">Consultorio</a><a href=\"#\">Servicios</a><a href=\"#\">Preguntas</a><a href=\"#\">Contacto</a></nav><div class=\"ds-nav-actions\"><a class=\"ds-nav-ghost\" href=\"#\">Iniciar sesión</a><a class=\"ds-nav-cta\" href=\"#\">Crear cuenta</a></div></header>",
+      "css": ".ds-nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 64px; padding: 0 24px; background: color-mix(in oklch, var(--background, oklch(1 0 0)) 80%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid color-mix(in oklch, var(--border, oklch(0.922 0 0)) 60%, transparent); font-family: Geist, ui-sans-serif, system-ui, sans-serif; } .ds-nav-brand { font-size: 18px; font-weight: 600; letter-spacing: -0.025em; color: var(--foreground, oklch(0.145 0 0)); } .ds-nav-links { display: flex; gap: 4px; } .ds-nav-links a { padding: 8px 12px; border-radius: 10px; font-size: 14px; color: var(--muted-foreground, oklch(0.556 0 0)); text-decoration: none; transition: all 150ms; } .ds-nav-links a:hover { background: var(--muted, oklch(0.97 0 0)); color: var(--foreground, oklch(0.145 0 0)); } .ds-nav-links a:focus-visible, .ds-nav-actions a:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring, oklch(0.51 0.096 184)) 40%, transparent); } .ds-nav-actions { display: flex; gap: 6px; } .ds-nav-ghost, .ds-nav-cta { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 10px; font-size: 12px; font-weight: 500; text-decoration: none; transition: all 150ms; } .ds-nav-ghost { color: var(--foreground, oklch(0.145 0 0)); } .ds-nav-ghost:hover { background: var(--muted, oklch(0.97 0 0)); } .ds-nav-cta { background: var(--primary, oklch(0.51 0.096 184)); color: var(--primary-foreground, oklch(0.985 0 0)); box-shadow: 0 1px rgb(0 0 0 / 0.05); } .ds-nav-cta:hover { background: color-mix(in oklch, var(--primary, oklch(0.51 0.096 184)) 90%, transparent); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Consulting-Room Ledger",
+    "overview": "PsicoAgenda is a white room with one green voice. The ground is pure white, text is near-black, and everything structural (bands, borders, chips, the segmented track) is a neutral grey. The single teal primary is the practice's signature: it marks the next action, live state, links, and a person's initials, and almost nothing else. The world reads as calm, orderly, and confidential, closer to a well-kept clinic file than to a SaaS dashboard.\n\nInformation is set as a ledger: label on the left in muted grey, value on the right in medium-weight ink with tabular numerals, rows separated by hairline dividers. Surfaces are generously rounded (18-22px) white cards with a hairline border, sitting on white or on a pale neutral band. Depth is almost entirely tonal; shadows are whisper-light and appear only where a surface must lift (the home ficha card, dialogs, the selected segment).\n\nThe same system serves two audiences. Patient-facing pages (home, auth) stay sparse and warm, with larger type and fewer words. The psychologist's app is denser, built from the same cards, rows, pills, and teal accent at smaller sizes. The user has made the white/green base binding across every screen.",
+    "keyCharacteristics": [
+      "White ground, near-black ink, neutral grey structure, one teal accent.",
+      "Label/value rows with hairline dividers as the default way to present facts.",
+      "Rounded white surfaces (14px controls, 18-22px cards) with hairline borders.",
+      "Geist sans throughout, tight negative tracking on headings, tabular numerals on every time, count, or phone number.",
+      "Status shown with a neutral pill and a small colored dot, never a filled colored badge.",
+      "Motion is short and functional (150ms state changes, 320ms disclosure), and off under reduced motion."
+    ],
+    "rules": [
+      { "name": "The White-and-Green Rule", "body": "Every screen keeps the white ground and the teal primary as its only brand color. No second accent hue is introduced; signal colors (red, amber) appear only to report state. This is a user-confirmed brand commitment.", "section": "colors" },
+      { "name": "The One Voice Rule", "body": "Teal marks what to do next or what is live. If a teal element is neither an action, a link, a live state, nor a person's initials, it should be grey.", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "Times, dates, counts, phone numbers, and durations always use tabular numerals so columns and countdowns do not jitter.", "section": "typography" },
+      { "name": "The Tighten-With-Size Rule", "body": "Tracking is -0.035em at display, -0.025em at headline and title, normal at body and below. Labels are sentence case in grey; the uppercase tracked labels found in older app screens are drift, not system.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "Cards in lists and app panels carry a border and no shadow. A shadow is earned by a surface that is singular on its screen (the ficha, the auth card, a dialog) or by a selected state.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep white `background` as the ground and `primary` teal as the only brand color on every screen.",
+      "Do present facts as label/value rows: 14px grey label, 15px medium ink value, tabular numerals, hairline dividers.",
+      "Do show appointment and practice status as a neutral pill or line with a small colored dot.",
+      "Do mark selection in segmented controls with a white surface and a faint shadow, not with teal.",
+      "Do use the radius scale: 14px controls, 18px cards, 22px hero surfaces, full round for people and states.",
+      "Do use initials avatars (teal at 10%, teal initials) wherever a person appears without a photo.",
+      "Do gate decorative motion (smooth scroll, disclosure height, ping halos) behind `prefers-reduced-motion: no-preference`."
+    ],
+    "donts": [
+      "Don't introduce a second accent hue or recolor the base; emerald, blue, or violet accents break the white/green commitment.",
+      "Don't use filled colored badges for status; the dashboard's neutral pill plus dot is the system.",
+      "Don't add shadows to cards in lists or panels; borders and tone carry depth.",
+      "Don't use uppercase tracked labels or eyebrow text above headings; labels are sentence case in grey.",
+      "Don't set times, counts, or phone numbers in proportional numerals."
+    ]
+  }
+}

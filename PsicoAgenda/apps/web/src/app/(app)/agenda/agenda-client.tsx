@@ -4,9 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import {
   Calendar as CalendarIcon,
-  CalendarDays,
   Clock,
-  Clock3,
   Plus,
   Search,
   X,
@@ -14,10 +12,7 @@ import {
   ChevronRight,
   Video,
   MapPin,
-  User,
   FileText,
-  Phone,
-  Mail,
   ArrowUpRight,
   CheckCircle2,
   AlertCircle,
@@ -26,12 +21,10 @@ import {
   Check,
 } from "lucide-react"
 import {
-  APP_NAME,
   AppointmentStatus,
   AppointmentModality,
   UserRole,
   type Appointment,
-  type Patient,
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -76,7 +69,6 @@ interface StatusConfig {
   label: string
   dotClass: string
   badgeClass: string
-  borderClass: string
   bgSoftClass: string
   icon: React.ComponentType<{ className?: string }>
 }
@@ -84,17 +76,15 @@ interface StatusConfig {
 const STATUS_CONFIG: Record<AppointmentStatus, StatusConfig> = {
   [AppointmentStatus.CONFIRMED]: {
     label: "Confirmada",
-    dotClass: "bg-emerald-500",
-    badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
-    borderClass: "border-l-emerald-500",
-    bgSoftClass: "bg-emerald-50/50 hover:bg-emerald-50/80 dark:bg-emerald-950/20",
+    dotClass: "bg-primary",
+    badgeClass: "bg-primary/10 text-primary border-primary/20",
+    bgSoftClass: "bg-primary/[0.04] hover:bg-primary/[0.08]",
     icon: CheckCircle2,
   },
   [AppointmentStatus.PENDING]: {
     label: "Pendiente",
     dotClass: "bg-amber-500",
     badgeClass: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
-    borderClass: "border-l-amber-500",
     bgSoftClass: "bg-amber-50/50 hover:bg-amber-50/80 dark:bg-amber-950/20",
     icon: AlertCircle,
   },
@@ -102,7 +92,6 @@ const STATUS_CONFIG: Record<AppointmentStatus, StatusConfig> = {
     label: "Cancelada",
     dotClass: "bg-rose-500",
     badgeClass: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800",
-    borderClass: "border-l-rose-500",
     bgSoftClass: "bg-rose-50/40 hover:bg-rose-50/70 dark:bg-rose-950/20",
     icon: XCircle,
   },
@@ -110,7 +99,6 @@ const STATUS_CONFIG: Record<AppointmentStatus, StatusConfig> = {
     label: "Completada",
     dotClass: "bg-slate-400",
     badgeClass: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
-    borderClass: "border-l-slate-400",
     bgSoftClass: "bg-slate-50/60 hover:bg-slate-50/90 dark:bg-slate-900/30",
     icon: Check,
   },
@@ -118,7 +106,6 @@ const STATUS_CONFIG: Record<AppointmentStatus, StatusConfig> = {
     label: "No asistió",
     dotClass: "bg-gray-400",
     badgeClass: "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300",
-    borderClass: "border-l-gray-400",
     bgSoftClass: "bg-gray-50/60 dark:bg-gray-900/30",
     icon: HelpCircle,
   },
@@ -205,11 +192,16 @@ function getMonthDays(currentDate: Date): { date: Date; isCurrentMonth: boolean 
   return days
 }
 
+// La agenda depende de la fecha actual, que el servidor y el navegador no
+// siempre comparten; su contenido se pinta ya hidratado para evitar desajustes.
+const subscribeNoop = () => () => {}
+
 export function AgendaClient() {
   const { user } = useSession()
   const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
   const isPatient = effectiveRole === UserRole.PATIENT
   const currentPatient = React.useMemo(() => getPatientForUser(user), [user])
+  const isHydrated = React.useSyncExternalStore(subscribeNoop, () => true, () => false)
 
   // Restrict appointments: Patients only see their own appointments!
   const baseAppointments = React.useMemo(() => {
@@ -229,7 +221,7 @@ export function AgendaClient() {
   const greetingName = isPatient ? currentPatient.name : psychologistName
 
   // Appointments today for header stats
-  const today = new Date()
+  const today = React.useMemo(() => new Date(), [])
   const todayAppointments = React.useMemo(() => {
     return baseAppointments.filter((apt) => isSameDay(apt.startTime, today))
   }, [baseAppointments, today])
@@ -333,6 +325,16 @@ export function AgendaClient() {
     }
   }, [view, currentDate])
 
+  if (!isHydrated) {
+    return (
+      <div className="space-y-6" aria-busy="true">
+        <div className="h-[86px] border-b border-border/60" />
+        <div className="h-[66px] rounded-2xl border border-border/60 bg-card" />
+        <div className="h-[420px] rounded-xl border border-border/70 bg-card" />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* 1. CABECERA: Saludo al usuario, barra de búsqueda rápida y botón + Nueva Cita */}
@@ -423,15 +425,15 @@ export function AgendaClient() {
             onClick={() => setSelectedStatus(AppointmentStatus.CONFIRMED)}
             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
               selectedStatus === AppointmentStatus.CONFIRMED
-                ? "bg-emerald-600 text-white shadow-2xs"
-                : "bg-emerald-50/70 text-emerald-800 border border-emerald-200/80 hover:bg-emerald-100/70 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/60"
+                ? "bg-primary text-primary-foreground shadow-2xs"
+                : "bg-primary/[0.06] text-primary border border-primary/20 hover:bg-primary/10"
             }`}
           >
-            <span className="size-2 rounded-full bg-emerald-400 inline-block" />
+            <span className={`size-2 rounded-full inline-block ${selectedStatus === AppointmentStatus.CONFIRMED ? "bg-primary-foreground/70" : "bg-primary"}`} />
             <span>Confirmadas</span>
             <span
               className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                selectedStatus === AppointmentStatus.CONFIRMED ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/60 dark:text-emerald-200"
+                selectedStatus === AppointmentStatus.CONFIRMED ? "bg-white/20 text-white" : "bg-primary/15 text-primary"
               }`}
             >
               {counts[AppointmentStatus.CONFIRMED]}
@@ -612,22 +614,21 @@ export function AgendaClient() {
                           slotAppointments.map((apt) => {
                             const patient = getPatientById(apt.patientId)
                             const status = STATUS_CONFIG[apt.status]
-                            const StatusIcon = status.icon
 
                             return (
                               <button
                                 key={apt.id}
                                 type="button"
                                 onClick={() => setSelectedAppointment(apt)}
-                                className={`group text-left p-3 rounded-xl border border-border/60 ${status.bgSoftClass} border-l-4 ${status.borderClass} shadow-2xs hover:shadow-sm hover:border-primary/40 transition-all flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2`}
+                                className={`group text-left p-3 rounded-xl border border-border/60 ${status.bgSoftClass} shadow-2xs hover:shadow-sm hover:border-primary/40 transition-all flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2`}
                               >
                                 <div className="space-y-1">
                                   <div className="flex items-center gap-2">
                                     <span className="font-heading font-semibold text-sm text-foreground group-hover:text-primary transition-colors">
                                       {isPatient ? (apt.reason || "Sesión Terapéutica") : (patient?.name ?? "Paciente sin nombre")}
                                     </span>
-                                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium border ${status.badgeClass}`}>
-                                      <StatusIcon className="size-3" />
+                                    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2 py-0.5 text-[11px] font-medium text-foreground/80">
+                                      <span className={`size-1.5 rounded-full ${status.dotClass}`} aria-hidden="true" />
                                       {status.label}
                                     </span>
                                   </div>
@@ -736,7 +737,7 @@ export function AgendaClient() {
                               key={apt.id}
                               type="button"
                               onClick={() => setSelectedAppointment(apt)}
-                              className={`w-full text-left p-2.5 rounded-xl border border-border/60 ${status.bgSoftClass} border-l-4 ${status.borderClass} shadow-2xs hover:shadow-sm hover:border-primary/50 transition-all space-y-1.5`}
+                              className={`w-full text-left p-2.5 rounded-xl border border-border/60 ${status.bgSoftClass} shadow-2xs hover:shadow-sm hover:border-primary/50 transition-all space-y-1.5`}
                             >
                               <div className="flex items-center justify-between gap-1 text-[11px] font-medium text-muted-foreground">
                                 <span className="flex items-center gap-1 font-semibold text-foreground">
@@ -893,14 +894,13 @@ export function AgendaClient() {
           {selectedAppointment && (() => {
             const patient = getPatientById(selectedAppointment.patientId)
             const status = STATUS_CONFIG[selectedAppointment.status]
-            const StatusIcon = status.icon
 
             return (
               <>
                 <DialogHeader className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${status.badgeClass}`}>
-                      <StatusIcon className="size-3.5" />
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-foreground/80">
+                      <span className={`size-1.5 rounded-full ${status.dotClass}`} aria-hidden="true" />
                       {status.label}
                     </span>
                     <span className="text-xs text-muted-foreground">
@@ -1024,7 +1024,7 @@ export function AgendaClient() {
                   {/* Diagnóstico / Expediente clínico asociado */}
                   <div className="p-3 rounded-xl bg-primary/[0.04] border border-primary/20 flex items-center justify-between">
                     <div>
-                      <div className="text-[11px] font-semibold text-primary uppercase tracking-wider">
+                      <div className="text-xs font-medium text-primary">
                         Expediente Clínico
                       </div>
                       <div className="text-xs font-medium text-foreground">
@@ -1132,8 +1132,8 @@ export function AgendaClient() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium border ${status.badgeClass}`}>
-                            <span className={`size-1.5 rounded-full ${status.dotClass}`} />
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-xs font-medium text-foreground/80">
+                            <span className={`size-1.5 rounded-full ${status.dotClass}`} aria-hidden="true" />
                             {status.label}
                           </span>
                         </TableCell>

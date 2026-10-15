@@ -21,7 +21,6 @@ import {
   FileText,
   Save,
   Plus,
-  HelpCircle,
 } from "lucide-react"
 import {
   AppointmentStatus,
@@ -29,11 +28,9 @@ import {
   AttendanceStatus,
   UserRole,
   type Appointment,
-  type Patient,
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Card,
@@ -41,7 +38,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  CardFooter,
 } from "@/components/ui/card"
 import {
   Dialog,
@@ -58,8 +54,6 @@ import {
   MOCK_PSYCHOLOGIST,
   getPatientById,
   getPatientForUser,
-  formatAppointmentTime,
-  formatShortDate,
 } from "@/lib/mock-data"
 
 const AVAILABLE_HOURS = [
@@ -107,6 +101,15 @@ function parseInputToDate(dateStr: string): Date {
   return new Date(y, m - 1, d, 9, 0, 0, 0)
 }
 
+// Mismo estilo de estado que el panel y la agenda: pastilla gris + punto de color.
+const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
+  [AppointmentStatus.CONFIRMED]: { label: "Confirmada", dot: "bg-primary" },
+  [AppointmentStatus.PENDING]: { label: "Pendiente", dot: "bg-amber-500" },
+  [AppointmentStatus.CANCELLED]: { label: "Cancelada", dot: "bg-destructive" },
+  [AppointmentStatus.COMPLETED]: { label: "Completada", dot: "bg-muted-foreground/50" },
+  [AppointmentStatus.NO_SHOW]: { label: "No asistió", dot: "bg-muted-foreground/50" },
+}
+
 interface AppointmentFormProps {
   initialAppointment?: Appointment | null
 }
@@ -132,14 +135,23 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const [patientSearch, setPatientSearch] = React.useState<string>("")
   const [isPatientDropdownOpen, setIsPatientDropdownOpen] = React.useState<boolean>(false)
 
-  // Date and Time State
-  const initialDate = initialAppointment?.startTime ? new Date(initialAppointment.startTime) : new Date()
+  // Date and Time State. Desde la agenda se puede llegar con ?fecha=AAAA-MM-DD&hora=HH:00
+  // (al tocar un hueco libre), así que esos valores precargan el formulario.
+  const paramDate = searchParams.get("fecha")
+  const paramHour = searchParams.get("hora")
+  const initialDate = initialAppointment?.startTime
+    ? new Date(initialAppointment.startTime)
+    : paramDate && /^\d{4}-\d{2}-\d{2}$/.test(paramDate)
+      ? parseInputToDate(paramDate)
+      : new Date()
   const [selectedDate, setSelectedDate] = React.useState<Date>(initialDate)
   const [dateInputValue, setDateInputValue] = React.useState<string>(formatDateToInput(initialDate))
 
   const initialHour = initialAppointment?.startTime
     ? `${String(initialAppointment.startTime.getHours()).padStart(2, "0")}:00`
-    : "10:00"
+    : paramHour && AVAILABLE_HOURS.includes(paramHour)
+      ? paramHour
+      : "10:00"
   const [selectedHour, setSelectedHour] = React.useState<string>(initialHour)
   const [durationMinutes, setDurationMinutes] = React.useState<number>(initialAppointment?.durationMinutes || 50)
   const [modality, setModality] = React.useState<AppointmentModality>(
@@ -329,31 +341,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           {isEdit && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground font-medium">Estado actual:</span>
-              {status === AppointmentStatus.CONFIRMED && (
-                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300">
-                  <CheckCircle2 className="size-3 mr-1 text-emerald-600" /> Confirmada
-                </Badge>
-              )}
-              {status === AppointmentStatus.PENDING && (
-                <Badge className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300">
-                  <AlertCircle className="size-3 mr-1 text-amber-600" /> Pendiente
-                </Badge>
-              )}
-              {status === AppointmentStatus.CANCELLED && (
-                <Badge className="bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300">
-                  <XCircle className="size-3 mr-1 text-rose-600" /> Cancelada
-                </Badge>
-              )}
-              {status === AppointmentStatus.COMPLETED && (
-                <Badge className="bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300">
-                  <Check className="size-3 mr-1" /> Completada
-                </Badge>
-              )}
-              {status === AppointmentStatus.NO_SHOW && (
-                <Badge className="bg-gray-100 text-gray-700 border-gray-200">
-                  <HelpCircle className="size-3 mr-1" /> No asistió
-                </Badge>
-              )}
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-foreground/80">
+                <span className={`size-1.5 rounded-full ${STATUS_PILL[status].dot}`} aria-hidden="true" />
+                {STATUS_PILL[status].label}
+              </span>
             </div>
           )}
         </div>
@@ -361,15 +352,15 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
       {/* Success / Error Alerts */}
       {successMessage && (
-        <div className="p-4 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-3 animate-in fade-in-50">
-          <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
+        <div role="status" className="p-4 rounded-xl bg-primary/10 text-foreground border border-primary/20 flex items-center gap-3 animate-in fade-in-50">
+          <CheckCircle2 className="size-5 text-primary shrink-0" />
           <p className="text-sm font-medium">{successMessage}</p>
         </div>
       )}
 
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-3 animate-in fade-in-50">
-          <AlertCircle className="size-5 text-rose-600 shrink-0" />
+        <div role="alert" className="p-4 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 flex items-center gap-3 animate-in fade-in-50">
+          <AlertCircle className="size-5 shrink-0" />
           <p className="text-sm font-medium">{errorMessage}</p>
         </div>
       )}
@@ -401,7 +392,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               onClick={() => handleRecordAttendance(true)}
               className={`h-9 rounded-xl text-xs font-medium gap-1.5 ${
                 attendance === AttendanceStatus.ATTENDED
-                  ? "bg-emerald-600 text-white"
+                  ? "bg-primary text-primary-foreground ring-2 ring-primary/30 ring-offset-1"
                   : "bg-primary text-primary-foreground hover:bg-primary/90"
               }`}
             >
@@ -414,7 +405,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               onClick={() => handleRecordAttendance(false)}
               className={`h-9 rounded-xl text-xs font-medium gap-1.5 ${
                 attendance === AttendanceStatus.NO_SHOW
-                  ? "border-rose-400 bg-rose-50 text-rose-700"
+                  ? "border-destructive/40 bg-destructive/10 text-destructive"
                   : "border-border/80 hover:bg-muted"
               }`}
             >
@@ -454,7 +445,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   <div>
                     <div className="font-heading font-semibold text-foreground text-sm flex items-center gap-2">
                       <span>{selectedPatient.name}</span>
-                      <span className="text-[11px] px-2 py-0.2 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300">
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                         {selectedPatient.isMinor ? "Menor de edad" : "Adulto"}
                       </span>
                     </div>
@@ -690,13 +681,13 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                           isSelected
                             ? "text-primary-foreground"
                             : isAvailable
-                            ? "text-emerald-600 dark:text-emerald-400"
+                            ? "text-primary"
                             : "text-muted-foreground/60"
                         }`}
                       >
                         <span
                           className={`size-1.5 rounded-full ${
-                            isSelected ? "bg-white" : isAvailable ? "bg-emerald-500" : "bg-rose-400"
+                            isSelected ? "bg-primary-foreground" : isAvailable ? "bg-primary" : "bg-destructive/60"
                           }`}
                         />
                         {isAvailable ? "Disponible" : "Ocupado"}
@@ -849,7 +840,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   onClick={() => setStatus(AppointmentStatus.CONFIRMED)}
                   className={`p-2.5 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
                     status === AppointmentStatus.CONFIRMED
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
+                      ? "bg-primary text-primary-foreground border-primary shadow-2xs"
                       : "bg-card border-border/70 text-foreground hover:bg-muted/40"
                   }`}
                 >

@@ -11,22 +11,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "../components/page-header"
 import { MOCK_NOTIFICATIONS, formatShortDate } from "@/lib/mock-data"
 
-function statusLabel(status: NotificationStatus) {
-  switch (status) {
-    case NotificationStatus.PENDING:
-      return { label: "Pendiente", variant: "secondary" as const }
-    case NotificationStatus.SENT:
-      return { label: "Enviada", variant: "default" as const }
-    case NotificationStatus.FAILED:
-      return { label: "Fallida", variant: "destructive" as const }
-    case NotificationStatus.CANCELLED:
-      return { label: "Cancelada", variant: "outline" as const }
-  }
+// Mismo estilo de estado que el resto de la app: pastilla gris + punto de color.
+const STATUS_PILL: Record<NotificationStatus, { label: string; dot: string }> = {
+  [NotificationStatus.PENDING]: { label: "Pendiente", dot: "bg-amber-500" },
+  [NotificationStatus.SENT]: { label: "Enviada", dot: "bg-primary" },
+  [NotificationStatus.FAILED]: { label: "Fallida", dot: "bg-destructive" },
+  [NotificationStatus.CANCELLED]: { label: "Cancelada", dot: "bg-muted-foreground/50" },
 }
 
 export default function NotificationsPage() {
@@ -89,7 +83,7 @@ export default function NotificationsPage() {
       ) : (
         <div className="space-y-3">
           {MOCK_NOTIFICATIONS.map((notification) => {
-            const status = statusLabel(notification.status)
+            const status = STATUS_PILL[notification.status]
             const isUnread = unreadIds.has(notification.id)
             return (
               <Card
@@ -124,9 +118,10 @@ export default function NotificationsPage() {
                         </CardDescription>
                       </div>
                     </div>
-                    <Badge variant={status.variant} className="text-[11px] rounded-full px-2.5 shrink-0">
+                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-[11px] font-medium text-foreground/80">
+                      <span className={`size-1.5 rounded-full ${status.dot}`} aria-hidden="true" />
                       {status.label}
-                    </Badge>
+                    </span>
                   </div>
                 </CardHeader>
                 <CardContent className="pb-4 pt-0 pl-9">

@@ -10,14 +10,6 @@ import { useForm } from "react-hook-form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
   Form,
   FormControl,
   FormDescription,
@@ -254,7 +246,7 @@ export function RegisterForm() {
   // Estado de confirmación (Email enviado)
   if (submittedEmail) {
     return (
-      <div className="w-full max-w-md rounded-[28px] bg-card p-8 border border-border shadow-sm text-center flex flex-col items-center gap-4">
+      <div className="w-full max-w-md rounded-4xl bg-card p-8 border border-border shadow-sm text-center flex flex-col items-center gap-4">
         <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-1">
           <CheckCircle2 className="size-8" />
         </div>
@@ -288,7 +280,7 @@ export function RegisterForm() {
   }
 
   return (
-    <div className="w-full max-w-xl rounded-[28px] bg-card p-7 sm:p-9 border border-border shadow-sm flex flex-col gap-6">
+    <div className="w-full max-w-xl rounded-4xl bg-card p-7 sm:p-9 border border-border shadow-sm flex flex-col gap-6">
       {/* Cabecera con el logo de PsicoAgenda */}
       <div className="text-center flex flex-col items-center">
         <Image

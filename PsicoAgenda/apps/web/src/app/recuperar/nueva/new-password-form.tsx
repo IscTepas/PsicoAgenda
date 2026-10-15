@@ -49,7 +49,7 @@ const LINK_CHECK_TIMEOUT_MS = 8000
 type LinkState = "checking" | "ready" | "invalid" | "done"
 
 const CARD =
-  "flex w-full max-w-[420px] flex-col gap-6 rounded-[28px] border border-border bg-card p-7 shadow-sm sm:p-9"
+  "flex w-full max-w-[420px] flex-col gap-6 rounded-4xl border border-border bg-card p-7 shadow-sm sm:p-9"
 
 function StateHeader({
   icon: Icon,

@@ -1,6 +1,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { APP_NAME } from "@psicoagenda/shared"
+import { Wordmark } from "@/components/brand/wordmark"
 import { ArrowLeft, ShieldCheck } from "lucide-react"
 import { NewPasswordForm } from "./new-password-form"
 
@@ -22,7 +23,7 @@ export default function NuevaContrasenaPage() {
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
           <Image src="/images/psicoagenda-icon.png" alt="" width={36} height={32} className="h-8 w-9 object-contain" />
-          <span>{APP_NAME}</span>
+          <Wordmark className="text-sm" />
         </div>
       </header>
 

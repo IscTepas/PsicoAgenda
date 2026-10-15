@@ -529,7 +529,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
             </Link>
           </Button>
           <Button asChild variant="outline" className="flex-1 sm:flex-none">
-            <Link href="/pacientes">
+            <Link href="/pacientes/nuevo?desde=inicio">
               <UserPlus />
               Nuevo paciente
             </Link>
@@ -1070,42 +1070,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   )
 }
 
-/** Genera un .ics para que el paciente lleve la cita a su propio calendario. */
-function downloadCalendarFile(apt: Appointment) {
-  const toIcsDate = (d: Date) => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z"
-  const isVirtual = apt.modality === AppointmentModality.VIRTUAL
-  const location = isVirtual
-    ? "Videollamada"
-    : "Paseo de la Reforma #450, Piso 3, Consultorio 3B, CDMX"
-
-  const ics = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//PsicoAgenda//ES",
-    "BEGIN:VEVENT",
-    `UID:${apt.id}@psicoagenda`,
-    `DTSTAMP:${toIcsDate(new Date())}`,
-    `DTSTART:${toIcsDate(new Date(apt.startTime))}`,
-    `DTEND:${toIcsDate(getEndTime(apt))}`,
-    `SUMMARY:Sesión con ${MOCK_PSYCHOLOGIST.name}`,
-    `LOCATION:${location.replace(/,/g, "\\,")}`,
-    "BEGIN:VALARM",
-    "TRIGGER:-PT1H",
-    "ACTION:DISPLAY",
-    "DESCRIPTION:Tu sesión empieza en 1 hora",
-    "END:VALARM",
-    "END:VEVENT",
-    "END:VCALENDAR",
-  ].join("\r\n")
-
-  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }))
-  const link = document.createElement("a")
-  link.href = url
-  link.download = "cita-psicoagenda.ics"
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
 function PatientDashboardView({ user }: { user: SessionUser }) {
   const patient = getPatientForUser(user)
   const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS)
@@ -1309,14 +1273,6 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
                 Abrir videollamada
               </Button>
             )}
-            <Button
-              variant="outline"
-              className="w-full sm:w-auto"
-              onClick={() => downloadCalendarFile(nextAppointment)}
-            >
-              <CalendarPlus />
-              Añadir a mi calendario
-            </Button>
             <Button
               variant="outline"
               className="flex-1 sm:flex-none"
