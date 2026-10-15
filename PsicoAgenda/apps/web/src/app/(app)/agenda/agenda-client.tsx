@@ -4,9 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import {
   Calendar as CalendarIcon,
-  CalendarDays,
   Clock,
-  Clock3,
   Plus,
   Search,
   X,
@@ -14,19 +12,16 @@ import {
   ChevronRight,
   Video,
   MapPin,
-  User,
   FileText,
-  Phone,
-  Mail,
   ArrowUpRight,
   CheckCircle2,
   AlertCircle,
   XCircle,
   HelpCircle,
   Check,
+  Loader2,
 } from "lucide-react"
 import {
-  APP_NAME,
   AppointmentStatus,
   AppointmentModality,
   UserRole,
@@ -61,14 +56,13 @@ import {
 } from "@/components/ui/table"
 import { useSession } from "@/lib/use-session"
 import {
-  MOCK_APPOINTMENTS,
   MOCK_PSYCHOLOGIST,
   MOCK_CLINICAL_RECORD,
-  getPatientById,
   getPatientForUser,
   formatAppointmentTime,
   formatShortDate,
 } from "@/lib/mock-data"
+import { appointmentService, patientService } from "@/services"
 
 type CalendarView = "mes" | "semana" | "dia"
 
@@ -205,19 +199,80 @@ function getMonthDays(currentDate: Date): { date: Date; isCurrentMonth: boolean 
   return days
 }
 
+function toDate(value: Date | string | undefined | null): Date | undefined {
+  if (!value) return undefined
+  return value instanceof Date ? value : new Date(value)
+}
+
+function normalizeAppointment(apt: Appointment): Appointment {
+  return {
+    ...apt,
+    startTime: toDate(apt.startTime) ?? new Date(apt.startTime),
+    createdAt: toDate(apt.createdAt) ?? new Date(),
+    updatedAt: toDate(apt.updatedAt) ?? new Date(),
+  }
+}
+
 export function AgendaClient() {
   const { user } = useSession()
   const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
   const isPatient = effectiveRole === UserRole.PATIENT
   const currentPatient = React.useMemo(() => getPatientForUser(user), [user])
 
+  const [appointments, setAppointments] = React.useState<Appointment[]>([])
+  const [appointmentsLoading, setAppointmentsLoading] = React.useState(true)
+  const [patients, setPatients] = React.useState<Patient[]>([])
+  const [patientsLoading, setPatientsLoading] = React.useState(true)
+
+  // Load appointments and patients from API
+  React.useEffect(() => {
+    let cancelled = false
+    appointmentService
+      .list()
+      .then((data) => {
+        if (cancelled) return
+        setAppointments(data.map(normalizeAppointment))
+      })
+      .catch((err) => {
+        if (cancelled) return
+        console.error("Error loading appointments:", err)
+      })
+      .finally(() => {
+        if (!cancelled) setAppointmentsLoading(false)
+      })
+
+    patientService
+      .list()
+      .then((data) => {
+        if (cancelled) return
+        setPatients(data)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        console.error("Error loading patients:", err)
+      })
+      .finally(() => {
+        if (!cancelled) setPatientsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Local patient lookup backed by API data
+  const getPatientByIdLocal = React.useCallback(
+    (id: string): Patient | undefined => patients.find((p) => p.id === id),
+    [patients]
+  )
+
   // Restrict appointments: Patients only see their own appointments!
   const baseAppointments = React.useMemo(() => {
     if (isPatient) {
-      return MOCK_APPOINTMENTS.filter((apt) => apt.patientId === currentPatient.id)
+      return appointments.filter((apt) => apt.patientId === currentPatient.id)
     }
-    return MOCK_APPOINTMENTS
-  }, [isPatient, currentPatient.id])
+    return appointments
+  }, [isPatient, currentPatient.id, appointments])
 
   const [currentDate, setCurrentDate] = React.useState<Date>(new Date())
   const [view, setView] = React.useState<CalendarView>("semana")
@@ -229,7 +284,7 @@ export function AgendaClient() {
   const greetingName = isPatient ? currentPatient.name : psychologistName
 
   // Appointments today for header stats
-  const today = new Date()
+  const today = React.useMemo(() => new Date(), [])
   const todayAppointments = React.useMemo(() => {
     return baseAppointments.filter((apt) => isSameDay(apt.startTime, today))
   }, [baseAppointments, today])
@@ -245,7 +300,7 @@ export function AgendaClient() {
       // Search filter
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim()
-        const patient = getPatientById(apt.patientId)
+        const patient = getPatientByIdLocal(apt.patientId)
         const patientName = patient?.name?.toLowerCase() ?? ""
         const reason = apt.reason?.toLowerCase() ?? ""
         const notes = apt.notes?.toLowerCase() ?? ""
@@ -262,7 +317,7 @@ export function AgendaClient() {
 
       return true
     })
-  }, [baseAppointments, selectedStatus, searchQuery])
+  }, [baseAppointments, selectedStatus, searchQuery, getPatientByIdLocal])
 
   // Counts by status
   const counts = React.useMemo(() => {
@@ -345,6 +400,12 @@ export function AgendaClient() {
             <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
               {isPatient ? "Mis Citas" : "Agenda Activa"}
             </span>
+            {(appointmentsLoading || patientsLoading) && (
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" />
+                Cargando...
+              </span>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
             {isPatient ? (
@@ -610,7 +671,7 @@ export function AgendaClient() {
                       <div className="p-2 sm:p-3 flex flex-col gap-2">
                         {slotAppointments.length > 0 ? (
                           slotAppointments.map((apt) => {
-                            const patient = getPatientById(apt.patientId)
+                            const patient = getPatientByIdLocal(apt.patientId)
                             const status = STATUS_CONFIG[apt.status]
                             const StatusIcon = status.icon
 
@@ -728,7 +789,7 @@ export function AgendaClient() {
                     <div className="p-2 space-y-2 flex-1">
                       {dayAppointments.length > 0 ? (
                         dayAppointments.map((apt) => {
-                          const patient = getPatientById(apt.patientId)
+                          const patient = getPatientByIdLocal(apt.patientId)
                           const status = STATUS_CONFIG[apt.status]
 
                           return (
@@ -838,7 +899,7 @@ export function AgendaClient() {
                       {/* Event Chips */}
                       <div className="space-y-1 flex-1 overflow-y-auto">
                         {dayAppointments.slice(0, 3).map((apt) => {
-                          const patient = getPatientById(apt.patientId)
+                          const patient = getPatientByIdLocal(apt.patientId)
                           const status = STATUS_CONFIG[apt.status]
 
                           return (
@@ -891,7 +952,7 @@ export function AgendaClient() {
       >
         <DialogContent className="sm:max-w-md p-6 bg-card border-border/80">
           {selectedAppointment && (() => {
-            const patient = getPatientById(selectedAppointment.patientId)
+            const patient = getPatientByIdLocal(selectedAppointment.patientId)
             const status = STATUS_CONFIG[selectedAppointment.status]
             const StatusIcon = status.icon
 
@@ -941,7 +1002,7 @@ export function AgendaClient() {
                           {patient?.name
                             ? patient.name
                                 .split(" ")
-                                .map((n) => n[0])
+                                .map((n: string) => n[0])
                                 .slice(0, 2)
                                 .join("")
                             : "P"}
@@ -1097,7 +1158,7 @@ export function AgendaClient() {
               <TableBody>
                 {filteredAppointments.length > 0 ? (
                   filteredAppointments.map((apt) => {
-                    const patient = getPatientById(apt.patientId)
+                    const patient = getPatientByIdLocal(apt.patientId)
                     const status = STATUS_CONFIG[apt.status]
 
                     return (

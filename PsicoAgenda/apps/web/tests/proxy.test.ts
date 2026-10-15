@@ -12,8 +12,12 @@ vi.mock("@supabase/ssr", () => ({
   createServerClient: () => ({
     auth: {
       getUser,
+      getClaims: () => Promise.resolve({ data: null, error: new Error("no token") }),
     },
   }),
+  combineChunks: (_key: string, getChunk: (name: string) => Promise<string | null>) =>
+    getChunk("sb-psicoagenda-auth-token"),
+  stringFromBase64URL: (value: string) => value,
 }));
 
 const { proxy } = await import("@/proxy");

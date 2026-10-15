@@ -1,0 +1,53 @@
+
+> psicoagenda@0.1.0 dev
+> concurrently -n api,web -c cyan,magenta "npm:dev:api" "npm:dev:web"
+
+[api] 
+[api] > psicoagenda@0.1.0 dev:api
+[api] > npm run dev --workspace=apps/api
+[api] 
+[web] 
+[web] > psicoagenda@0.1.0 dev:web
+[web] > npm run dev --workspace=apps/web
+[web] 
+[api] 
+[api] > @psicoagenda/api@0.1.0 dev
+[api] > tsx watch --clear-screen=false src/index.ts
+[api] 
+[web] 
+[web] > @psicoagenda/web@0.1.0 dev
+[web] > next dev
+[web] 
+[api] ◇ injected env (6) from .env
+[web] ▲ Next.js 16.3.6 (Turbopack)
+[web] - Local:         http://localhost:3000
+[web] - Network:       http://172.30.150.216:3000
+[web] - Environments: .env
+[web] ✓ Ready in 1423ms
+[api] API de PsicoAgenda escuchando en http://localhost:4000 (development)
+[web] ✓ Running next.config.ts took 158ms
+[web] ⚠ Slow filesystem detected. The benchmark took 251ms. If \\?\D:\Mis proyectos\PsicoAgenda\PsicoAgenda\apps\web\.next\dev is a network drive, consider moving it to a local folder.
+[web] See more: https://nextjs.org/docs/app/guides/local-development
+[web] 
+[web]  GET /login 200 in 1264ms (next.js: 209ms, proxy.ts: 461ms, application-code: 594ms)
+[web]  GET /agenda/nueva 200 in 1815ms (next.js: 160ms, proxy.ts: 808ms, application-code: 847ms)
+[web]  GET /manifest.webmanifest 200 in 260ms (next.js: 189ms, application-code: 71ms)
+[web] [browser] ApiError: No autenticado
+[web]     at apiFetch (src/lib/api-client.ts:89:11)
+[web]   87 |   if (!response.ok) {
+[web]   88 |     const apiError = (payload as ApiErrorBody | undefined)?.error;
+[web] > 89 |     throw new ApiError(
+[web]      |           ^
+[web]   90 |       response.status,
+[web]   91 |       apiError?.code ?? "UNKNOWN_ERROR",
+[web]   92 |       apiError?.message ?? `Error ${response.status} al llamar a ${path}`, (src/app/(app)
+[api] npm error Lifecycle script `dev` failed with error:
+[api] npm error code 4294967295
+[api] npm error path D:\Mis proyectos\PsicoAgenda\PsicoAgenda\apps\api
+[api] npm error workspace @psicoagenda/api@0.1.0
+[api] npm error location D:\Mis proyectos\PsicoAgenda\PsicoAgenda\apps\api
+[api] npm error command failed
+[api] npm error command C:\Windows\system32\cmd.exe /d /s /c tsx watch --clear-screen=false src/index.ts
+[api] npm run dev:api exited with code 4294967295
+[web] [?25h
+[web] npm run dev:web exited with code 4294967295

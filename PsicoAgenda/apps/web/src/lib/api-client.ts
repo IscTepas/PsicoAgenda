@@ -7,6 +7,14 @@ const API_PREFIX = "/api";
 function buildApiUrl(path: string): string {
   // Normalizar: si el caller ya incluyó /api, no duplicar.
   const normalizedPath = path.startsWith(API_PREFIX) ? path : `${API_PREFIX}${path}`;
+
+  // En el navegador preferimos rutas relativas para que Next.js las reescriba al
+  // backend mediante `rewrites`. Esto evita problemas de CORS y de puertos en
+  // desarrollo. En SSR (Server Components) necesitamos la URL absoluta.
+  if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_API_URL) {
+    return normalizedPath;
+  }
+
   return `${API_URL}${normalizedPath}`;
 }
 
@@ -24,7 +32,7 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions extends Omit<RequestInit, "body"> {
+export interface RequestOptions extends Omit<RequestInit, "body"> {
   /**
    * Credencial de acceso de la sesión. Si se omite se resuelve desde el proveedor de
    * identidad, de modo que las rutas protegidas nunca viajan anónimas por descuido.
@@ -38,14 +46,16 @@ interface ApiErrorBody {
 }
 
 /**
- * Resuelve la credencial de acceso vigente. En el servidor se lee de la sesión
- * suprabase-js; en el navegador, del cliente compartido.
+ * Resuelve la credencial de acceso vigente desde el cliente de Supabase SSR.
+ *
+ * Se usa el cliente de navegador (browser client) incluso durante SSR porque no
+ * depende de `next/headers`, que solo está disponible en Server Components del
+ * App Router. `createBrowserClient` lee la cookie de sesión tanto en el
+ * navegador como en el renderizado del servidor de componentes cliente.
  */
 async function resolveAccessToken(): Promise<string | null> {
-  const client =
-    typeof window === "undefined"
-      ? await (await import("@/lib/supabase/server")).createClient()
-      : (await import("@/lib/supabase/client")).createClient();
+  const { createClient } = await import("@/lib/supabase/client");
+  const client = createClient();
 
   const { data } = await client.auth.getSession();
   return data.session?.access_token ?? null;
