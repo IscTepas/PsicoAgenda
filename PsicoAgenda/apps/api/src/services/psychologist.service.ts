@@ -5,29 +5,29 @@ import type { AuthenticatedUser } from "@/utils/jwt";
 import { AppError } from "@/utils/app-error";
 
 const psychologistInclude = {
-  user: true,
-} satisfies Prisma.PsychologistInclude;
+  usuarios: true,
+} satisfies Prisma.psicologosInclude;
 
-type PsychologistRow = Prisma.PsychologistGetPayload<{ include: typeof psychologistInclude }>;
+type PsychologistRow = Prisma.psicologosGetPayload<{ include: typeof psychologistInclude }>;
 
 function toProfile(row: PsychologistRow): PsychologistProfile {
-  const { user } = row;
+  const { usuarios: user } = row;
 
   return {
     id: user.id,
-    email: user.email,
-    name: user.name,
-    phone: user.phone ?? undefined,
+    email: user.correo,
+    name: user.nombre_completo,
+    phone: user.telefono ?? undefined,
     role: UserRole.PSYCHOLOGIST,
-    licenseNumber: row.licenseNumber,
-    specialty: row.specialty ?? undefined,
-    bio: row.bio ?? undefined,
-    timeZone: user.timeZone,
-    photoUrl: user.photoUrl ?? undefined,
-    notifyWhatsapp: user.notifyWhatsapp,
-    notifyEmail: user.notifyEmail,
-    createdAt: user.createdAt,
-    updatedAt: user.updatedAt,
+    licenseNumber: row.cedula_profesional,
+    specialty: row.especialidad ?? undefined,
+    bio: row.biografia ?? undefined,
+    timeZone: user.zona_horaria,
+    photoUrl: user.foto_perfil_url ?? undefined,
+    notifyWhatsapp: user.notificar_whatsapp,
+    notifyEmail: user.notificar_correo,
+    createdAt: user.creado_en,
+    updatedAt: user.actualizado_en,
   };
 }
 
@@ -36,8 +36,8 @@ const emptyToNull = (value: string | undefined): string | null | undefined =>
 
 /** Perfil del psicólogo autenticado. */
 export async function getMyPsychologistProfile(auth: AuthenticatedUser): Promise<PsychologistProfile> {
-  const row = await prisma.psychologist.findUnique({
-    where: { userId: auth.id },
+  const row = await prisma.psicologos.findUnique({
+    where: { usuario_id: auth.id },
     include: psychologistInclude,
   });
 
@@ -50,7 +50,7 @@ export async function getMyPsychologistProfile(auth: AuthenticatedUser): Promise
 
 /** Perfil de un psicólogo por su identificador de perfil (no el de usuario). */
 export async function getPsychologistById(id: string): Promise<PsychologistProfile> {
-  const row = await prisma.psychologist.findUnique({ where: { id }, include: psychologistInclude });
+  const row = await prisma.psicologos.findUnique({ where: { id }, include: psychologistInclude });
 
   if (!row) {
     throw AppError.notFound("El psicólogo no existe");
@@ -75,8 +75,8 @@ export async function updateMyPsychologistProfile(
   auth: AuthenticatedUser,
   input: UpdatePsychologistProfileInput,
 ): Promise<PsychologistProfile> {
-  const existing = await prisma.psychologist.findUnique({
-    where: { userId: auth.id },
+  const existing = await prisma.psicologos.findUnique({
+    where: { usuario_id: auth.id },
     select: { id: true },
   });
 
@@ -85,24 +85,24 @@ export async function updateMyPsychologistProfile(
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    const userData: Prisma.UserUpdateInput = {};
-    if (input.name !== undefined) userData.name = input.name;
-    if (input.phone !== undefined) userData.phone = emptyToNull(input.phone);
-    if (input.timeZone !== undefined) userData.timeZone = input.timeZone;
-    if (input.photoUrl !== undefined) userData.photoUrl = emptyToNull(input.photoUrl);
-    if (input.notifyWhatsapp !== undefined) userData.notifyWhatsapp = input.notifyWhatsapp;
-    if (input.notifyEmail !== undefined) userData.notifyEmail = input.notifyEmail;
+    const userData: Prisma.usuariosUpdateInput = {};
+    if (input.name !== undefined) userData.nombre_completo = input.name;
+    if (input.phone !== undefined) userData.telefono = emptyToNull(input.phone);
+    if (input.timeZone !== undefined) userData.zona_horaria = input.timeZone;
+    if (input.photoUrl !== undefined) userData.foto_perfil_url = emptyToNull(input.photoUrl);
+    if (input.notifyWhatsapp !== undefined) userData.notificar_whatsapp = input.notifyWhatsapp;
+    if (input.notifyEmail !== undefined) userData.notificar_correo = input.notifyEmail;
 
     if (Object.keys(userData).length > 0) {
-      await tx.user.update({ where: { id: auth.id }, data: userData });
+      await tx.usuarios.update({ where: { id: auth.id }, data: userData });
     }
 
-    const psychologistData: Prisma.PsychologistUpdateInput = {};
-    if (input.licenseNumber !== undefined) psychologistData.licenseNumber = input.licenseNumber;
-    if (input.specialty !== undefined) psychologistData.specialty = emptyToNull(input.specialty);
-    if (input.bio !== undefined) psychologistData.bio = emptyToNull(input.bio);
+    const psychologistData: Prisma.psicologosUpdateInput = {};
+    if (input.licenseNumber !== undefined) psychologistData.cedula_profesional = input.licenseNumber;
+    if (input.specialty !== undefined) psychologistData.especialidad = emptyToNull(input.specialty);
+    if (input.bio !== undefined) psychologistData.biografia = emptyToNull(input.bio);
 
-    return tx.psychologist.update({
+    return tx.psicologos.update({
       where: { id: existing.id },
       data: psychologistData,
       include: psychologistInclude,

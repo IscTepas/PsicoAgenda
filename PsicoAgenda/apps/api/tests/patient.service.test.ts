@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { UserRole } from "@psicoagenda/shared";
 
 const { prismaMock } = vi.hoisted(() => ({
-  prismaMock: { patient: { findMany: vi.fn(), findUnique: vi.fn() } },
+  prismaMock: { pacientes: { findMany: vi.fn(), findUnique: vi.fn() } },
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -20,23 +20,26 @@ const patient = { id: PATIENT_USER_ID, email: "pac@psicoagenda.test", role: User
 function patientRow(overrides: Record<string, unknown> = {}) {
   return {
     id: PATIENT_ID,
-    userId: PATIENT_USER_ID,
-    birthDate: null,
-    gender: null,
-    address: null,
-    psychologistId: null,
-    legalGuardianId: null,
-    user: {
+    usuario_id: PATIENT_USER_ID,
+    fecha_nacimiento: null,
+    sexo: null,
+    direccion: null,
+    tutor_legal_id: null,
+    psicologo_id: null,
+    usuarios: {
       id: PATIENT_USER_ID,
-      email: "pac@psicoagenda.test",
-      name: "Paciente de prueba",
-      phone: null,
-      isActive: true,
-      createdAt: new Date("2030-01-01T00:00:00.000Z"),
-      updatedAt: new Date("2030-01-01T00:00:00.000Z"),
+      correo: "pac@psicoagenda.test",
+      nombre_completo: "Paciente de prueba",
+      telefono: null,
+      zona_horaria: "UTC",
+      foto_perfil_url: null,
+      notificar_whatsapp: false,
+      notificar_correo: true,
+      creado_en: new Date("2030-01-01T00:00:00.000Z"),
+      actualizado_en: new Date("2030-01-01T00:00:00.000Z"),
     },
-    legalGuardian: null,
-    emergencyContacts: [],
+    tutores_legales: null,
+    contactos_emergencia: [],
     ...overrides,
   };
 }
@@ -47,30 +50,30 @@ beforeEach(() => {
 
 describe("listPatients", () => {
   it("filtra por el propio usuario cuando quien consulta es un paciente", async () => {
-    prismaMock.patient.findMany.mockResolvedValue([]);
+    prismaMock.pacientes.findMany.mockResolvedValue([]);
 
     await listPatients(patient);
 
-    const call = prismaMock.patient.findMany.mock.calls.at(-1);
+    const call = prismaMock.pacientes.findMany.mock.calls.at(-1);
     const args = (call?.[0] ?? {}) as { where?: Record<string, unknown> };
 
-    expect(args.where).toMatchObject({ userId: PATIENT_USER_ID });
+    expect(args.where).toMatchObject({ usuario_id: PATIENT_USER_ID });
   });
 });
 
 describe("getPatientById", () => {
   it("devuelve 404 si el paciente no existe", async () => {
-    prismaMock.patient.findUnique.mockResolvedValue(null);
+    prismaMock.pacientes.findUnique.mockResolvedValue(null);
 
     await expect(getPatientById(PATIENT_ID, patient)).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("mapea la fila a la forma pública con el contacto de emergencia principal", async () => {
-    prismaMock.patient.findUnique.mockResolvedValue(
+    prismaMock.pacientes.findUnique.mockResolvedValue(
       patientRow({
-        emergencyContacts: [
-          { id: "c1", patientId: PATIENT_ID, name: "Madre", phone: "3000000000", relationship: "Madre", isPrimary: false, createdAt: new Date("2030-01-01T00:00:00.000Z") },
-          { id: "c2", patientId: PATIENT_ID, name: "Padre", phone: "3111111111", relationship: null, isPrimary: true, createdAt: new Date("2030-01-01T00:00:00.000Z") },
+        contactos_emergencia: [
+          { id: "c1", paciente_id: PATIENT_ID, nombre_completo: "Madre", telefono: "3000000000", parentesco: "Madre", es_principal: false, creado_en: new Date("2030-01-01T00:00:00.000Z") },
+          { id: "c2", paciente_id: PATIENT_ID, nombre_completo: "Padre", telefono: "3111111111", parentesco: null, es_principal: true, creado_en: new Date("2030-01-01T00:00:00.000Z") },
         ],
       }),
     );
@@ -87,7 +90,7 @@ describe("getPatientById", () => {
   });
 
   it("impide que un paciente consulte el expediente de otro", async () => {
-    prismaMock.patient.findUnique.mockResolvedValue(patientRow({ userId: "otro-usuario" }));
+    prismaMock.pacientes.findUnique.mockResolvedValue(patientRow({ usuario_id: "otro-usuario" }));
 
     await expect(getPatientById(PATIENT_ID, patient)).rejects.toMatchObject({ statusCode: 403 });
   });

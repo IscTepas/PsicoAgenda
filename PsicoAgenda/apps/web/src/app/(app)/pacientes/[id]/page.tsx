@@ -1,10 +1,5 @@
-import { notFound, redirect } from "next/navigation"
+import { redirect } from "next/navigation"
 import { APP_NAME, UserRole } from "@psicoagenda/shared"
-import {
-  getAppointmentsByPatientId,
-  getPatientById,
-  getSessionLogsByPatientId,
-} from "@/lib/mock-data"
 import { createClient } from "@/lib/supabase/server"
 import { readIdentity } from "@/lib/session"
 import { PatientClinicalRecord } from "./patient-clinical-record"
@@ -30,20 +25,6 @@ export default async function PatientDetailPage({
   }
 
   const { id } = await params
-  const patient = getPatientById(id)
 
-  if (!patient) {
-    notFound()
-  }
-
-  const appointments = getAppointmentsByPatientId(id)
-  const initialLogs = getSessionLogsByPatientId(id)
-
-  return (
-    <PatientClinicalRecord
-      patient={patient}
-      appointments={appointments}
-      initialLogs={initialLogs}
-    />
-  )
+  return <PatientClinicalRecord patientId={id} />
 }

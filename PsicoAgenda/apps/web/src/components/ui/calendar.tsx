@@ -3,6 +3,7 @@
 import * as React from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useHydrated } from "@/lib/use-hydrated"
 import { Button } from "@/components/ui/button"
 
 const WEEKDAYS = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"]
@@ -45,7 +46,8 @@ interface CalendarProps {
  * entre días y Enter elige.
  */
 export function Calendar({ selected, onSelect, hasMarker, className }: CalendarProps) {
-  const today = React.useMemo(() => new Date(), [])
+  const hydrated = useHydrated()
+  const today = React.useMemo(() => (hydrated ? new Date() : null), [hydrated])
   const [month, setMonth] = React.useState(() => new Date(selected.getFullYear(), selected.getMonth(), 1))
   const [focusDate, setFocusDate] = React.useState<Date>(selected)
   const gridRef = React.useRef<HTMLDivElement>(null)
@@ -111,7 +113,7 @@ export function Calendar({ selected, onSelect, hasMarker, className }: CalendarP
       <div ref={gridRef} role="grid" aria-label={monthLabel(month)} className="grid grid-cols-7 gap-y-0.5" onKeyDown={onKeyDown}>
         {days.map((day) => {
           const inMonth = day.getMonth() === month.getMonth()
-          const isToday = isSameDay(day, today)
+          const isToday = today !== null && isSameDay(day, today)
           const isSelected = isSameDay(day, selected)
           const isFocusTarget = isSameDay(day, tabbableDate) && inMonth
           return (
@@ -161,8 +163,9 @@ export function Calendar({ selected, onSelect, hasMarker, className }: CalendarP
           size="sm"
           className="text-primary hover:text-primary"
           onClick={() => {
-            setMonth(new Date(today.getFullYear(), today.getMonth(), 1))
-            onSelect(today)
+            const target = today ?? new Date()
+            setMonth(new Date(target.getFullYear(), target.getMonth(), 1))
+            onSelect(target)
           }}
         >
           Hoy

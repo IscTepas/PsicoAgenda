@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { UserRole } from "@psicoagenda/shared";
+import { AppointmentModality, UserRole } from "@psicoagenda/shared";
 import { prisma, disconnectPrisma } from "@/lib/prisma";
-import { UserRole as SchemaRole } from "@/generated/prisma/enums";
+import { rol_usuario } from "@/generated/prisma/enums";
 import {
   cancelAppointment,
   createAppointment,
@@ -30,42 +30,42 @@ describe("services integration against real database", () => {
 
   beforeAll(async () => {
     const result = await prisma.$queryRaw<{ one: number }[]>`SELECT 1 as one`;
-    expect(result[0].one).toBe(1);
+    expect(result[0]?.one).toBe(1);
 
     psychologistUserId = randomUUID();
     patientUserId = randomUUID();
     psychologistId = randomUUID();
     patientId = randomUUID();
 
-    await prisma.user.create({
+    await prisma.usuarios.create({
       data: {
         id: psychologistUserId,
-        email: `${TEST_TAG}@psychologist.test`,
-        name: "Test Psychologist",
-        role: SchemaRole.PSYCHOLOGIST,
+        correo: `${TEST_TAG}@psychologist.test`,
+        nombre_completo: "Test Psychologist",
+        rol: rol_usuario.PSICOLOGO,
       },
     });
-    await prisma.psychologist.create({
+    await prisma.psicologos.create({
       data: {
         id: psychologistId,
-        userId: psychologistUserId,
-        licenseNumber: `LIC-${TEST_TAG}`,
+        usuario_id: psychologistUserId,
+        cedula_profesional: `LIC-${TEST_TAG}`,
       },
     });
 
-    await prisma.user.create({
+    await prisma.usuarios.create({
       data: {
         id: patientUserId,
-        email: `${TEST_TAG}@patient.test`,
-        name: "Test Patient",
-        role: SchemaRole.PATIENT,
+        correo: `${TEST_TAG}@patient.test`,
+        nombre_completo: "Test Patient",
+        rol: rol_usuario.PACIENTE,
       },
     });
-    await prisma.patient.create({
+    await prisma.pacientes.create({
       data: {
         id: patientId,
-        userId: patientUserId,
-        psychologistId,
+        usuario_id: patientUserId,
+        psicologo_id: psychologistId,
       },
     });
 
@@ -78,12 +78,12 @@ describe("services integration against real database", () => {
 
   afterAll(async () => {
     if (appointmentId) {
-      await prisma.appointment.deleteMany({ where: { id: appointmentId } }).catch(() => {});
+      await prisma.citas.deleteMany({ where: { id: appointmentId } }).catch(() => {});
     }
-    await prisma.patient.deleteMany({ where: { id: patientId } }).catch(() => {});
-    await prisma.psychologist.deleteMany({ where: { id: psychologistId } }).catch(() => {});
-    await prisma.user.deleteMany({ where: { id: patientUserId } }).catch(() => {});
-    await prisma.user.deleteMany({ where: { id: psychologistUserId } }).catch(() => {});
+    await prisma.pacientes.deleteMany({ where: { id: patientId } }).catch(() => {});
+    await prisma.psicologos.deleteMany({ where: { id: psychologistId } }).catch(() => {});
+    await prisma.usuarios.deleteMany({ where: { id: patientUserId } }).catch(() => {});
+    await prisma.usuarios.deleteMany({ where: { id: psychologistUserId } }).catch(() => {});
     await disconnectPrisma();
   });
 
@@ -95,7 +95,7 @@ describe("services integration against real database", () => {
       patientId,
       startTime: start,
       durationMinutes: 60,
-      modality: "in_person",
+      modality: AppointmentModality.IN_PERSON,
     });
 
     appointmentId = appointment.id;
@@ -133,18 +133,18 @@ describe("services integration against real database", () => {
     const otherPatientUserId = randomUUID();
     const otherPatientId = randomUUID();
 
-    await prisma.user.create({
+    await prisma.usuarios.create({
       data: {
         id: otherPatientUserId,
-        email: `${TEST_TAG}-other@patient.test`,
-        name: "Other Test Patient",
-        role: SchemaRole.PATIENT,
+        correo: `${TEST_TAG}-other@patient.test`,
+        nombre_completo: "Other Test Patient",
+        rol: rol_usuario.PACIENTE,
       },
     });
-    await prisma.patient.create({
+    await prisma.pacientes.create({
       data: {
         id: otherPatientId,
-        userId: otherPatientUserId,
+        usuario_id: otherPatientUserId,
       },
     });
 
@@ -158,8 +158,8 @@ describe("services integration against real database", () => {
       statusCode: 403,
     });
 
-    await prisma.patient.deleteMany({ where: { id: otherPatientId } }).catch(() => {});
-    await prisma.user.deleteMany({ where: { id: otherPatientUserId } }).catch(() => {});
+    await prisma.pacientes.deleteMany({ where: { id: otherPatientId } }).catch(() => {});
+    await prisma.usuarios.deleteMany({ where: { id: otherPatientUserId } }).catch(() => {});
   });
 
   it("cancels the appointment through the service", async () => {

@@ -21,6 +21,7 @@ import {
   FileText,
   Save,
   Plus,
+  Loader2,
 } from "lucide-react"
 import {
   AppointmentStatus,
@@ -29,6 +30,7 @@ import {
   UserRole,
   type Appointment,
   type Patient,
+  type PsychologistProfile,
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -49,7 +51,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
-import { appointmentService, patientService } from "@/services"
+import { useHydrated } from "@/lib/use-hydrated"
+import { appointmentService, patientService, psychologistService } from "@/services"
 
 const AVAILABLE_HOURS = [
   "08:00",
@@ -96,6 +99,10 @@ function parseInputToDate(dateStr: string): Date {
   return new Date(y, m - 1, d, 9, 0, 0, 0)
 }
 
+function toDate(value: Date | string): Date {
+  return value instanceof Date ? value : new Date(value)
+}
+
 // Mismo estilo de estado que el panel y la agenda: pastilla gris + punto de color.
 const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
   [AppointmentStatus.CONFIRMED]: { label: "Confirmada", dot: "bg-primary" },
@@ -122,8 +129,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   // psicólogo ve todos; un paciente, solo su propio registro.
   const [patients, setPatients] = React.useState<Patient[]>([])
   const [appointments, setAppointments] = React.useState<Appointment[]>([])
+  const [dayAppointmentsLoading, setDayAppointmentsLoading] = React.useState(false)
   const [isLoadingData, setIsLoadingData] = React.useState(true)
-  const [isSaving, setIsSaving] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
 
   React.useEffect(() => {
@@ -154,11 +161,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   // propio registro cuando el directorio carga.
   const paramPatientId = searchParams.get("patientId")
   const defaultPatientId = initialAppointment?.patientId || paramPatientId || ""
-
-  // Patients loaded from API
-  const [patients, setPatients] = React.useState<Patient[]>([])
-  const [patientsLoading, setPatientsLoading] = React.useState(!isPatient)
-  const [currentPatientId, setCurrentPatientId] = React.useState<string>("")
 
   // Form State
   const [selectedPatientId, setSelectedPatientId] = React.useState<string>(defaultPatientId)
@@ -210,11 +212,12 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
   // Today check
   const today = React.useMemo(() => new Date(), [])
+  const hydrated = useHydrated()
   const isAppointmentToday = React.useMemo(() => {
-    if (!initialAppointment) return false
+    if (!hydrated || !initialAppointment) return false
     const start = toDate(initialAppointment.startTime)
     return start ? isSameDay(start, today) : false
-  }, [initialAppointment, today])
+  }, [initialAppointment, today, hydrated])
 
   // El paciente autenticado solo puede agendarse a sí mismo: el directorio visible
   // para él contiene únicamente su registro, así que la selección se deriva en vez
@@ -226,20 +229,25 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   React.useEffect(() => {
     let cancelled = false
 
-    const start = new Date(selectedDate)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(selectedDate)
-    end.setHours(23, 59, 59, 999)
+    const load = async () => {
+      setDayAppointmentsLoading(true)
 
-    appointmentService
-      .list({ from: start, to: end })
-      .then((data) => {
+      const start = new Date(selectedDate)
+      start.setHours(0, 0, 0, 0)
+      const end = new Date(selectedDate)
+      end.setHours(23, 59, 59, 999)
+
+      try {
+        const data = await appointmentService.list({ from: start, to: end })
         if (!cancelled) setAppointments(data)
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setAppointments([])
-      })
+      } finally {
+        if (!cancelled) setDayAppointmentsLoading(false)
+      }
+    }
 
+    void load()
     return () => {
       cancelled = true
     }
@@ -249,6 +257,28 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const selectedPatient = React.useMemo(() => {
     return patients.find((p) => p.id === lockedPatientId)
   }, [patients, lockedPatientId])
+
+  // Terapeuta asignado al paciente autenticado (solo presente cuando el rol es paciente).
+  const [assignedPsychologist, setAssignedPsychologist] = React.useState<PsychologistProfile | null>(null)
+
+  React.useEffect(() => {
+    const psychologistId = isPatient ? patients[0]?.psychologistId : undefined
+    if (!psychologistId) return
+
+    let cancelled = false
+    psychologistService
+      .getById(psychologistId)
+      .then((profile) => {
+        if (!cancelled) setAssignedPsychologist(profile)
+      })
+      .catch(() => {
+        if (!cancelled) setAssignedPsychologist(null)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isPatient, patients])
 
   // Autocomplete patient filter
   const filteredPatients = React.useMemo(() => {
@@ -307,14 +337,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     setDateInputValue(formatDateToInput(d))
   }
 
-  // Build startTime from selected date + hour
-  const buildStartTime = (): Date => {
-    const d = new Date(selectedDate)
-    const hour = parseInt(selectedHour.split(":")[0], 10)
-    d.setHours(hour, 0, 0, 0)
-    return d
-  }
-
   // Form Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -347,7 +369,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     const startTime = new Date(selectedDate)
     startTime.setHours(hour, minute, 0, 0)
 
-    setIsSaving(true)
+    setIsSubmitting(true)
     try {
       if (isEdit && initialAppointment) {
         await appointmentService.update(initialAppointment.id, {
@@ -381,7 +403,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo guardar la cita")
     } finally {
-      setIsSaving(false)
+      setIsSubmitting(false)
     }
   }
 
@@ -394,7 +416,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
     if (!initialAppointment) return
 
-    setIsSaving(true)
+    setIsSubmitting(true)
     try {
       await appointmentService.cancel(initialAppointment.id, cancellationReason.trim())
       setStatus(AppointmentStatus.CANCELLED)
@@ -406,7 +428,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     } catch (error) {
       setCancelError(error instanceof Error ? error.message : "No se pudo cancelar la cita")
     } finally {
-      setIsSaving(false)
+      setIsSubmitting(false)
     }
   }
 
@@ -416,7 +438,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
     const nextStatus = attended ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW
 
-    setIsSaving(true)
+    setIsSubmitting(true)
     try {
       await appointmentService.changeStatus(initialAppointment.id, nextStatus)
       setAttendance(attended ? AttendanceStatus.ATTENDED : AttendanceStatus.NO_SHOW)
@@ -429,7 +451,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo registrar la asistencia")
     } finally {
-      setIsSaving(false)
+      setIsSubmitting(false)
     }
   }
 
@@ -586,7 +608,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 </div>
                 <div className="text-xs text-muted-foreground self-end sm:self-center">
                   <span>Terapeuta: </span>
-                  <strong className="text-foreground">{MOCK_PSYCHOLOGIST.name}</strong>
+                  <strong className="text-foreground">{assignedPsychologist?.name ?? "Tu terapeuta asignado"}</strong>
                 </div>
               </div>
             ) : selectedPatient ? (
@@ -652,7 +674,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                     type="text"
                     placeholder="Escribe el nombre, correo o teléfono del paciente..."
                     value={patientSearch}
-                    disabled={patientsLoading}
+                    disabled={isLoadingData}
                     onChange={(e) => {
                       setPatientSearch(e.target.value)
                       setIsPatientDropdownOpen(true)
@@ -660,10 +682,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                     onFocus={() => setIsPatientDropdownOpen(true)}
                     className="pl-9 pr-9 h-11 text-sm rounded-xl border-border/80 focus-visible:ring-primary/20"
                   />
-                  {patientsLoading && (
+                  {isLoadingData && (
                     <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 animate-spin text-muted-foreground" />
                   )}
-                  {patientSearch && !patientsLoading && (
+                  {patientSearch && !isLoadingData && (
                     <button
                       type="button"
                       onClick={() => setPatientSearch("")}
@@ -1103,7 +1125,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
             <Button
               type="submit"
-              disabled={isSaving}
+              disabled={isSubmitting}
               className="h-10 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm font-semibold text-sm gap-2"
             >
               {isSubmitting ? (

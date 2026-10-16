@@ -5,31 +5,31 @@ import {
   type ClinicalRecord,
 } from "@psicoagenda/shared";
 import type { Prisma } from "@/generated/prisma/client";
-import { RecordStatus } from "@/generated/prisma/enums";
+import { estado_expediente } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import type { AuthenticatedUser } from "@/utils/jwt";
 import { AppError } from "@/utils/app-error";
 
-type ClinicalRecordRow = Prisma.ClinicalRecordModel;
+type ClinicalRecordRow = Prisma.expedientes_clinicosModel;
 
-const toSharedRecordStatus = (status: RecordStatus): SharedRecordStatus => {
+const toSharedRecordStatus = (status: estado_expediente): SharedRecordStatus => {
   switch (status) {
-    case RecordStatus.ACTIVE:
+    case estado_expediente.ACTIVO:
       return SharedRecordStatus.ACTIVE;
-    case RecordStatus.INACTIVE:
+    case estado_expediente.INACTIVO:
       return SharedRecordStatus.INACTIVE;
   }
 };
 
 const toClinicalRecord = (row: ClinicalRecordRow): ClinicalRecord => ({
   id: row.id,
-  patientId: row.patientId,
-  openedAt: row.openedAt,
-  diagnosis: row.diagnosis ?? undefined,
-  background: row.background ?? undefined,
-  generalObservations: row.generalObservations ?? undefined,
-  status: toSharedRecordStatus(row.status),
-  updatedAt: row.updatedAt,
+  patientId: row.paciente_id,
+  openedAt: row.abierto_en,
+  diagnosis: row.diagnostico ?? undefined,
+  background: row.antecedentes ?? undefined,
+  generalObservations: row.observaciones_generales ?? undefined,
+  status: toSharedRecordStatus(row.estado),
+  updatedAt: row.actualizado_en,
 });
 
 /**
@@ -37,8 +37,8 @@ const toClinicalRecord = (row: ClinicalRecordRow): ClinicalRecord => ({
  * en el token, así que se resuelve contra la base en cada petición.
  */
 export async function requirePsychologistId(auth: AuthenticatedUser): Promise<string> {
-  const psychologist = await prisma.psychologist.findUnique({
-    where: { userId: auth.id },
+  const psychologist = await prisma.psicologos.findUnique({
+    where: { usuario_id: auth.id },
     select: { id: true },
   });
 
@@ -62,9 +62,9 @@ export async function requirePatientAccess(
     throw AppError.forbidden("No tienes acceso al expediente clínico");
   }
 
-  const patient = await prisma.patient.findUnique({
+  const patient = await prisma.pacientes.findUnique({
     where: { id: patientId },
-    select: { id: true, psychologistId: true },
+    select: { id: true, psicologo_id: true },
   });
 
   if (!patient) {
@@ -73,12 +73,12 @@ export async function requirePatientAccess(
 
   if (auth.role === UserRole.PSYCHOLOGIST) {
     const psychologistId = await requirePsychologistId(auth);
-    if (patient.psychologistId !== psychologistId) {
+    if (patient.psicologo_id !== psychologistId) {
       throw AppError.forbidden("El paciente pertenece a otro profesional");
     }
   }
 
-  return { patientId: patient.id, psychologistId: patient.psychologistId };
+  return { patientId: patient.id, psychologistId: patient.psicologo_id };
 }
 
 /**
@@ -91,11 +91,11 @@ export async function getOrCreateClinicalRecord(
 ): Promise<ClinicalRecord> {
   await requirePatientAccess(auth, patientId);
 
-  const existing = await prisma.clinicalRecord.findUnique({ where: { patientId } });
+  const existing = await prisma.expedientes_clinicos.findUnique({ where: { paciente_id: patientId } });
   if (existing) return toClinicalRecord(existing);
 
-  const created = await prisma.clinicalRecord.create({
-    data: { id: randomUUID(), patientId },
+  const created = await prisma.expedientes_clinicos.create({
+    data: { id: randomUUID(), paciente_id: patientId },
   });
 
   return toClinicalRecord(created);
@@ -103,15 +103,15 @@ export async function getOrCreateClinicalRecord(
 
 /** Identificador del expediente, creándolo si no existe (uso interno de bitácora). */
 export async function ensureClinicalRecordId(patientId: string): Promise<string> {
-  const existing = await prisma.clinicalRecord.findUnique({
-    where: { patientId },
+  const existing = await prisma.expedientes_clinicos.findUnique({
+    where: { paciente_id: patientId },
     select: { id: true },
   });
 
   if (existing) return existing.id;
 
-  const created = await prisma.clinicalRecord.create({
-    data: { id: randomUUID(), patientId },
+  const created = await prisma.expedientes_clinicos.create({
+    data: { id: randomUUID(), paciente_id: patientId },
     select: { id: true },
   });
 

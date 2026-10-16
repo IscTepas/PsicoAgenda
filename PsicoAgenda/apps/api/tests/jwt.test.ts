@@ -3,7 +3,6 @@ import type { GenerateKeyPairResult } from "jose";
 import type * as Jose from "jose";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { UserRole } from "@psicoagenda/shared";
-import { UserRole as SchemaRole } from "@/generated/prisma/enums";
 
 type PublicKey = GenerateKeyPairResult["publicKey"];
 
@@ -132,10 +131,10 @@ describe("verifyToken", () => {
  */
 describe("verifyToken con el claim real del proveedor (MAYÚSCULAS)", () => {
   it.each([
-    [SchemaRole.PSYCHOLOGIST, UserRole.PSYCHOLOGIST],
-    [SchemaRole.PATIENT, UserRole.PATIENT],
-    [SchemaRole.ADMIN, UserRole.ADMIN],
-  ])("mapea %s del enum de la BD a %s del enum compartido", async (schemaRole, expected) => {
+    ["PSYCHOLOGIST", UserRole.PSYCHOLOGIST],
+    ["PATIENT", UserRole.PATIENT],
+    ["ADMIN", UserRole.ADMIN],
+  ])("mapea %s del claim del proveedor a %s del enum compartido", async (schemaRole, expected) => {
     const token = await signFor(
       issuerKeys,
       { email: "ana@psicoagenda.test", app_metadata: { role: schemaRole } },

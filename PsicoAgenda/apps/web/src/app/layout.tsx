@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import { APP_NAME } from "@psicoagenda/shared";
 import { SerwistProvider } from "@/app/serwist";
 import { Providers } from "@/components/providers";
+import { DevWorkerCleanup } from "@/components/dev-worker-cleanup";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
@@ -54,30 +56,16 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="es-MX"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
-        {!serwistEnabled && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-                  navigator.serviceWorker.getRegistrations().then(function(regs) {
-                    for (var r of regs) { r.unregister(); }
-                  });
-                }
-                if (typeof window !== 'undefined' && 'caches' in window) {
-                  caches.keys().then(function(names) {
-                    for (var name of names) { caches.delete(name); }
-                  });
-                }
-              `,
-            }}
-          />
-        )}
-      </head>
       <body className="flex min-h-full flex-col" suppressHydrationWarning>
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
+        {!serwistEnabled && <DevWorkerCleanup />}
         <SerwistProvider swUrl="/sw.js" disable={!serwistEnabled}>
           <Providers>{children}</Providers>
         </SerwistProvider>

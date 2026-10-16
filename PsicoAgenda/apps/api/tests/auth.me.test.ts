@@ -8,7 +8,7 @@ const { findUnique, queryRaw } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/prisma", () => ({
-  prisma: { $queryRaw: queryRaw, user: { findUnique } },
+  prisma: { $queryRaw: queryRaw, usuarios: { findUnique } },
   disconnectPrisma: vi.fn(),
 }));
 
@@ -61,10 +61,10 @@ describe("getProfileById", () => {
   it("devuelve el perfil espejado con el rol en el formato de la sesión", async () => {
     findUnique.mockResolvedValue({
       id: USER_ID,
-      email: "ana@psicoagenda.test",
-      name: "Dra. Ana García",
-      role: "PSYCHOLOGIST",
-      isActive: true,
+      correo: "ana@psicoagenda.test",
+      nombre_completo: "Dra. Ana García",
+      rol: "PSICOLOGO",
+      activo: true,
     });
 
     const { getProfileById } = await import("@/services/auth.service");
@@ -88,10 +88,10 @@ describe("getProfileById", () => {
   it("rechaza un perfil deshabilitado por un bloqueo de la identidad", async () => {
     findUnique.mockResolvedValue({
       id: USER_ID,
-      email: "ana@psicoagenda.test",
-      name: "Dra. Ana García",
-      role: "PSYCHOLOGIST",
-      isActive: false,
+      correo: "ana@psicoagenda.test",
+      nombre_completo: "Dra. Ana García",
+      rol: "PSICOLOGO",
+      activo: false,
     });
 
     const { getProfileById } = await import("@/services/auth.service");

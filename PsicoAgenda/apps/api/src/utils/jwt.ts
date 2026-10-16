@@ -1,6 +1,5 @@
 import { createRemoteJWKSet, jwtVerify, errors as joseErrors, type JWTPayload } from "jose";
 import { UserRole } from "@psicoagenda/shared";
-import { UserRole as SchemaRole } from "@/generated/prisma/enums";
 import { config } from "@/config";
 import { AppError } from "@/utils/app-error";
 
@@ -22,10 +21,15 @@ const JWKS_URL = `${AUTH_ISSUER}/.well-known/jwks.json`;
 const jwks = createRemoteJWKSet(new URL(JWKS_URL));
 
 /**
- * El claim del proveedor llega en MAYÚSCULAS (`PSYCHOLOGIST`) porque lo escribe el
- * enum de la base de datos, mientras que el enum compartido `@psicoagenda/shared`
- * usa minúsculas (`psychologist`). Son dos vocabularios distintos para el mismo
- * concepto, y esta función es el único punto donde se cruzan.
+ * El claim del proveedor llega en MAYÚSCULAS (`PSYCHOLOGIST`) porque usa el
+ * vocabulario en inglés del proveedor de identidad, mientras que el enum compartido
+ * `@psicoagenda/shared` usa minúsculas (`psychologist`). Son dos vocabularios
+ * distintos para el mismo concepto, y esta función es el único punto donde se cruzan.
+ *
+ * El vocabulario del claim NO depende del enum de la base (`rol_usuario`, en
+ * español): por eso se compara con literales en inglés y no con los miembros del
+ * enum de Prisma. Si el claim y el enum de la base se acoplaran, un cambio de
+ * vocabulario en cualquiera de los dos rompería la autorización en silencio.
  *
  * Sin esta normalización, `includes("PSYCHOLOGIST")` nunca encuentra nada en
  * `["psychologist","patient","admin"]` y toda sesión real cae en el rechazo de rol
@@ -39,11 +43,11 @@ const jwks = createRemoteJWKSet(new URL(JWKS_URL));
  */
 const toBusinessRole = (declared: unknown): UserRole | undefined => {
   switch (typeof declared === "string" ? declared.toUpperCase() : declared) {
-    case SchemaRole.PSYCHOLOGIST:
+    case "PSYCHOLOGIST":
       return UserRole.PSYCHOLOGIST;
-    case SchemaRole.PATIENT:
+    case "PATIENT":
       return UserRole.PATIENT;
-    case SchemaRole.ADMIN:
+    case "ADMIN":
       return UserRole.ADMIN;
     default:
       return undefined;

@@ -14,88 +14,88 @@ describe("database connectivity and CRUD", () => {
   beforeAll(async () => {
     const result = await prisma.$queryRaw<{ one: number }[]>`SELECT 1 as one`;
     expect(result).toHaveLength(1);
-    expect(result[0].one).toBe(1);
+    expect(result[0]?.one).toBe(1);
   });
 
   afterAll(async () => {
-    await prisma.auditLog.deleteMany({ where: { entity: TEST_ENTITY } });
+    await prisma.registros_auditoria.deleteMany({ where: { entidad: TEST_ENTITY } });
     await disconnectPrisma();
   });
 
   it("connects to the database and responds to $queryRaw", async () => {
     const result = await prisma.$queryRaw<{ one: number }[]>`SELECT 1 as one`;
     expect(result).toHaveLength(1);
-    expect(result[0].one).toBe(1);
+    expect(result[0]?.one).toBe(1);
   });
 
-  describe("AuditLog CRUD", () => {
+  describe("registros_auditoria CRUD", () => {
     it("creates a record", async () => {
       const id = randomUUID();
 
-      const created = await prisma.auditLog.create({
+      const created = await prisma.registros_auditoria.create({
         data: {
           id,
-          action: "TEST_CREATE",
-          entity: TEST_ENTITY,
-          detail: { testRunId: TEST_RUN_ID },
+          accion: "TEST_CREATE",
+          entidad: TEST_ENTITY,
+          detalle: { testRunId: TEST_RUN_ID },
         },
       });
 
       expect(created.id).toBe(id);
-      expect(created.action).toBe("TEST_CREATE");
-      expect(created.entity).toBe(TEST_ENTITY);
+      expect(created.accion).toBe("TEST_CREATE");
+      expect(created.entidad).toBe(TEST_ENTITY);
     });
 
     it("reads a created record", async () => {
       const id = randomUUID();
-      await prisma.auditLog.create({
+      await prisma.registros_auditoria.create({
         data: {
           id,
-          action: "TEST_READ",
-          entity: TEST_ENTITY,
-          detail: { testRunId: TEST_RUN_ID },
+          accion: "TEST_READ",
+          entidad: TEST_ENTITY,
+          detalle: { testRunId: TEST_RUN_ID },
         },
       });
 
-      const found = await prisma.auditLog.findUnique({ where: { id } });
+      const found = await prisma.registros_auditoria.findUnique({ where: { id } });
 
       expect(found).not.toBeNull();
-      expect(found?.action).toBe("TEST_READ");
-      expect(found?.entity).toBe(TEST_ENTITY);
+      expect(found?.accion).toBe("TEST_READ");
+      expect(found?.entidad).toBe(TEST_ENTITY);
     });
 
     it("updates a record", async () => {
       const id = randomUUID();
-      await prisma.auditLog.create({
+      await prisma.registros_auditoria.create({
         data: {
           id,
-          action: "TEST_UPDATE_BEFORE",
-          entity: TEST_ENTITY,
-          detail: { testRunId: TEST_RUN_ID },
+          accion: "TEST_UPDATE_BEFORE",
+          entidad: TEST_ENTITY,
+          detalle: { testRunId: TEST_RUN_ID },
         },
       });
 
-      const updated = await prisma.auditLog.update({
+      const updated = await prisma.registros_auditoria.update({
         where: { id },
-        data: { action: "TEST_UPDATE_AFTER" },
+        data: { accion: "TEST_UPDATE_AFTER" },
       });
 
-      expect(updated.action).toBe("TEST_UPDATE_AFTER");
+      expect(updated.accion).toBe("TEST_UPDATE_AFTER");
     });
 
     it("deletes a record", async () => {
       const id = randomUUID();
-      await prisma.auditLog.create({
+      await prisma.registros_auditoria.create({
         data: {
           id,
-          action: "TEST_DELETE",
-          entity: TEST_ENTITY,
-          detail: { testRunId: TEST_RUN_ID },
+          accion: "TEST_DELETE",
+          entidad: TEST_ENTITY,
+          detalle: { testRunId: TEST_RUN_ID },
         },
       });
 
-      await prisma.auditLog.delete({ where: { id } });
-      const found = await prisma.auditLog.findUnique({ where: { id } });
+      await prisma.registros_auditoria.delete({ where: { id } });
+      const found = await prisma.registros_auditoria.findUnique({ where: { id } });
 
       expect(found).toBeNull();
     });

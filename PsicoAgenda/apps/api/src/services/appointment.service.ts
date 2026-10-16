@@ -8,15 +8,15 @@ import {
 } from "@psicoagenda/shared";
 import type { Prisma } from "@/generated/prisma/client";
 import {
-  AppointmentModality,
-  AppointmentStatus,
-  SessionType,
+  estado_cita,
+  modalidad_cita,
+  tipo_sesion,
 } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/app-error";
 import type { AuthenticatedUser } from "@/utils/jwt";
 
-type AppointmentRow = Prisma.AppointmentModel;
+type AppointmentRow = Prisma.citasModel;
 
 export interface CreateAppointmentInput {
   psychologistId?: string;
@@ -48,51 +48,51 @@ export interface ListAppointmentsFilter {
  * valores que viajan en la interfaz (`confirmed`). La conversión es explícita en
  * ambos sentidos: el mismo concepto tiene dos vocabularios.
  */
-const toSharedStatus = (status: AppointmentStatus): SharedStatus => {
+const toSharedStatus = (status: estado_cita): SharedStatus => {
   switch (status) {
-    case AppointmentStatus.PENDING:
+    case estado_cita.PENDIENTE:
       return SharedStatus.PENDING;
-    case AppointmentStatus.CONFIRMED:
+    case estado_cita.CONFIRMADA:
       return SharedStatus.CONFIRMED;
-    case AppointmentStatus.CANCELLED:
+    case estado_cita.CANCELADA:
       return SharedStatus.CANCELLED;
-    case AppointmentStatus.COMPLETED:
+    case estado_cita.COMPLETADA:
       return SharedStatus.COMPLETED;
-    case AppointmentStatus.NO_SHOW:
+    case estado_cita.NO_ASISTIO:
       return SharedStatus.NO_SHOW;
   }
 };
 
-const toSchemaStatus = (status: SharedStatus): AppointmentStatus => {
+const toSchemaStatus = (status: SharedStatus): estado_cita => {
   switch (status) {
     case SharedStatus.PENDING:
-      return AppointmentStatus.PENDING;
+      return estado_cita.PENDIENTE;
     case SharedStatus.CONFIRMED:
-      return AppointmentStatus.CONFIRMED;
+      return estado_cita.CONFIRMADA;
     case SharedStatus.CANCELLED:
-      return AppointmentStatus.CANCELLED;
+      return estado_cita.CANCELADA;
     case SharedStatus.COMPLETED:
-      return AppointmentStatus.COMPLETED;
+      return estado_cita.COMPLETADA;
     case SharedStatus.NO_SHOW:
-      return AppointmentStatus.NO_SHOW;
+      return estado_cita.NO_ASISTIO;
   }
 };
 
-const toSharedModality = (modality: AppointmentModality): SharedModality => {
+const toSharedModality = (modality: modalidad_cita): SharedModality => {
   switch (modality) {
-    case AppointmentModality.IN_PERSON:
+    case modalidad_cita.PRESENCIAL:
       return SharedModality.IN_PERSON;
-    case AppointmentModality.VIRTUAL:
+    case modalidad_cita.VIRTUAL:
       return SharedModality.VIRTUAL;
   }
 };
 
-const toSchemaModality = (modality: SharedModality): AppointmentModality => {
+const toSchemaModality = (modality: SharedModality): modalidad_cita => {
   switch (modality) {
     case SharedModality.IN_PERSON:
-      return AppointmentModality.IN_PERSON;
+      return modalidad_cita.PRESENCIAL;
     case SharedModality.VIRTUAL:
-      return AppointmentModality.VIRTUAL;
+      return modalidad_cita.VIRTUAL;
   }
 };
 
@@ -101,20 +101,20 @@ const toSchemaModality = (modality: SharedModality): AppointmentModality => {
  * asistió; una marcada como no presentada, no. Cualquier otro estado todavía no
  * tiene veredicto.
  */
-const toAttendanceStatus = (status: AppointmentStatus): AttendanceStatus | undefined => {
+const toAttendanceStatus = (status: estado_cita): AttendanceStatus | undefined => {
   switch (status) {
-    case AppointmentStatus.COMPLETED:
+    case estado_cita.COMPLETADA:
       return AttendanceStatus.ATTENDED;
-    case AppointmentStatus.NO_SHOW:
+    case estado_cita.NO_ASISTIO:
       return AttendanceStatus.NO_SHOW;
     default:
       return undefined;
   }
 };
 
-const ACTIVE_STATUSES: AppointmentStatus[] = [
-  AppointmentStatus.PENDING,
-  AppointmentStatus.CONFIRMED,
+const ACTIVE_STATUSES: estado_cita[] = [
+  estado_cita.PENDIENTE,
+  estado_cita.CONFIRMADA,
 ];
 
 const durationOf = (start: Date, end: Date): number =>
@@ -122,17 +122,17 @@ const durationOf = (start: Date, end: Date): number =>
 
 const toAppointment = (row: AppointmentRow): Appointment => ({
   id: row.id,
-  psychologistId: row.psychologistId,
-  patientId: row.patientId,
-  startTime: row.start,
-  durationMinutes: durationOf(row.start, row.end),
-  status: toSharedStatus(row.status),
-  modality: toSharedModality(row.modality),
-  attendanceStatus: toAttendanceStatus(row.status),
-  reason: row.reason ?? undefined,
-  notes: row.internalNotes ?? undefined,
-  createdAt: row.createdAt,
-  updatedAt: row.updatedAt,
+  psychologistId: row.psicologo_id,
+  patientId: row.paciente_id,
+  startTime: row.inicio,
+  durationMinutes: durationOf(row.inicio, row.fin),
+  status: toSharedStatus(row.estado),
+  modality: toSharedModality(row.modalidad),
+  attendanceStatus: toAttendanceStatus(row.estado),
+  reason: row.motivo ?? undefined,
+  notes: row.notas_internas ?? undefined,
+  createdAt: row.creado_en,
+  updatedAt: row.actualizado_en,
 });
 
 /**
@@ -140,8 +140,8 @@ const toAppointment = (row: AppointmentRow): Appointment => ({
  * sesión, así que se resuelve en cada petición.
  */
 async function requirePsychologistId(auth: AuthenticatedUser): Promise<string> {
-  const psychologist = await prisma.psychologist.findUnique({
-    where: { userId: auth.id },
+  const psychologist = await prisma.psicologos.findUnique({
+    where: { usuario_id: auth.id },
     select: { id: true },
   });
 
@@ -153,8 +153,8 @@ async function requirePsychologistId(auth: AuthenticatedUser): Promise<string> {
 }
 
 async function requirePatientId(auth: AuthenticatedUser): Promise<string> {
-  const patient = await prisma.patient.findUnique({
-    where: { userId: auth.id },
+  const patient = await prisma.pacientes.findUnique({
+    where: { usuario_id: auth.id },
     select: { id: true },
   });
 
@@ -201,18 +201,18 @@ async function assertNoOverlap(
   tx: Prisma.TransactionClient,
   params: { psychologistId: string; patientId: string; start: Date; end: Date; excludeId?: string },
 ): Promise<void> {
-  const base: Prisma.AppointmentWhereInput = {
-    start: { lt: params.end },
-    end: { gt: params.start },
-    status: { in: ACTIVE_STATUSES },
+  const base: Prisma.citasWhereInput = {
+    inicio: { lt: params.end },
+    fin: { gt: params.start },
+    estado: { in: ACTIVE_STATUSES },
   };
 
   if (params.excludeId) {
     base.id = { not: params.excludeId };
   }
 
-  const psychologistClash = await tx.appointment.findFirst({
-    where: { ...base, psychologistId: params.psychologistId },
+  const psychologistClash = await tx.citas.findFirst({
+    where: { ...base, psicologo_id: params.psychologistId },
     select: { id: true },
   });
 
@@ -220,8 +220,8 @@ async function assertNoOverlap(
     throw AppError.conflict("El psicólogo ya tiene una cita en ese horario");
   }
 
-  const patientClash = await tx.appointment.findFirst({
-    where: { ...base, patientId: params.patientId },
+  const patientClash = await tx.citas.findFirst({
+    where: { ...base, paciente_id: params.patientId },
     select: { id: true },
   });
 
@@ -253,54 +253,54 @@ export async function listAppointments(
   auth: AuthenticatedUser,
   filter: ListAppointmentsFilter,
 ): Promise<Appointment[]> {
-  const where: Prisma.AppointmentWhereInput = {};
+  const where: Prisma.citasWhereInput = {};
 
   if (filter.status) {
-    where.status = toSchemaStatus(filter.status);
+    where.estado = toSchemaStatus(filter.status);
   }
 
   if (filter.from || filter.to) {
-    where.start = {
+    where.inicio = {
       ...(filter.from ? { gte: filter.from } : {}),
       ...(filter.to ? { lte: filter.to } : {}),
     };
   }
 
   if (filter.patientId) {
-    where.patientId = filter.patientId;
+    where.paciente_id = filter.patientId;
   }
 
   if (filter.psychologistId) {
-    where.psychologistId = filter.psychologistId;
+    where.psicologo_id = filter.psychologistId;
   }
 
   // El alcance por rol se aplica al final: gana sobre cualquier filtro del cliente,
   // de modo que un paciente no puede pedir las citas de otro ni un psicólogo las
   // suyas ajenas.
   if (auth.role === UserRole.PATIENT) {
-    where.patientId = await requirePatientId(auth);
+    where.paciente_id = await requirePatientId(auth);
   } else if (auth.role === UserRole.PSYCHOLOGIST) {
-    where.psychologistId = await requirePsychologistId(auth);
+    where.psicologo_id = await requirePsychologistId(auth);
   }
 
-  const rows = await prisma.appointment.findMany({ where, orderBy: { start: "asc" } });
+  const rows = await prisma.citas.findMany({ where, orderBy: { inicio: "asc" } });
 
   return rows.map(toAppointment);
 }
 
 export async function getAppointmentById(id: string, auth: AuthenticatedUser): Promise<Appointment> {
-  const row = await prisma.appointment.findUnique({ where: { id } });
+  const row = await prisma.citas.findUnique({ where: { id } });
 
   if (!row) {
     throw AppError.notFound("La cita no existe");
   }
 
   if (auth.role === UserRole.PATIENT) {
-    if (row.patientId !== (await requirePatientId(auth))) {
+    if (row.paciente_id !== (await requirePatientId(auth))) {
       throw AppError.forbidden("No puedes consultar la cita de otro paciente");
     }
   } else if (auth.role === UserRole.PSYCHOLOGIST) {
-    if (row.psychologistId !== (await requirePsychologistId(auth))) {
+    if (row.psicologo_id !== (await requirePsychologistId(auth))) {
       throw AppError.forbidden("No puedes consultar una cita de otro profesional");
     }
   }
@@ -312,9 +312,9 @@ export async function createAppointment(
   auth: AuthenticatedUser,
   input: CreateAppointmentInput,
 ): Promise<Appointment> {
-  const patient = await prisma.patient.findUnique({
+  const patient = await prisma.pacientes.findUnique({
     where: { id: input.patientId },
-    select: { id: true, psychologistId: true },
+    select: { id: true, psicologo_id: true },
   });
 
   if (!patient) {
@@ -325,16 +325,16 @@ export async function createAppointment(
     throw AppError.forbidden("Solo puedes agendar citas a tu nombre");
   }
 
-  const psychologistId = await resolvePsychologistId(auth, input, patient.psychologistId);
+  const psychologistId = await resolvePsychologistId(auth, input, patient.psicologo_id);
 
   // La primera cita del paciente es una consulta inicial; a partir de ahí, sesión
   // individual. No viaja como campo del formulario porque es una consecuencia, no
   // una elección.
-  const previousAppointments = await prisma.appointment.count({
-    where: { patientId: patient.id, status: { not: AppointmentStatus.CANCELLED } },
+  const previousAppointments = await prisma.citas.count({
+    where: { paciente_id: patient.id, estado: { not: estado_cita.CANCELADA } },
   });
   const sessionType =
-    previousAppointments === 0 ? SessionType.INITIAL_CONSULTATION : SessionType.INDIVIDUAL;
+    previousAppointments === 0 ? tipo_sesion.CONSULTA_INICIAL : tipo_sesion.INDIVIDUAL;
 
   const start = input.startTime;
   const end = new Date(start.getTime() + input.durationMinutes * 60_000);
@@ -343,19 +343,19 @@ export async function createAppointment(
     const created = await prisma.$transaction(async (tx) => {
       await assertNoOverlap(tx, { psychologistId, patientId: patient.id, start, end });
 
-      return tx.appointment.create({
+      return tx.citas.create({
         data: {
           id: randomUUID(),
-          psychologistId,
-          patientId: patient.id,
-          start,
-          end,
+          psicologo_id: psychologistId,
+          paciente_id: patient.id,
+          inicio: start,
+          fin: end,
           // El formulario nace en "confirmada": el psicólogo agenda sobre su propia
           // disponibilidad, no deja una reserva pendiente de aceptar.
-          status: AppointmentStatus.CONFIRMED,
-          modality: toSchemaModality(input.modality),
-          sessionType,
-          reason: input.reason ?? null,
+          estado: estado_cita.CONFIRMADA,
+          modalidad: toSchemaModality(input.modality),
+          tipo_sesion: sessionType,
+          motivo: input.reason ?? null,
         },
       });
     });
@@ -371,46 +371,46 @@ export async function updateAppointment(
   id: string,
   input: UpdateAppointmentInput,
 ): Promise<Appointment> {
-  const row = await prisma.appointment.findUnique({ where: { id } });
+  const row = await prisma.citas.findUnique({ where: { id } });
 
   if (!row) {
     throw AppError.notFound("La cita no existe");
   }
 
   if (auth.role === UserRole.PSYCHOLOGIST) {
-    if (row.psychologistId !== (await requirePsychologistId(auth))) {
+    if (row.psicologo_id !== (await requirePsychologistId(auth))) {
       throw AppError.forbidden("No puedes modificar una cita de otro profesional");
     }
   } else if (auth.role === UserRole.PATIENT) {
     throw AppError.forbidden("No puedes modificar los datos de una cita");
   }
 
-  const start = input.startTime ?? row.start;
-  const durationMinutes = input.durationMinutes ?? durationOf(row.start, row.end);
+  const start = input.startTime ?? row.inicio;
+  const durationMinutes = input.durationMinutes ?? durationOf(row.inicio, row.fin);
   const end = new Date(start.getTime() + durationMinutes * 60_000);
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
       // Solo se comprueba el solape si la cita sigue ocupando agenda: una cancelada
       // tiene el horario libre por definición.
-      if (ACTIVE_STATUSES.includes(row.status)) {
+      if (ACTIVE_STATUSES.includes(row.estado)) {
         await assertNoOverlap(tx, {
-          psychologistId: row.psychologistId,
-          patientId: row.patientId,
+          psychologistId: row.psicologo_id,
+          patientId: row.paciente_id,
           start,
           end,
           excludeId: row.id,
         });
       }
 
-      return tx.appointment.update({
+      return tx.citas.update({
         where: { id },
         data: {
-          start,
-          end,
-          modality: input.modality ? toSchemaModality(input.modality) : undefined,
-          reason: input.reason,
-          internalNotes: input.notes,
+          inicio: start,
+          fin: end,
+          modalidad: input.modality ? toSchemaModality(input.modality) : undefined,
+          motivo: input.reason,
+          notas_internas: input.notes,
         },
       });
     });
@@ -426,23 +426,23 @@ export async function changeAppointmentStatus(
   id: string,
   status: SharedStatus,
 ): Promise<Appointment> {
-  const row = await prisma.appointment.findUnique({ where: { id } });
+  const row = await prisma.citas.findUnique({ where: { id } });
 
   if (!row) {
     throw AppError.notFound("La cita no existe");
   }
 
   if (auth.role === UserRole.PSYCHOLOGIST) {
-    if (row.psychologistId !== (await requirePsychologistId(auth))) {
+    if (row.psicologo_id !== (await requirePsychologistId(auth))) {
       throw AppError.forbidden("No puedes modificar una cita de otro profesional");
     }
   } else if (auth.role === UserRole.PATIENT) {
     throw AppError.forbidden("No puedes cambiar el estado de una cita");
   }
 
-  const updated = await prisma.appointment.update({
+  const updated = await prisma.citas.update({
     where: { id },
-    data: { status: toSchemaStatus(status) },
+    data: { estado: toSchemaStatus(status) },
   });
 
   return toAppointment(updated);
@@ -453,34 +453,34 @@ export async function cancelAppointment(
   id: string,
   reason: string,
 ): Promise<Appointment> {
-  const row = await prisma.appointment.findUnique({ where: { id } });
+  const row = await prisma.citas.findUnique({ where: { id } });
 
   if (!row) {
     throw AppError.notFound("La cita no existe");
   }
 
   if (auth.role === UserRole.PATIENT) {
-    if (row.patientId !== (await requirePatientId(auth))) {
+    if (row.paciente_id !== (await requirePatientId(auth))) {
       throw AppError.forbidden("No puedes cancelar la cita de otro paciente");
     }
   } else if (auth.role === UserRole.PSYCHOLOGIST) {
-    if (row.psychologistId !== (await requirePsychologistId(auth))) {
+    if (row.psicologo_id !== (await requirePsychologistId(auth))) {
       throw AppError.forbidden("No puedes cancelar una cita de otro profesional");
     }
   }
 
-  if (row.status === AppointmentStatus.CANCELLED) {
+  if (row.estado === estado_cita.CANCELADA) {
     throw AppError.conflict("La cita ya está cancelada");
   }
 
   // El CHECK `ck_citas_cancelacion` exige motivo y marca de cancelación juntos.
-  const updated = await prisma.appointment.update({
+  const updated = await prisma.citas.update({
     where: { id },
     data: {
-      status: AppointmentStatus.CANCELLED,
-      cancelReason: reason,
-      cancelledById: auth.id,
-      cancelledAt: new Date(),
+      estado: estado_cita.CANCELADA,
+      motivo_cancelacion: reason,
+      cancelada_por_id: auth.id,
+      cancelada_en: new Date(),
     },
   });
 

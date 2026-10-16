@@ -4,57 +4,54 @@ import {
   type Notification,
 } from "@psicoagenda/shared";
 import type { Prisma } from "@/generated/prisma/client";
-import {
-  NotificationChannel,
-  NotificationStatus,
-} from "@/generated/prisma/enums";
+import { canal_notificacion, estado_envio } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import type { AuthenticatedUser } from "@/utils/jwt";
 
-type NotificationRow = Prisma.NotificationModel;
+type NotificationRow = Prisma.notificacionesModel;
 
-const toSharedStatus = (status: NotificationStatus): SharedStatus => {
+const toSharedStatus = (status: estado_envio): SharedStatus => {
   switch (status) {
-    case NotificationStatus.PENDING:
+    case estado_envio.PENDIENTE:
       return SharedStatus.PENDING;
-    case NotificationStatus.SENT:
+    case estado_envio.ENVIADA:
       return SharedStatus.SENT;
-    case NotificationStatus.FAILED:
+    case estado_envio.FALLIDA:
       return SharedStatus.FAILED;
-    case NotificationStatus.CANCELLED:
+    case estado_envio.CANCELADA:
       return SharedStatus.CANCELLED;
   }
 };
 
-const toSharedChannel = (channel: NotificationChannel): SharedChannel => {
+const toSharedChannel = (channel: canal_notificacion): SharedChannel => {
   switch (channel) {
-    case NotificationChannel.WHATSAPP:
+    case canal_notificacion.WHATSAPP:
       return SharedChannel.WHATSAPP;
-    case NotificationChannel.EMAIL:
+    case canal_notificacion.CORREO:
       return SharedChannel.EMAIL;
   }
 };
 
 const toNotification = (row: NotificationRow): Notification => ({
   id: row.id,
-  patientId: row.userId,
-  appointmentId: row.appointmentId ?? undefined,
-  channel: toSharedChannel(row.channel),
-  subject: row.subject,
-  message: row.message,
-  status: toSharedStatus(row.status),
-  scheduledFor: row.scheduledFor ?? undefined,
-  sentAt: row.sentAt ?? undefined,
+  patientId: row.usuario_id,
+  appointmentId: row.cita_id ?? undefined,
+  channel: toSharedChannel(row.canal),
+  subject: row.asunto,
+  message: row.mensaje,
+  status: toSharedStatus(row.estado),
+  scheduledFor: row.programada_para ?? undefined,
+  sentAt: row.enviada_en ?? undefined,
   error: row.error ?? undefined,
-  attempts: row.attempts,
-  createdAt: row.createdAt,
+  attempts: row.intentos,
+  createdAt: row.creado_en,
 });
 
 /** Notificaciones de la cuenta autenticada, más recientes primero. */
 export async function listNotifications(auth: AuthenticatedUser): Promise<Notification[]> {
-  const rows = await prisma.notification.findMany({
-    where: { userId: auth.id },
-    orderBy: [{ scheduledFor: "desc" }, { createdAt: "desc" }],
+  const rows = await prisma.notificaciones.findMany({
+    where: { usuario_id: auth.id },
+    orderBy: [{ programada_para: "desc" }, { creado_en: "desc" }],
   });
 
   return rows.map(toNotification);

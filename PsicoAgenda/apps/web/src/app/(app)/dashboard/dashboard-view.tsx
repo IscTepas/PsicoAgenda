@@ -5,7 +5,6 @@ import Link from "next/link"
 import {
   Bell,
   CalendarPlus,
-  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +20,8 @@ import {
   UserRole,
   type Appointment,
   type Patient,
+  type PatientProfile,
+  type PsychologistProfile,
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import {
@@ -32,9 +33,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
+import { useHydrated } from "@/lib/use-hydrated"
 import { cn } from "@/lib/utils"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
-import { appointmentService, patientService } from "@/services"
+import { appointmentService, patientService, psychologistService } from "@/services"
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
@@ -319,9 +321,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const listRef = useRef<HTMLElement>(null)
 
-  const [isDataLoading, setIsDataLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-
   useEffect(() => {
     let cancelled = false
 
@@ -332,10 +331,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
         setPatients(patientRows)
       })
       .catch(() => {
-        if (!cancelled) setLoadError("No se pudieron cargar tus datos. Intenta recargar la página.")
-      })
-      .finally(() => {
-        if (!cancelled) setIsDataLoading(false)
+        if (!cancelled) setAppointments([])
       })
 
     return () => {
@@ -355,6 +351,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const today = useMemo(() => new Date(), [])
   const now = useNow()
   const clock = now ?? today
+  const hydrated = useHydrated()
 
   // Nombre y saludo personalizado: "Hola, Psic. [Nombre]"
   const rawName = user?.name || "Psicólogo"
@@ -535,6 +532,16 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
     { value: "pending", label: "Por confirmar", count: dayPending },
   ]
 
+  if (!hydrated) {
+    return (
+      <div className="mx-auto max-w-6xl space-y-8" aria-busy="true">
+        <div className="h-[86px] border-b border-border/60" />
+        <div className="h-[66px] rounded-2xl border border-border/60 bg-card" />
+        <div className="h-[420px] rounded-xl border border-border/70 bg-card" />
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-8">
       {/* Encabezado: saludo + acciones principales */}
@@ -657,7 +664,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                 className="@3xl:shrink-0"
                 onClick={() => setActiveSessionAppointment(unregisteredToday[0])}
               >
-                Registrar {patientById.get(unregisteredToday[0].patientId)?.name.split(" ")[0] ?? "sesión"}
+                Registrar {patientById.get(unregisteredToday[0].patientId)?.name?.split(" ")[0] ?? "sesión"}
               </Button>
             </>
           ) : (
@@ -681,6 +688,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
         <div className="space-y-4 border-t border-border bg-muted/20 px-5 py-5 sm:px-6">
           <DayTimeline
             appointments={todayAppointments}
+            patientById={patientById}
             now={now}
             highlightId={focusAppointment?.id}
             onSelect={setActiveSessionAppointment}
@@ -779,7 +787,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
             {filteredDayAppointments.length > 0 ? (
               <ul className="divide-y divide-border">
                 {filteredDayAppointments.map((apt) => {
-                  const patient = getPatientById(apt.patientId)
+                  const patient = patientById.get(apt.patientId)
                   const patientName = patient?.name || "Paciente"
                   const isNext = isViewingToday && apt.id === focusAppointment?.id
                   const isClosed = !isOpenAppointment(apt)
@@ -1022,7 +1030,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="text-lg font-semibold tracking-tight">
-                Sesión con {getPatientById(activeSessionAppointment.patientId)?.name ?? "paciente"}
+                Sesión con {patientById.get(activeSessionAppointment.patientId)?.name ?? "paciente"}
               </DialogTitle>
               <DialogDescription>
                 Registra la asistencia al terminar la consulta.
@@ -1092,33 +1100,75 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
 }
 
 function PatientDashboardView({ user }: { user: SessionUser }) {
-  const patient = getPatientForUser(user)
-  const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS)
+  const [profile, setProfile] = useState<PatientProfile | null>(null)
+  const [psychologist, setPsychologist] = useState<PsychologistProfile | null>(null)
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null)
-  const [completedTasks, setCompletedTasks] = useState<ReadonlySet<number>>(new Set())
   const now = useNow()
+  const hydrated = useHydrated()
 
   // Modales
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
   const [cancellationReason, setCancellationReason] = useState("Inconveniente de horario o imprevisto")
   const [otherReason, setOtherReason] = useState("")
+  const [isCancelling, setIsCancelling] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setIsLoading(true)
+      setLoadError(null)
+      try {
+        // La API acota las citas al paciente autenticado (por su rol).
+        const [patientProfile, appointmentRows] = await Promise.all([
+          patientService.getMe(),
+          appointmentService.list(),
+        ])
+        if (cancelled) return
+        setProfile(patientProfile)
+        setAppointments(appointmentRows)
+
+        if (patientProfile.psychologistId) {
+          const therapist = await psychologistService.getById(patientProfile.psychologistId)
+          if (!cancelled) setPsychologist(therapist)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(
+            error instanceof Error ? error.message : "No se pudo cargar tu información.",
+          )
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Nombre amigable para el saludo: "Hola, [Nombre]"
-  const cleanFirstName = patient?.name?.trim().split(" ")[0] || "Paciente"
+  const displayName = profile?.name ?? user?.name ?? ""
+  const cleanFirstName = displayName.trim().split(" ")[0] || "Paciente"
   const friendlyGreeting = `Hola, ${cleanFirstName}`
 
-  const homework = useMemo(() => getLatestHomeworkForPatient(patient.id).slice(0, 3), [patient.id])
-
   const patientAppointments = useMemo(() => {
-    return appointments.filter((a) => a.patientId === patient.id)
-  }, [appointments, patient.id])
+    if (!profile) return appointments
+    return appointments.filter((a) => a.patientId === profile.id)
+  }, [appointments, profile])
 
-  const today = useMemo(() => new Date(), [])
+  const today = useMemo(() => (now ? startOfDay(now) : null), [now])
   const clock = now ?? today
 
   // Próximas citas: abiertas y que todavía no terminan
   const upcomingAppointments = useMemo(() => {
+    if (!clock) return []
     return patientAppointments
       .filter((a) => isOpenAppointment(a) && getEndTime(a) > clock)
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
@@ -1127,37 +1177,27 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
   const nextAppointment = upcomingAppointments[0] || null
 
   const pastAppointments = useMemo(() => {
+    if (!today) return []
     return patientAppointments
       .filter((a) => a.status === AppointmentStatus.COMPLETED || a.status === AppointmentStatus.CANCELLED || new Date(a.startTime) < today)
       .filter((a) => a.id !== nextAppointment?.id)
       .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
   }, [patientAppointments, today, nextAppointment])
 
-  const toggleTask = (index: number) => {
-    setCompletedTasks((prev) => {
-      const next = new Set(prev)
-      if (next.has(index)) next.delete(index)
-      else next.add(index)
-      return next
-    })
-  }
-
-  const handleCancelAppointment = (aptId: string) => {
+  const handleCancelAppointment = async (aptId: string) => {
     const finalReason = cancellationReason === "Otro" ? (otherReason || "Sin especificar") : cancellationReason
-    setAppointments((prev) =>
-      prev.map((apt) =>
-        apt.id === aptId
-          ? {
-              ...apt,
-              status: AppointmentStatus.CANCELLED,
-              notes: `Cancelada por el paciente: ${finalReason}`,
-            }
-          : apt
-      )
-    )
-    setCancelModalOpen(false)
-    setFeedbackNotice("Tu cita fue cancelada y tu psicólogo/a ya fue notificado/a.")
-    setTimeout(() => setFeedbackNotice(null), 4000)
+    setIsCancelling(true)
+    try {
+      const updated = await appointmentService.cancel(aptId, finalReason)
+      setAppointments((prev) => prev.map((apt) => (apt.id === aptId ? updated : apt)))
+      setCancelModalOpen(false)
+      setFeedbackNotice("Tu cita fue cancelada y tu psicólogo/a ya fue notificado/a.")
+    } catch (error) {
+      setFeedbackNotice(error instanceof Error ? error.message : "No se pudo cancelar la cita.")
+    } finally {
+      setIsCancelling(false)
+      setTimeout(() => setFeedbackNotice(null), 4000)
+    }
   }
 
   const formatHeroDate = (date: Date | string) =>
@@ -1179,7 +1219,33 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
           : formatRelative(nextStart, now)
       : null
 
-  const tasksDone = completedTasks.size
+  if (!hydrated || isLoading) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-8" aria-busy="true">
+        <div className="h-[86px] border-b border-border/60" />
+        <div className="h-[66px] rounded-2xl border border-border/60 bg-card" />
+        <div className="h-[420px] rounded-xl border border-border/70 bg-card" />
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-8">
+        <header className="space-y-1">
+          <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {friendlyGreeting}
+          </h1>
+        </header>
+        <div
+          role="alert"
+          className="rounded-2xl border border-destructive/30 bg-destructive/10 px-5 py-4 text-sm text-destructive"
+        >
+          {loadError}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -1263,14 +1329,14 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
               <dt className="text-xs text-muted-foreground">Psicólogo/a</dt>
               <dd className="flex items-center gap-2.5">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                  {getInitials(MOCK_PSYCHOLOGIST.name.replace(/^(Dra\.|Dr\.)\s*/i, ""))}
+                  {getInitials((psychologist?.name ?? "Tu terapeuta").replace(/^(Dra\.|Dr\.)\s*/i, ""))}
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium text-foreground">
-                    {MOCK_PSYCHOLOGIST.name}
+                    {psychologist?.name ?? "Tu terapeuta asignado"}
                   </span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {MOCK_PSYCHOLOGIST.specialty}
+                    {psychologist?.specialty ?? "Psicología clínica"}
                   </span>
                 </span>
               </dd>
@@ -1339,123 +1405,56 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
         </section>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Antes de tu sesión: las tareas que dejó el/la psicólogo/a */}
-        <section className="space-y-4 rounded-2xl border border-border bg-card p-5 sm:p-6">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-base font-semibold tracking-tight text-foreground">Antes de tu sesión</h2>
-              <span className="text-xs tabular-nums text-muted-foreground">
-                {tasksDone} de {homework.length}
-              </span>
-            </div>
-            <div
-              className="h-1.5 overflow-hidden rounded-full bg-muted"
-              role="progressbar"
-              aria-label="Tareas completadas"
-              aria-valuemin={0}
-              aria-valuemax={homework.length}
-              aria-valuenow={tasksDone}
-            >
-              <div
-                className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out motion-reduce:transition-none"
-                style={{ width: `${homework.length ? (tasksDone / homework.length) * 100 : 0}%` }}
-              />
-            </div>
-          </div>
+      {/* Citas recientes */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold tracking-tight text-foreground">Citas recientes</h2>
+          <Link
+            href="/agenda"
+            className="flex items-center gap-0.5 text-sm font-medium text-primary hover:underline"
+          >
+            Ver todas
+            <ChevronRight className="size-4" />
+          </Link>
+        </div>
 
-          <ul className="space-y-1">
-            {homework.map((task, index) => {
-              const done = completedTasks.has(index)
+        {pastAppointments.length > 0 ? (
+          <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+            {pastAppointments.slice(0, 4).map((apt) => {
+              const isAttended = apt.attendanceStatus === AttendanceStatus.ATTENDED || apt.status === AppointmentStatus.COMPLETED
+
               return (
-                <li key={index}>
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-checked={done}
-                    onClick={() => toggleTask(index)}
-                    className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-xl px-2 py-2.5 text-left transition-colors hover:bg-muted/50 active:scale-[0.99]"
+                <li key={apt.id}>
+                  <Link
+                    href={`/agenda/${apt.id}`}
+                    className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/30"
                   >
-                    <span
-                      className={cn(
-                        "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-150",
-                        done ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"
-                      )}
-                    >
-                      {done && <Check className="size-3 animate-in zoom-in-50 duration-150" strokeWidth={3} />}
-                    </span>
-                    <span
-                      className={cn(
-                        "text-sm leading-relaxed transition-colors",
-                        done ? "text-muted-foreground line-through decoration-muted-foreground/50" : "text-foreground"
-                      )}
-                    >
-                      {task}
-                    </span>
-                  </button>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium tabular-nums text-foreground">
+                        {formatShortDate(new Date(apt.startTime))} · {formatAppointmentTime(new Date(apt.startTime))}
+                      </p>
+                      <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                        <ModalityLabel modality={apt.modality} />
+                        <span aria-hidden="true">·</span>
+                        <span className="truncate">{apt.reason || "Consulta"}</span>
+                      </p>
+                    </div>
+                    <StatusLabel
+                      status={isAttended ? AppointmentStatus.CONFIRMED : apt.status}
+                      label={isAttended ? "Asistió" : undefined}
+                    />
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
+                  </Link>
                 </li>
               )
             })}
           </ul>
-
-          <p className="text-xs text-muted-foreground">
-            {homework.length > 0 && tasksDone === homework.length
-              ? "Todo listo para tu próxima sesión."
-              : `Indicaciones de ${MOCK_PSYCHOLOGIST.name} en tu última sesión.`}
-          </p>
-        </section>
-
-        {/* Citas recientes */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold tracking-tight text-foreground">Citas recientes</h2>
-            <Link
-              href="/agenda"
-              className="flex items-center gap-0.5 text-sm font-medium text-primary hover:underline"
-            >
-              Ver todas
-              <ChevronRight className="size-4" />
-            </Link>
+        ) : (
+          <div className="rounded-2xl border border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
+            Aún no tienes citas anteriores.
           </div>
-
-          {pastAppointments.length > 0 ? (
-            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
-              {pastAppointments.slice(0, 4).map((apt) => {
-                const isAttended = apt.attendanceStatus === AttendanceStatus.ATTENDED || apt.status === AppointmentStatus.COMPLETED
-
-                return (
-                  <li key={apt.id}>
-                    <Link
-                      href={`/agenda/${apt.id}`}
-                      className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/30"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium tabular-nums text-foreground">
-                          {formatShortDate(new Date(apt.startTime))} · {formatAppointmentTime(new Date(apt.startTime))}
-                        </p>
-                        <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                          <ModalityLabel modality={apt.modality} />
-                          <span aria-hidden="true">·</span>
-                          <span className="truncate">{apt.reason || "Consulta"}</span>
-                        </p>
-                      </div>
-                      <StatusLabel
-                        status={isAttended ? AppointmentStatus.CONFIRMED : apt.status}
-                        label={isAttended ? "Asistió" : undefined}
-                      />
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
-          ) : (
-            <div className="rounded-2xl border border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
-              Aún no tienes citas anteriores.
-            </div>
-          )}
-        </section>
-      </div>
+        )}
+      </section>
 
       {/* Acción principal flotante (móvil) */}
       <Link
@@ -1475,7 +1474,7 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
               <DialogDescription>
                 Tu cita actual es el {formatHeroDate(nextAppointment.startTime).toLowerCase()} a las{" "}
                 {formatAppointmentTime(new Date(nextAppointment.startTime))}. Podrás elegir un nuevo
-                horario según la disponibilidad de {MOCK_PSYCHOLOGIST.name}.
+                horario según la disponibilidad de {psychologist?.name ?? "tu psicólogo/a"}.
               </DialogDescription>
             </DialogHeader>
 
@@ -1547,8 +1546,12 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
               <Button variant="ghost" onClick={() => setCancelModalOpen(false)}>
                 Mantener cita
               </Button>
-              <Button variant="destructive" onClick={() => handleCancelAppointment(nextAppointment.id)}>
-                Cancelar cita
+              <Button
+                variant="destructive"
+                onClick={() => handleCancelAppointment(nextAppointment.id)}
+                disabled={isCancelling}
+              >
+                {isCancelling ? "Cancelando…" : "Cancelar cita"}
               </Button>
             </DialogFooter>
           </DialogContent>

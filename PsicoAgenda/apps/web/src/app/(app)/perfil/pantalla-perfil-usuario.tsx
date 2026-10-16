@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import {
   Camera,
   User,
@@ -32,7 +32,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { PageHeader } from "../components/page-header"
 import { useSession } from "@/lib/use-session"
 import { useThemePreference } from "@/lib/use-theme"
-import { MOCK_PSYCHOLOGIST, getPatientForUser } from "@/lib/mock-data"
+import { patientService, psychologistService } from "@/services"
 
 const TIMEZONE_OPTIONS = [
   { value: "America/Mexico_City", label: "Ciudad de México (CDMX)" },
@@ -64,37 +64,16 @@ export function PantallaPerfilUsuario() {
     (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
   const isPatient = effectiveRole === UserRole.PATIENT
 
-  const patientData = isPatient ? getPatientForUser(user) : null
-
   // 1. Datos personales (Nombre, Teléfono, Correo)
-  const [name, setName] = useState<string>(() => {
-    if (user?.name) return user.name
-    return isPatient ? "María López" : MOCK_PSYCHOLOGIST.name
-  })
-
-  const [phone, setPhone] = useState<string>(() => {
-    if (isPatient && patientData?.phone) return patientData.phone
-    return isPatient ? "+52 55 9876 5432" : (MOCK_PSYCHOLOGIST.phone ?? "+52 55 1234 5678")
-  })
-
-  const [email, setEmail] = useState<string>(() => {
-    if (user?.email) return user.email
-    return isPatient ? "maria.lopez@correo.test" : MOCK_PSYCHOLOGIST.email
-  })
+  const [name, setName] = useState<string>(user?.name ?? "")
+  const [phone, setPhone] = useState<string>("")
+  const [email, setEmail] = useState<string>(user?.email ?? "")
 
   // Campos específicos de rol
-  const [licenseNumber, setLicenseNumber] = useState<string>(
-    MOCK_PSYCHOLOGIST.licenseNumber ?? "Psic. 12345"
-  )
-  const [specialty, setSpecialty] = useState<string>(
-    MOCK_PSYCHOLOGIST.specialty ?? "Psicología clínica"
-  )
-  const [emergencyName, setEmergencyName] = useState<string>(
-    patientData?.emergencyContact?.name ?? "Carlos López"
-  )
-  const [emergencyPhone, setEmergencyPhone] = useState<string>(
-    patientData?.emergencyContact?.phone ?? "+52 55 1111 2222"
-  )
+  const [licenseNumber, setLicenseNumber] = useState<string>("")
+  const [specialty, setSpecialty] = useState<string>("")
+  const [emergencyName, setEmergencyName] = useState<string>("")
+  const [emergencyPhone, setEmergencyPhone] = useState<string>("")
 
   // 2. Foto de perfil
   const [avatarImage, setAvatarImage] = useState<string | null>(null)
@@ -104,9 +83,95 @@ export function PantallaPerfilUsuario() {
   const { theme, setTheme } = useThemePreference()
 
   // Estados de retroalimentación
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
+
+  // Última versión guardada: permite que "Cancelar" descarte ediciones sin confirmar.
+  const savedSnapshotRef = useRef({
+    name,
+    phone,
+    email,
+    timezone,
+    licenseNumber,
+    specialty,
+    emergencyName,
+    emergencyPhone,
+    avatarImage,
+  })
+
+  // El perfil vive en la API: los defaults de arriba son solo el estado de reposo
+  // hasta que la carga asíncrona resuelve los valores reales de la cuenta.
+  useEffect(() => {
+    if (!user?.id) return
+
+    let cancelled = false
+
+    const load = async () => {
+      setIsLoadingProfile(true)
+      setLoadError(null)
+      try {
+        if (isPatient) {
+          const profile = await patientService.getMe()
+          if (cancelled) return
+          setName(profile.name)
+          setPhone(profile.phone ?? "")
+          setEmail(profile.email)
+          setTimezone(profile.timeZone || "America/Mexico_City")
+          setAvatarImage(profile.photoUrl ?? null)
+          setEmergencyName(profile.emergencyContact?.name ?? "")
+          setEmergencyPhone(profile.emergencyContact?.phone ?? "")
+          savedSnapshotRef.current = {
+            name: profile.name,
+            phone: profile.phone ?? "",
+            email: profile.email,
+            timezone: profile.timeZone || "America/Mexico_City",
+            licenseNumber: "",
+            specialty: "",
+            emergencyName: profile.emergencyContact?.name ?? "",
+            emergencyPhone: profile.emergencyContact?.phone ?? "",
+            avatarImage: profile.photoUrl ?? null,
+          }
+        } else {
+          const profile = await psychologistService.getMe()
+          if (cancelled) return
+          setName(profile.name)
+          setPhone(profile.phone ?? "")
+          setEmail(profile.email)
+          setTimezone(profile.timeZone || "America/Mexico_City")
+          setAvatarImage(profile.photoUrl ?? null)
+          setLicenseNumber(profile.licenseNumber ?? "")
+          setSpecialty(profile.specialty ?? "")
+          savedSnapshotRef.current = {
+            name: profile.name,
+            phone: profile.phone ?? "",
+            email: profile.email,
+            timezone: profile.timeZone || "America/Mexico_City",
+            licenseNumber: profile.licenseNumber ?? "",
+            specialty: profile.specialty ?? "",
+            emergencyName: "",
+            emergencyPhone: "",
+            avatarImage: profile.photoUrl ?? null,
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(
+            error instanceof Error ? error.message : "No se pudo cargar tu perfil.",
+          )
+        }
+      } finally {
+        if (!cancelled) setIsLoadingProfile(false)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, isPatient])
 
   // Manejo de carga de foto de perfil
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,19 +197,6 @@ export function PantallaPerfilUsuario() {
     reader.readAsDataURL(file)
   }
 
-  // Última versión guardada: permite que "Cancelar" descarte ediciones sin confirmar.
-  const savedSnapshotRef = useRef({
-    name,
-    phone,
-    email,
-    timezone,
-    licenseNumber,
-    specialty,
-    emergencyName,
-    emergencyPhone,
-    avatarImage,
-  })
-
   const handleCancel = () => {
     const saved = savedSnapshotRef.current
     setName(saved.name)
@@ -161,7 +213,7 @@ export function PantallaPerfilUsuario() {
   }
 
   // Guardar Cambios (datos personales y preferencias)
-  const handleSavePreferences = (e: React.FormEvent) => {
+  const handleSavePreferences = async (e: React.FormEvent) => {
     e.preventDefault()
     setValidationError(null)
 
@@ -177,8 +229,27 @@ export function PantallaPerfilUsuario() {
     setIsSaving(true)
     setSaveSuccess(false)
 
-    // Simulación de guardado con feedback visual
-    setTimeout(() => {
+    try {
+      if (isPatient) {
+        await patientService.updateProfile({
+          name,
+          phone,
+          timeZone: timezone,
+          photoUrl: avatarImage ?? undefined,
+          emergencyContactName: emergencyName || undefined,
+          emergencyContactPhone: emergencyPhone || undefined,
+        })
+      } else {
+        await psychologistService.updateMe({
+          name,
+          phone,
+          timeZone: timezone,
+          photoUrl: avatarImage ?? undefined,
+          licenseNumber: licenseNumber || undefined,
+          specialty: specialty || undefined,
+        })
+      }
+
       savedSnapshotRef.current = {
         name,
         phone,
@@ -190,13 +261,18 @@ export function PantallaPerfilUsuario() {
         emergencyPhone,
         avatarImage,
       }
-      setIsSaving(false)
       setSaveSuccess(true)
       // Ocultar mensaje de éxito tras 6 segundos
       setTimeout(() => {
         setSaveSuccess(false)
       }, 6000)
-    }, 500)
+    } catch (error) {
+      setValidationError(
+        error instanceof Error ? error.message : "No se pudieron guardar los cambios.",
+      )
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -225,6 +301,15 @@ export function PantallaPerfilUsuario() {
           <AlertDescription className="text-xs text-muted-foreground">
             Tus datos personales y preferencias han sido actualizados.
           </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Alerta de Error de Carga del Perfil */}
+      {loadError && (
+        <Alert variant="destructive" className="rounded-2xl">
+          <AlertCircle className="size-5" />
+          <AlertTitle className="font-bold">No se pudo cargar tu perfil</AlertTitle>
+          <AlertDescription className="text-xs">{loadError}</AlertDescription>
         </Alert>
       )}
 
@@ -566,7 +651,7 @@ export function PantallaPerfilUsuario() {
             <Button
               type="submit"
               size="lg"
-              disabled={isSaving}
+              disabled={isSaving || isLoadingProfile}
               className="flex-1 sm:flex-none h-11 px-7 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-semibold text-sm shadow-xs transition-all active:scale-[0.98]"
             >
               {isSaving ? (

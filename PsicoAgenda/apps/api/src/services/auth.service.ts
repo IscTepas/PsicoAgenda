@@ -1,21 +1,21 @@
 import { UserRole, type SessionUser } from "@psicoagenda/shared";
-import { UserRole as SchemaRole } from "@/generated/prisma/enums";
+import { rol_usuario } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/app-error";
 
 /**
- * El enum de Prisma usa las claves del enum de la base de datos (`PSYCHOLOGIST`) y el
+ * El enum de Prisma usa las claves del enum de la base de datos (`PSICOLOGO`) y el
  * de `packages/shared` los valores que viajan en las sesiones y la interfaz
  * (`psychologist`). La conversión es explícita: implicar que ambos coinciden por
  * nombre es justo el tipo de suposición que rompe la autorización.
  */
-const toSessionRole = (role: SchemaRole): UserRole => {
+const toSessionRole = (role: rol_usuario): UserRole => {
   switch (role) {
-    case SchemaRole.PSYCHOLOGIST:
+    case rol_usuario.PSICOLOGO:
       return UserRole.PSYCHOLOGIST;
-    case SchemaRole.ADMIN:
+    case rol_usuario.ADMINISTRADOR:
       return UserRole.ADMIN;
-    case SchemaRole.PATIENT:
+    case rol_usuario.PACIENTE:
       return UserRole.PATIENT;
   }
 };
@@ -28,23 +28,23 @@ const toSessionRole = (role: SchemaRole): UserRole => {
  * los administra el proveedor de identidad y no se almacenan en este schema.
  */
 export async function getProfileById(userId: string): Promise<SessionUser> {
-  const user = await prisma.user.findUnique({
+  const user = await prisma.usuarios.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, name: true, role: true, isActive: true },
+    select: { id: true, correo: true, nombre_completo: true, rol: true, activo: true },
   });
 
   if (!user) {
     throw AppError.unauthorized("El perfil no existe o fue eliminado");
   }
 
-  if (!user.isActive) {
+  if (!user.activo) {
     throw AppError.forbidden("La cuenta está deshabilitada");
   }
 
   return {
     id: user.id,
-    email: user.email,
-    name: user.name,
-    role: toSessionRole(user.role),
+    email: user.correo,
+    name: user.nombre_completo,
+    role: toSessionRole(user.rol),
   };
 }

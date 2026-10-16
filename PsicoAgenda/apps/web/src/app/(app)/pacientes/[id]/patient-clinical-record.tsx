@@ -9,7 +9,6 @@ import {
   FileText,
   Plus,
   ShieldCheck,
-  AlertTriangle,
   Phone,
   Mail,
   MapPin,
@@ -29,13 +28,25 @@ import {
 import {
   AppointmentModality,
   AppointmentStatus,
-  type Patient,
   type Appointment,
+  type ClinicalRecord,
+  type Patient,
+  type PsychologistProfile,
+  type SessionLogEntry,
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import { useHydrated } from "@/lib/use-hydrated"
+import { formatAppointmentTime, formatShortDate } from "@/lib/format"
+import {
+  appointmentService,
+  clinicalRecordService,
+  logEntryService,
+  patientService,
+  psychologistService,
+} from "@/services"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Card,
@@ -52,13 +63,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import {
-  MOCK_CLINICAL_RECORD,
-  MOCK_PSYCHOLOGIST,
-  type SessionLogEntry,
-  formatAppointmentTime,
-  formatShortDate,
-} from "@/lib/mock-data"
 
 // Mismo estilo de estado que el panel y la agenda: pastilla gris + punto de color.
 const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
@@ -81,18 +85,18 @@ function calculateAge(birthDate?: Date): number | null {
 }
 
 interface PatientClinicalRecordProps {
-  patient: Patient
-  appointments: Appointment[]
-  initialLogs: SessionLogEntry[]
+  patientId: string
 }
 
-export function PatientClinicalRecord({
-  patient,
-  appointments,
-  initialLogs,
-}: PatientClinicalRecordProps) {
+export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps) {
   const [activeTab, setActiveTab] = React.useState<string>("datos")
-  const [logs, setLogs] = React.useState<SessionLogEntry[]>(initialLogs)
+  const [patient, setPatient] = React.useState<Patient | null>(null)
+  const [appointments, setAppointments] = React.useState<Appointment[]>([])
+  const [logs, setLogs] = React.useState<SessionLogEntry[]>([])
+  const [record, setRecord] = React.useState<ClinicalRecord | null>(null)
+  const [psychologist, setPsychologist] = React.useState<PsychologistProfile | null>(null)
+  const [isLoading, setIsLoading] = React.useState<boolean>(true)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
 
   // Bitacora modal state
   const [isModalOpen, setIsModalOpen] = React.useState<boolean>(false)
@@ -103,11 +107,52 @@ export function PatientClinicalRecord({
   const [interventions, setInterventions] = React.useState<string>("")
   const [homework, setHomework] = React.useState<string>("")
   const [formError, setFormError] = React.useState<string>("")
+  const [isSaving, setIsSaving] = React.useState<boolean>(false)
   const [hasDraft, setHasDraft] = React.useState<boolean>(false)
   const [copiedPhone, setCopiedPhone] = React.useState<boolean>(false)
   const [successToast, setSuccessToast] = React.useState<string | null>(null)
 
-  const age = calculateAge(patient.birthDate)
+  // Expediente, agenda y bitácora viven en la API: el detalle se resuelve en el
+  // cliente porque la credencial de acceso vive en cookies que el servidor no lee aquí.
+  React.useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setIsLoading(true)
+      setLoadError(null)
+      try {
+        const [patientRow, appointmentRows, logRows, recordRow, therapist] = await Promise.all([
+          patientService.get(patientId),
+          appointmentService.list({ patientId }),
+          logEntryService.list(patientId),
+          clinicalRecordService.get(patientId).catch(() => null),
+          psychologistService.getMe().catch(() => null),
+        ])
+        if (cancelled) return
+        setPatient(patientRow)
+        setAppointments(appointmentRows)
+        setLogs(logRows)
+        setRecord(recordRow)
+        setPsychologist(therapist)
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(
+            error instanceof Error ? error.message : "No se pudo cargar el expediente del paciente.",
+          )
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [patientId])
+
+  const hydrated = useHydrated()
+  const age = hydrated && patient ? calculateAge(patient.birthDate) : null
 
   // Associated session date for modal read-only field
   const associatedAppointment = React.useMemo(() => {
@@ -131,7 +176,7 @@ export function PatientClinicalRecord({
 
   // Borrador de bitácora: permite guardar una entrada a medio escribir y
   // reanudarla después sin perderla, sin "sellarla" todavía en el expediente.
-  const draftKey = (key: string) => `psicoagenda-bitacora-draft-${patient.id}-${key}`
+  const draftKey = (key: string) => `psicoagenda-bitacora-draft-${patientId}-${key}`
 
   type BitacoraDraft = {
     sessionType: string
@@ -206,58 +251,51 @@ export function PatientClinicalRecord({
   }
 
   // Save bitacora entry
-  const handleSaveLog = (e: React.FormEvent) => {
+  const handleSaveLog = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!sessionNotes.trim()) {
       setFormError("Las observaciones y notas de la sesión son obligatorias.")
       return
     }
 
-    // Al sellar la entrada (nueva o editada) el borrador pendiente ya no aplica.
-    clearDraft(editingLog?.id || selectedAppointmentId || "nueva")
-    setHasDraft(false)
+    setIsSaving(true)
+    setFormError("")
 
-    if (editingLog) {
-      // Update existing
-      setLogs((prev) =>
-        prev.map((item) =>
-          item.id === editingLog.id
-            ? {
-                ...item,
-                sessionType,
-                notes: sessionNotes,
-                interventions,
-                homework,
-                updatedAt: new Date(),
-              }
-            : item
-        )
-      )
-      setSuccessToast("Nota de bitácora actualizada con trazabilidad.")
-    } else {
-      // Create new
-      const newEntry: SessionLogEntry = {
-        id: `log-${Date.now()}`,
-        patientId: patient.id,
-        appointmentId: selectedAppointmentId || undefined,
-        sessionNumber: logs.length + 1,
-        date: associatedAppointment?.startTime || new Date(),
-        psychologistName: MOCK_PSYCHOLOGIST.name,
-        modality: associatedAppointment?.modality || AppointmentModality.IN_PERSON,
-        sessionType,
-        notes: sessionNotes,
-        interventions,
-        homework,
-        createdAt: new Date(),
+    try {
+      if (editingLog) {
+        const updated = await logEntryService.update(editingLog.id, {
+          appointmentId: selectedAppointmentId || undefined,
+          sessionType,
+          notes: sessionNotes,
+          interventions,
+          homework,
+        })
+        setLogs((prev) => prev.map((item) => (item.id === editingLog.id ? updated : item)))
+        setSuccessToast("Nota de bitácora actualizada con trazabilidad.")
+      } else {
+        const created = await logEntryService.create(patientId, {
+          appointmentId: selectedAppointmentId || undefined,
+          sessionType,
+          notes: sessionNotes,
+          interventions,
+          homework,
+        })
+        setLogs((prev) => [created, ...prev])
+        setSuccessToast("Nueva nota de sesión registrada en la bitácora clínica.")
       }
-      setLogs((prev) => [newEntry, ...prev])
-      setSuccessToast("Nueva nota de sesión registrada en la bitácora clínica.")
-    }
 
-    setIsModalOpen(false)
-    setTimeout(() => {
-      setSuccessToast(null)
-    }, 3500)
+      // Al sellar la entrada (nueva o editada) el borrador pendiente ya no aplica.
+      clearDraft(editingLog?.id || selectedAppointmentId || "nueva")
+      setHasDraft(false)
+      setIsModalOpen(false)
+      setTimeout(() => setSuccessToast(null), 3500)
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "No se pudo guardar la entrada de bitácora.",
+      )
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   // Copy emergency contact phone
@@ -266,6 +304,40 @@ export function PatientClinicalRecord({
     navigator.clipboard.writeText(phone)
     setCopiedPhone(true)
     setTimeout(() => setCopiedPhone(false), 2000)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-6 pb-16" aria-busy="true">
+        <div className="h-9 w-40 rounded-lg bg-muted/60" />
+        <div className="h-48 rounded-2xl border border-border/70 bg-card" />
+        <div className="h-64 rounded-2xl border border-border/70 bg-card" />
+      </div>
+    )
+  }
+
+  if (loadError || !patient) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-6 pb-16">
+        <Button
+          variant="ghost"
+          size="sm"
+          asChild
+          className="-ml-2 text-muted-foreground hover:text-foreground rounded-lg"
+        >
+          <Link href="/pacientes" className="flex items-center gap-1.5">
+            <ArrowLeft className="size-4" />
+            <span>Volver a Pacientes</span>
+          </Link>
+        </Button>
+        <div
+          role="alert"
+          className="rounded-2xl border border-destructive/30 bg-destructive/10 px-5 py-4 text-sm text-destructive"
+        >
+          {loadError ?? "No se encontró el paciente solicitado."}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -507,65 +579,57 @@ export function PatientClinicalRecord({
           {/* Card: Diagnóstico Inicial y Motivo Clínico */}
           <Card className="border-border/70 shadow-2xs bg-card">
             <CardHeader className="pb-3 border-b border-border/50 bg-muted/10">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
-                  <BookmarkCheck className="size-4 text-primary" />
-                  <span>Diagnóstico Clínico Inicial (CIE-10)</span>
-                </CardTitle>
-                <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 font-semibold text-xs">
-                  CIE-10: F41.1
-                </Badge>
-              </div>
+              <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
+                <BookmarkCheck className="size-4 text-primary" />
+                <span>Diagnóstico Clínico Inicial</span>
+              </CardTitle>
               <CardDescription className="text-xs text-muted-foreground">
                 Impresión diagnóstica principal establecida al inicio del proceso terapéutico.
               </CardDescription>
             </CardHeader>
 
             <CardContent className="pt-4 space-y-4">
-              <div className="p-4 rounded-xl bg-primary/[0.03] border border-primary/20 space-y-1">
-                <span className="text-xs font-medium text-primary">
-                  Trastorno Diagnósticado
-                </span>
-                <p className="text-base font-bold text-foreground">
-                  {MOCK_CLINICAL_RECORD.diagnosis}
-                </p>
-                <p className="text-xs text-muted-foreground pt-1">
-                  Apertura oficial del expediente: <strong>{formatShortDate(MOCK_CLINICAL_RECORD.openedAt)}</strong> · Última revisión: <strong>{formatShortDate(MOCK_CLINICAL_RECORD.updatedAt)}</strong>
-                </p>
-              </div>
+              {record ? (
+                <>
+                  <div className="p-4 rounded-xl bg-primary/[0.03] border border-primary/20 space-y-1">
+                    <span className="text-xs font-medium text-primary">
+                      Trastorno Diagnósticado
+                    </span>
+                    <p className="text-base font-bold text-foreground">
+                      {record.diagnosis || "Sin diagnóstico registrado"}
+                    </p>
+                    <p className="text-xs text-muted-foreground pt-1">
+                      Apertura oficial del expediente: <strong>{formatShortDate(record.openedAt)}</strong> · Última revisión: <strong>{formatShortDate(record.updatedAt)}</strong>
+                    </p>
+                  </div>
 
-              {/* Antecedentes clínicos y familiares */}
-              <div className="space-y-1.5 pt-2">
-                <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                  <FileText className="size-3.5 text-muted-foreground" />
-                  <span>Antecedentes Clínicos y Familiares</span>
-                </h4>
-                <div className="p-3.5 rounded-xl border border-border/60 bg-muted/20 text-xs text-foreground leading-relaxed">
-                  {MOCK_CLINICAL_RECORD.background}
-                </div>
-              </div>
+                  {/* Antecedentes clínicos y familiares */}
+                  <div className="space-y-1.5 pt-2">
+                    <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                      <FileText className="size-3.5 text-muted-foreground" />
+                      <span>Antecedentes Clínicos y Familiares</span>
+                    </h4>
+                    <div className="p-3.5 rounded-xl border border-border/60 bg-muted/20 text-xs text-foreground leading-relaxed">
+                      {record.background || "Sin antecedentes registrados."}
+                    </div>
+                  </div>
 
-              {/* Alergias / Alertas Clínicas */}
-              <div className="space-y-1.5 pt-2">
-                <h4 className="text-sm font-semibold flex items-center gap-1.5 text-rose-700 dark:text-rose-400">
-                  <AlertTriangle className="size-3.5 text-rose-500" />
-                  <span>Alergias y Alertas Médicas Relevantes</span>
-                </h4>
-                <div className="p-3.5 rounded-xl border border-rose-200/80 bg-rose-50/40 dark:bg-rose-950/20 dark:border-rose-900/50 text-xs text-rose-950 dark:text-rose-200 leading-relaxed font-medium">
-                  {MOCK_CLINICAL_RECORD.allergies}
+                  {/* Observaciones Generales */}
+                  <div className="space-y-1.5 pt-2">
+                    <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                      <ClipboardList className="size-3.5 text-muted-foreground" />
+                      <span>Observaciones Generales de Evolución</span>
+                    </h4>
+                    <div className="p-3.5 rounded-xl border border-border/60 bg-muted/20 text-xs text-foreground leading-relaxed">
+                      {record.generalObservations || "Sin observaciones registradas."}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-center text-xs text-muted-foreground">
+                  Aún no hay un expediente clínico abierto para este paciente.
                 </div>
-              </div>
-
-              {/* Observaciones Generales */}
-              <div className="space-y-1.5 pt-2">
-                <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                  <ClipboardList className="size-3.5 text-muted-foreground" />
-                  <span>Observaciones Generales de Evolución</span>
-                </h4>
-                <div className="p-3.5 rounded-xl border border-border/60 bg-muted/20 text-xs text-foreground leading-relaxed">
-                  {MOCK_CLINICAL_RECORD.generalObservations}
-                </div>
-              </div>
+              )}
             </CardContent>
           </Card>
 
@@ -834,7 +898,8 @@ export function PatientClinicalRecord({
                   Profesional Responsable (Solo lectura)
                 </span>
                 <p className="font-semibold text-foreground">
-                  {MOCK_PSYCHOLOGIST.name} · {MOCK_PSYCHOLOGIST.licenseNumber}
+                  {psychologist?.name ?? "Profesional responsable"}
+                  {psychologist?.licenseNumber ? ` · ${psychologist.licenseNumber}` : ""}
                 </p>
               </div>
             </div>
@@ -946,10 +1011,11 @@ export function PatientClinicalRecord({
 
               <Button
                 type="submit"
+                disabled={isSaving}
                 className="h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-semibold text-xs shadow-2xs gap-1.5"
               >
                 <Save className="size-4" />
-                <span>Guardar Entrada</span>
+                <span>{isSaving ? "Guardando…" : "Guardar Entrada"}</span>
               </Button>
             </DialogFooter>
           </form>

@@ -20,6 +20,7 @@ import {
   XCircle,
   HelpCircle,
   Check,
+  Loader2,
   Stethoscope,
 } from "lucide-react"
 import {
@@ -391,7 +392,7 @@ export function AgendaClient() {
             <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
               {isPatient ? "Mis Citas" : "Agenda Activa"}
             </span>
-            {(appointmentsLoading || patientsLoading) && (
+            {isLoadingData && (
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <Loader2 className="size-3 animate-spin" />
                 Cargando...

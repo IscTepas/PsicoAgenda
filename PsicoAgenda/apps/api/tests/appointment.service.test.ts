@@ -6,7 +6,7 @@ import {
 } from "@psicoagenda/shared";
 
 const { prismaMock } = vi.hoisted(() => {
-  const appointment = {
+  const citas = {
     findMany: vi.fn(),
     findUnique: vi.fn(),
     findFirst: vi.fn(),
@@ -14,10 +14,10 @@ const { prismaMock } = vi.hoisted(() => {
     update: vi.fn(),
     count: vi.fn(),
   };
-  const patient = { findUnique: vi.fn() };
-  const psychologist = { findUnique: vi.fn() };
+  const pacientes = { findUnique: vi.fn() };
+  const psicologos = { findUnique: vi.fn() };
 
-  return { prismaMock: { appointment, patient, psychologist, $transaction: vi.fn() } };
+  return { prismaMock: { citas, pacientes, psicologos, $transaction: vi.fn() } };
 });
 
 vi.mock("@/lib/prisma", () => ({
@@ -59,21 +59,21 @@ const START = new Date("2030-01-01T10:00:00.000Z");
 function appointmentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: APPOINTMENT_ID,
-    psychologistId: PSYCH_ID,
-    patientId: PATIENT_ID,
-    requestId: null,
-    start: START,
-    end: new Date("2030-01-01T11:00:00.000Z"),
-    status: "CONFIRMED",
-    modality: "IN_PERSON",
-    sessionType: "INDIVIDUAL",
-    reason: null,
-    internalNotes: null,
-    cancelReason: null,
-    cancelledById: null,
-    cancelledAt: null,
-    createdAt: START,
-    updatedAt: START,
+    psicologo_id: PSYCH_ID,
+    paciente_id: PATIENT_ID,
+    solicitud_id: null,
+    inicio: START,
+    fin: new Date("2030-01-01T11:00:00.000Z"),
+    estado: "CONFIRMADA",
+    modalidad: "PRESENCIAL",
+    tipo_sesion: "INDIVIDUAL",
+    motivo: null,
+    notas_internas: null,
+    motivo_cancelacion: null,
+    cancelada_por_id: null,
+    cancelada_en: null,
+    creado_en: START,
+    actualizado_en: START,
     ...overrides,
   };
 }
@@ -81,15 +81,15 @@ function appointmentRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.$transaction.mockImplementation((cb: (tx: unknown) => unknown) => cb(prismaMock));
-  prismaMock.psychologist.findUnique.mockResolvedValue({ id: PSYCH_ID });
-  prismaMock.patient.findUnique.mockResolvedValue({ id: PATIENT_ID, psychologistId: null });
-  prismaMock.appointment.findFirst.mockResolvedValue(null);
+  prismaMock.psicologos.findUnique.mockResolvedValue({ id: PSYCH_ID });
+  prismaMock.pacientes.findUnique.mockResolvedValue({ id: PATIENT_ID, psicologo_id: null });
+  prismaMock.citas.findFirst.mockResolvedValue(null);
 });
 
 describe("createAppointment", () => {
   it("infiere el psicólogo de la sesión y marca la primera visita como consulta inicial", async () => {
-    prismaMock.appointment.count.mockResolvedValue(0);
-    prismaMock.appointment.create.mockResolvedValue(appointmentRow({ sessionType: "CONSULTA_INICIAL" }));
+    prismaMock.citas.count.mockResolvedValue(0);
+    prismaMock.citas.create.mockResolvedValue(appointmentRow({ tipo_sesion: "CONSULTA_INICIAL" }));
 
     const result = await createAppointment(psychologist, {
       patientId: PATIENT_ID,
@@ -98,20 +98,20 @@ describe("createAppointment", () => {
       modality: AppointmentModality.IN_PERSON,
     });
 
-    const { data } = lastCallArg(prismaMock.appointment.create) as { data: Record<string, unknown> };
+    const { data } = lastCallArg(prismaMock.citas.create) as { data: Record<string, unknown> };
 
     expect(data).toMatchObject({
-      psychologistId: PSYCH_ID,
-      patientId: PATIENT_ID,
-      status: "CONFIRMED",
-      sessionType: "INITIAL_CONSULTATION",
+      psicologo_id: PSYCH_ID,
+      paciente_id: PATIENT_ID,
+      estado: "CONFIRMADA",
+      tipo_sesion: "CONSULTA_INICIAL",
     });
     expect(result.id).toBe(APPOINTMENT_ID);
   });
 
   it("marca como sesión individual cuando el paciente ya tenía citas", async () => {
-    prismaMock.appointment.count.mockResolvedValue(2);
-    prismaMock.appointment.create.mockResolvedValue(appointmentRow());
+    prismaMock.citas.count.mockResolvedValue(2);
+    prismaMock.citas.create.mockResolvedValue(appointmentRow());
 
     await createAppointment(psychologist, {
       patientId: PATIENT_ID,
@@ -120,14 +120,14 @@ describe("createAppointment", () => {
       modality: AppointmentModality.IN_PERSON,
     });
 
-    const { data } = lastCallArg(prismaMock.appointment.create) as { data: Record<string, unknown> };
+    const { data } = lastCallArg(prismaMock.citas.create) as { data: Record<string, unknown> };
 
-    expect(data).toMatchObject({ sessionType: "INDIVIDUAL" });
+    expect(data).toMatchObject({ tipo_sesion: "INDIVIDUAL" });
   });
 
   it("rechaza con 409 cuando el psicólogo ya tiene una cita en ese horario", async () => {
-    prismaMock.appointment.count.mockResolvedValue(0);
-    prismaMock.appointment.findFirst.mockResolvedValueOnce({ id: "otra-cita" });
+    prismaMock.citas.count.mockResolvedValue(0);
+    prismaMock.citas.findFirst.mockResolvedValueOnce({ id: "otra-cita" });
 
     await expect(
       createAppointment(psychologist, {
@@ -138,13 +138,13 @@ describe("createAppointment", () => {
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
 
-    expect(prismaMock.appointment.create).not.toHaveBeenCalled();
+    expect(prismaMock.citas.create).not.toHaveBeenCalled();
   });
 
   it("hereda el psicólogo del paciente cuando quien agenda es el propio paciente", async () => {
-    prismaMock.patient.findUnique.mockResolvedValue({ id: PATIENT_ID, psychologistId: PSYCH_ID });
-    prismaMock.appointment.count.mockResolvedValue(0);
-    prismaMock.appointment.create.mockResolvedValue(appointmentRow());
+    prismaMock.pacientes.findUnique.mockResolvedValue({ id: PATIENT_ID, psicologo_id: PSYCH_ID });
+    prismaMock.citas.count.mockResolvedValue(0);
+    prismaMock.citas.create.mockResolvedValue(appointmentRow());
 
     await createAppointment(patient, {
       patientId: PATIENT_ID,
@@ -153,9 +153,9 @@ describe("createAppointment", () => {
       modality: AppointmentModality.IN_PERSON,
     });
 
-    const { data } = lastCallArg(prismaMock.appointment.create) as { data: Record<string, unknown> };
+    const { data } = lastCallArg(prismaMock.citas.create) as { data: Record<string, unknown> };
 
-    expect(data).toMatchObject({ psychologistId: PSYCH_ID });
+    expect(data).toMatchObject({ psicologo_id: PSYCH_ID });
   });
 
   it("impide que un paciente agende para otra persona", async () => {
@@ -168,47 +168,47 @@ describe("createAppointment", () => {
       }),
     ).rejects.toMatchObject({ statusCode: 403 });
 
-    expect(prismaMock.appointment.create).not.toHaveBeenCalled();
+    expect(prismaMock.citas.create).not.toHaveBeenCalled();
   });
 });
 
 describe("listAppointments", () => {
   it("restringe al paciente a sus propias citas aunque pida otro paciente", async () => {
-    prismaMock.appointment.findMany.mockResolvedValue([]);
+    prismaMock.citas.findMany.mockResolvedValue([]);
 
     await listAppointments(patient, { patientId: "99999999-9999-4999-8999-999999999999" });
 
-    const { where } = lastCallArg(prismaMock.appointment.findMany) as { where: Record<string, unknown> };
+    const { where } = lastCallArg(prismaMock.citas.findMany) as { where: Record<string, unknown> };
 
-    expect(where).toMatchObject({ patientId: PATIENT_ID });
+    expect(where).toMatchObject({ paciente_id: PATIENT_ID });
   });
 
   it("traduce el estado compartido al valor del esquema en los filtros", async () => {
-    prismaMock.appointment.findMany.mockResolvedValue([]);
+    prismaMock.citas.findMany.mockResolvedValue([]);
 
     await listAppointments(admin, { status: SharedStatus.CONFIRMED });
 
-    const { where } = lastCallArg(prismaMock.appointment.findMany) as { where: Record<string, unknown> };
+    const { where } = lastCallArg(prismaMock.citas.findMany) as { where: Record<string, unknown> };
 
-    expect(where).toMatchObject({ status: "CONFIRMED" });
+    expect(where).toMatchObject({ estado: "CONFIRMADA" });
   });
 });
 
 describe("getAppointmentById", () => {
   it("devuelve 404 si la cita no existe", async () => {
-    prismaMock.appointment.findUnique.mockResolvedValue(null);
+    prismaMock.citas.findUnique.mockResolvedValue(null);
 
     await expect(getAppointmentById(APPOINTMENT_ID, admin)).rejects.toMatchObject({ statusCode: 404 });
   });
 
   it("impide que un paciente vea una cita ajena", async () => {
-    prismaMock.appointment.findUnique.mockResolvedValue(appointmentRow({ patientId: "otro-paciente" }));
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ paciente_id: "otro-paciente" }));
 
     await expect(getAppointmentById(APPOINTMENT_ID, patient)).rejects.toMatchObject({ statusCode: 403 });
   });
 
   it("deriva la asistencia y traduce los enums al formato de la interfaz", async () => {
-    prismaMock.appointment.findUnique.mockResolvedValue(appointmentRow({ status: "COMPLETED" }));
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ estado: "COMPLETADA" }));
 
     const result = await getAppointmentById(APPOINTMENT_ID, admin);
 
@@ -222,7 +222,7 @@ describe("getAppointmentById", () => {
 
 describe("updateAppointment", () => {
   it("impide que un paciente modifique una cita", async () => {
-    prismaMock.appointment.findUnique.mockResolvedValue(appointmentRow());
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow());
 
     await expect(
       updateAppointment(patient, APPOINTMENT_ID, { reason: "otro" }),
@@ -230,61 +230,61 @@ describe("updateAppointment", () => {
   });
 
   it("recalcula el fin cuando cambia la hora de inicio", async () => {
-    prismaMock.appointment.findUnique.mockResolvedValue(appointmentRow());
-    prismaMock.appointment.update.mockResolvedValue(
-      appointmentRow({ start: new Date("2030-01-01T12:00:00.000Z"), end: new Date("2030-01-01T13:00:00.000Z") }),
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow());
+    prismaMock.citas.update.mockResolvedValue(
+      appointmentRow({ inicio: new Date("2030-01-01T12:00:00.000Z"), fin: new Date("2030-01-01T13:00:00.000Z") }),
     );
 
     await updateAppointment(psychologist, APPOINTMENT_ID, {
       startTime: new Date("2030-01-01T12:00:00.000Z"),
     });
 
-    const { data } = lastCallArg(prismaMock.appointment.update) as { data: Record<string, unknown> };
+    const { data } = lastCallArg(prismaMock.citas.update) as { data: Record<string, unknown> };
 
     expect(data).toMatchObject({
-      start: new Date("2030-01-01T12:00:00.000Z"),
-      end: new Date("2030-01-01T13:00:00.000Z"),
+      inicio: new Date("2030-01-01T12:00:00.000Z"),
+      fin: new Date("2030-01-01T13:00:00.000Z"),
     });
   });
 });
 
 describe("changeAppointmentStatus", () => {
   it("traduce el estado compartido al valor persistido", async () => {
-    prismaMock.appointment.findUnique.mockResolvedValue(appointmentRow());
-    prismaMock.appointment.update.mockResolvedValue(appointmentRow({ status: "NO_SHOW" }));
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow());
+    prismaMock.citas.update.mockResolvedValue(appointmentRow({ estado: "NO_ASISTIO" }));
 
     const result = await changeAppointmentStatus(psychologist, APPOINTMENT_ID, SharedStatus.NO_SHOW);
 
-    const { data } = lastCallArg(prismaMock.appointment.update) as { data: Record<string, unknown> };
+    const { data } = lastCallArg(prismaMock.citas.update) as { data: Record<string, unknown> };
 
-    expect(data).toEqual({ status: "NO_SHOW" });
+    expect(data).toEqual({ estado: "NO_ASISTIO" });
     expect(result.status).toBe(SharedStatus.NO_SHOW);
   });
 });
 
 describe("cancelAppointment", () => {
   it("verifica que el paciente cancele su propia cita y deja el motivo", async () => {
-    prismaMock.appointment.findUnique.mockResolvedValue(appointmentRow({ patientId: PATIENT_ID }));
-    prismaMock.appointment.update.mockResolvedValue(appointmentRow({ status: "CANCELLED" }));
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ paciente_id: PATIENT_ID }));
+    prismaMock.citas.update.mockResolvedValue(appointmentRow({ estado: "CANCELADA" }));
 
     await cancelAppointment(patient, APPOINTMENT_ID, "Me surgió un imprevisto");
 
-    const { data } = lastCallArg(prismaMock.appointment.update) as { data: Record<string, unknown> };
+    const { data } = lastCallArg(prismaMock.citas.update) as { data: Record<string, unknown> };
 
     expect(data).toMatchObject({
-      status: "CANCELLED",
-      cancelReason: "Me surgió un imprevisto",
-      cancelledById: PATIENT_USER_ID,
+      estado: "CANCELADA",
+      motivo_cancelacion: "Me surgió un imprevisto",
+      cancelada_por_id: PATIENT_USER_ID,
     });
-    expect(data.cancelledAt).toBeInstanceOf(Date);
+    expect(data.cancelada_en).toBeInstanceOf(Date);
   });
 
   it("rechaza cancelar una cita ya cancelada", async () => {
-    prismaMock.appointment.findUnique.mockResolvedValue(appointmentRow({ status: "CANCELLED" }));
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ estado: "CANCELADA" }));
 
     await expect(cancelAppointment(admin, APPOINTMENT_ID, "motivo")).rejects.toMatchObject({
       statusCode: 409,
     });
-    expect(prismaMock.appointment.update).not.toHaveBeenCalled();
+    expect(prismaMock.citas.update).not.toHaveBeenCalled();
   });
 });

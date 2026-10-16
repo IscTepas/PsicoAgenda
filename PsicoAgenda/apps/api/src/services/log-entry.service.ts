@@ -4,7 +4,7 @@ import {
   type SessionLogEntry,
 } from "@psicoagenda/shared";
 import type { Prisma } from "@/generated/prisma/client";
-import { AppointmentModality } from "@/generated/prisma/enums";
+import { modalidad_cita } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import type { AuthenticatedUser } from "@/utils/jwt";
 import { AppError } from "@/utils/app-error";
@@ -15,15 +15,15 @@ import {
 } from "@/services/clinical-record.service";
 
 const logInclude = {
-  appointment: true,
-  psychologist: { include: { user: true } },
-  clinicalRecord: { select: { patientId: true } },
-} satisfies Prisma.LogEntryInclude;
+  citas: true,
+  psicologos: { include: { usuarios: true } },
+  expedientes_clinicos: { select: { paciente_id: true } },
+} satisfies Prisma.entradas_bitacoraInclude;
 
-type LogEntryRow = Prisma.LogEntryGetPayload<{ include: typeof logInclude }>;
+type LogEntryRow = Prisma.entradas_bitacoraGetPayload<{ include: typeof logInclude }>;
 
-const toSharedModality = (modality: AppointmentModality): SharedModality =>
-  modality === AppointmentModality.VIRTUAL ? SharedModality.VIRTUAL : SharedModality.IN_PERSON;
+const toSharedModality = (modality: modalidad_cita): SharedModality =>
+  modality === modalidad_cita.VIRTUAL ? SharedModality.VIRTUAL : SharedModality.IN_PERSON;
 
 /**
  * La interfaz numera las sesiones cronológicamente. El orden es
@@ -31,9 +31,9 @@ const toSharedModality = (modality: AppointmentModality): SharedModality =>
  */
 function withSessionNumber(rows: LogEntryRow[]): SessionLogEntry[] {
   const ordered = [...rows].sort((a, b) => {
-    const byDate = a.sessionDate.getTime() - b.sessionDate.getTime();
+    const byDate = a.fecha_sesion.getTime() - b.fecha_sesion.getTime();
     if (byDate !== 0) return byDate;
-    return a.createdAt.getTime() - b.createdAt.getTime();
+    return a.creado_en.getTime() - b.creado_en.getTime();
   });
 
   const numberById = new Map(ordered.map((row, index) => [row.id, index + 1]));
@@ -41,20 +41,20 @@ function withSessionNumber(rows: LogEntryRow[]): SessionLogEntry[] {
   return ordered
     .map((row) => ({
       id: row.id,
-      patientId: row.clinicalRecord.patientId,
-      appointmentId: row.appointmentId ?? undefined,
+      patientId: row.expedientes_clinicos.paciente_id,
+      appointmentId: row.cita_id ?? undefined,
       sessionNumber: numberById.get(row.id) ?? 1,
-      date: row.sessionDate,
-      psychologistName: row.psychologist.user.name,
-      modality: row.appointment
-        ? toSharedModality(row.appointment.modality)
+      date: row.fecha_sesion,
+      psychologistName: row.psicologos.usuarios.nombre_completo,
+      modality: row.citas
+        ? toSharedModality(row.citas.modalidad)
         : SharedModality.IN_PERSON,
-      sessionType: row.generalState ?? "Seguimiento terapéutico",
-      notes: row.sessionNotes,
-      interventions: row.objectives ?? undefined,
-      homework: row.nextSessionPlan ?? undefined,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
+      sessionType: row.estado_general ?? "Seguimiento terapéutico",
+      notes: row.notas_sesion,
+      interventions: row.objetivos_trabajados ?? undefined,
+      homework: row.plan_proxima_sesion ?? undefined,
+      createdAt: row.creado_en,
+      updatedAt: row.actualizado_en,
     }))
     .sort((a, b) => b.date.getTime() - a.date.getTime());
 }
@@ -65,15 +65,15 @@ export async function listLogEntries(
 ): Promise<SessionLogEntry[]> {
   await requirePatientAccess(auth, patientId);
 
-  const record = await prisma.clinicalRecord.findUnique({
-    where: { patientId },
+  const record = await prisma.expedientes_clinicos.findUnique({
+    where: { paciente_id: patientId },
     select: { id: true },
   });
 
   if (!record) return [];
 
-  const rows = await prisma.logEntry.findMany({
-    where: { clinicalRecordId: record.id },
+  const rows = await prisma.entradas_bitacora.findMany({
+    where: { expediente_id: record.id },
     include: logInclude,
   });
 
@@ -103,33 +103,33 @@ export async function createLogEntry(
   // La fecha de la sesión es la de la cita asociada; sin cita, el momento actual.
   let sessionDate = new Date();
   if (input.appointmentId) {
-    const appointment = await prisma.appointment.findUnique({
+    const appointment = await prisma.citas.findUnique({
       where: { id: input.appointmentId },
-      select: { start: true, patientId: true },
+      select: { inicio: true, paciente_id: true },
     });
-    if (!appointment || appointment.patientId !== patientId) {
+    if (!appointment || appointment.paciente_id !== patientId) {
       throw AppError.badRequest("La cita asociada no corresponde al paciente");
     }
-    sessionDate = appointment.start;
+    sessionDate = appointment.inicio;
   }
 
-  const created = await prisma.logEntry.create({
+  const created = await prisma.entradas_bitacora.create({
     data: {
       id: randomUUID(),
-      clinicalRecordId,
-      appointmentId: input.appointmentId ?? null,
-      psychologistId,
-      sessionDate,
-      sessionNotes: input.notes,
-      objectives: emptyToNull(input.interventions),
-      nextSessionPlan: emptyToNull(input.homework),
-      generalState: emptyToNull(input.sessionType),
+      expediente_id: clinicalRecordId,
+      cita_id: input.appointmentId ?? null,
+      psicologo_id: psychologistId,
+      fecha_sesion: sessionDate,
+      notas_sesion: input.notes,
+      objetivos_trabajados: emptyToNull(input.interventions),
+      plan_proxima_sesion: emptyToNull(input.homework),
+      estado_general: emptyToNull(input.sessionType),
     },
     include: logInclude,
   });
 
-  const siblings = await prisma.logEntry.findMany({
-    where: { clinicalRecordId },
+  const siblings = await prisma.entradas_bitacora.findMany({
+    where: { expediente_id: clinicalRecordId },
     include: logInclude,
   });
 
@@ -149,7 +149,7 @@ export async function updateLogEntry(
   id: string,
   input: UpdateLogEntryInput,
 ): Promise<SessionLogEntry> {
-  const existing = await prisma.logEntry.findUnique({
+  const existing = await prisma.entradas_bitacora.findUnique({
     where: { id },
     include: logInclude,
   });
@@ -158,22 +158,22 @@ export async function updateLogEntry(
     throw AppError.notFound("La nota de bitácora no existe");
   }
 
-  await requirePatientAccess(auth, existing.clinicalRecord.patientId);
+  await requirePatientAccess(auth, existing.expedientes_clinicos.paciente_id);
 
-  await prisma.logEntry.update({
+  await prisma.entradas_bitacora.update({
     where: { id },
     data: {
-      appointmentId: input.appointmentId ?? undefined,
-      sessionNotes: input.notes,
-      objectives: input.interventions !== undefined ? emptyToNull(input.interventions) : undefined,
-      nextSessionPlan: input.homework !== undefined ? emptyToNull(input.homework) : undefined,
-      generalState: input.sessionType !== undefined ? emptyToNull(input.sessionType) : undefined,
+      cita_id: input.appointmentId ?? undefined,
+      notas_sesion: input.notes,
+      objetivos_trabajados: input.interventions !== undefined ? emptyToNull(input.interventions) : undefined,
+      plan_proxima_sesion: input.homework !== undefined ? emptyToNull(input.homework) : undefined,
+      estado_general: input.sessionType !== undefined ? emptyToNull(input.sessionType) : undefined,
       version: { increment: 1 },
     },
   });
 
-  const siblings = await prisma.logEntry.findMany({
-    where: { clinicalRecordId: existing.clinicalRecordId },
+  const siblings = await prisma.entradas_bitacora.findMany({
+    where: { expediente_id: existing.expediente_id },
     include: logInclude,
   });
 

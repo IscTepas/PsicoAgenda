@@ -12,15 +12,15 @@ import type { AuthenticatedUser } from "@/utils/jwt";
 import { AppError } from "@/utils/app-error";
 
 const patientInclude = {
-  user: true,
-  legalGuardian: true,
+  usuarios: true,
+  tutores_legales: true,
   // El contacto marcado como principal primero: la interfaz solo muestra uno.
-  emergencyContacts: { orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }] },
-} satisfies Prisma.PatientInclude;
+  contactos_emergencia: { orderBy: [{ es_principal: "desc" }, { creado_en: "asc" }] },
+} satisfies Prisma.pacientesInclude;
 
-type PatientRow = Prisma.PatientGetPayload<{ include: typeof patientInclude }>;
-type EmergencyContactRow = PatientRow["emergencyContacts"][number];
-type LegalGuardianRow = NonNullable<PatientRow["legalGuardian"]>;
+type PatientRow = Prisma.pacientesGetPayload<{ include: typeof patientInclude }>;
+type EmergencyContactRow = PatientRow["contactos_emergencia"][number];
+type LegalGuardianRow = NonNullable<PatientRow["tutores_legales"]>;
 
 /**
  * Un paciente es menor de edad mientras no haya cumplido los 18 años. La fecha
@@ -37,64 +37,64 @@ function computeIsMinor(birthDate: Date | null): boolean {
 function toEmergencyContact(row: EmergencyContactRow): EmergencyContact {
   return {
     id: row.id,
-    patientId: row.patientId,
-    name: row.name,
-    phone: row.phone,
-    relationship: row.relationship ?? undefined,
-    isPrimary: row.isPrimary,
-    createdAt: row.createdAt,
+    patientId: row.paciente_id,
+    name: row.nombre_completo,
+    phone: row.telefono,
+    relationship: row.parentesco ?? undefined,
+    isPrimary: row.es_principal,
+    createdAt: row.creado_en,
   };
 }
 
 function toLegalGuardian(row: LegalGuardianRow): LegalGuardian {
   return {
     id: row.id,
-    name: row.name,
-    email: row.email ?? undefined,
-    phone: row.phone ?? undefined,
-    documentId: row.documentId ?? undefined,
-    relationship: row.relationship ?? undefined,
-    createdAt: row.createdAt,
+    name: row.nombre_completo,
+    email: row.correo ?? undefined,
+    phone: row.telefono ?? undefined,
+    documentId: row.documento_identidad ?? undefined,
+    relationship: row.parentesco ?? undefined,
+    createdAt: row.creado_en,
   };
 }
 
 function toPatient(row: PatientRow): Patient {
-  const primaryContact = row.emergencyContacts.find((contact) => contact.isPrimary);
+  const primaryContact = row.contactos_emergencia.find((contact) => contact.es_principal);
 
   return {
     id: row.id,
-    email: row.user.email,
-    name: row.user.name,
-    phone: row.user.phone ?? undefined,
+    email: row.usuarios.correo,
+    name: row.usuarios.nombre_completo,
+    phone: row.usuarios.telefono ?? undefined,
     role: UserRole.PATIENT,
-    birthDate: row.birthDate ?? undefined,
-    gender: row.gender ?? undefined,
-    address: row.address ?? undefined,
-    isMinor: computeIsMinor(row.birthDate),
-    psychologistId: row.psychologistId ?? undefined,
+    birthDate: row.fecha_nacimiento ?? undefined,
+    gender: row.sexo ?? undefined,
+    address: row.direccion ?? undefined,
+    isMinor: computeIsMinor(row.fecha_nacimiento),
+    psychologistId: row.psicologo_id ?? undefined,
     emergencyContact: primaryContact ? toEmergencyContact(primaryContact) : undefined,
-    legalGuardian: row.legalGuardian ? toLegalGuardian(row.legalGuardian) : undefined,
-    createdAt: row.user.createdAt,
-    updatedAt: row.user.updatedAt,
+    legalGuardian: row.tutores_legales ? toLegalGuardian(row.tutores_legales) : undefined,
+    createdAt: row.usuarios.creado_en,
+    updatedAt: row.usuarios.actualizado_en,
   };
 }
 
 function toPatientProfile(row: PatientRow): PatientProfile {
-  const { user } = row;
+  const { usuarios: user } = row;
 
   return {
     ...toPatient(row),
-    timeZone: user.timeZone,
-    photoUrl: user.photoUrl ?? undefined,
-    notifyWhatsapp: user.notifyWhatsapp,
-    notifyEmail: user.notifyEmail,
+    timeZone: user.zona_horaria,
+    photoUrl: user.foto_perfil_url ?? undefined,
+    notifyWhatsapp: user.notificar_whatsapp,
+    notifyEmail: user.notificar_correo,
   };
 }
 
 /** Perfil del paciente autenticado (incluye preferencias de la cuenta). */
 export async function getMyPatientProfile(auth: AuthenticatedUser): Promise<PatientProfile> {
-  const row = await prisma.patient.findUnique({
-    where: { userId: auth.id },
+  const row = await prisma.pacientes.findUnique({
+    where: { usuario_id: auth.id },
     include: patientInclude,
   });
 
@@ -124,8 +124,8 @@ export async function updateMyPatientProfile(
   auth: AuthenticatedUser,
   input: UpdatePatientProfileInput,
 ): Promise<PatientProfile> {
-  const existing = await prisma.patient.findUnique({
-    where: { userId: auth.id },
+  const existing = await prisma.pacientes.findUnique({
+    where: { usuario_id: auth.id },
     select: { id: true },
   });
 
@@ -134,16 +134,16 @@ export async function updateMyPatientProfile(
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    const userData: Prisma.UserUpdateInput = {};
-    if (input.name !== undefined) userData.name = input.name;
-    if (input.phone !== undefined) userData.phone = emptyToNull(input.phone);
-    if (input.timeZone !== undefined) userData.timeZone = input.timeZone;
-    if (input.photoUrl !== undefined) userData.photoUrl = emptyToNull(input.photoUrl);
-    if (input.notifyWhatsapp !== undefined) userData.notifyWhatsapp = input.notifyWhatsapp;
-    if (input.notifyEmail !== undefined) userData.notifyEmail = input.notifyEmail;
+    const userData: Prisma.usuariosUpdateInput = {};
+    if (input.name !== undefined) userData.nombre_completo = input.name;
+    if (input.phone !== undefined) userData.telefono = emptyToNull(input.phone);
+    if (input.timeZone !== undefined) userData.zona_horaria = input.timeZone;
+    if (input.photoUrl !== undefined) userData.foto_perfil_url = emptyToNull(input.photoUrl);
+    if (input.notifyWhatsapp !== undefined) userData.notificar_whatsapp = input.notifyWhatsapp;
+    if (input.notifyEmail !== undefined) userData.notificar_correo = input.notifyEmail;
 
     if (Object.keys(userData).length > 0) {
-      await tx.user.update({ where: { id: auth.id }, data: userData });
+      await tx.usuarios.update({ where: { id: auth.id }, data: userData });
     }
 
     // El contacto de emergencia se edita como un bloque: el formulario solo maneja
@@ -154,35 +154,35 @@ export async function updateMyPatientProfile(
       input.emergencyContactRelationship !== undefined;
 
     if (touchesContact) {
-      const primary = await tx.emergencyContact.findFirst({
-        where: { patientId: existing.id, isPrimary: true },
+      const primary = await tx.contactos_emergencia.findFirst({
+        where: { paciente_id: existing.id, es_principal: true },
         select: { id: true },
       });
 
       if (primary) {
-        await tx.emergencyContact.update({
+        await tx.contactos_emergencia.update({
           where: { id: primary.id },
           data: {
-            name: input.emergencyContactName,
-            phone: input.emergencyContactPhone,
-            relationship: input.emergencyContactRelationship,
+            nombre_completo: input.emergencyContactName,
+            telefono: input.emergencyContactPhone,
+            parentesco: input.emergencyContactRelationship,
           },
         });
       } else if (input.emergencyContactName && input.emergencyContactPhone) {
-        await tx.emergencyContact.create({
+        await tx.contactos_emergencia.create({
           data: {
             id: randomUUID(),
-            patientId: existing.id,
-            name: input.emergencyContactName,
-            phone: input.emergencyContactPhone,
-            relationship: input.emergencyContactRelationship ?? null,
-            isPrimary: true,
+            paciente_id: existing.id,
+            nombre_completo: input.emergencyContactName,
+            telefono: input.emergencyContactPhone,
+            parentesco: input.emergencyContactRelationship ?? null,
+            es_principal: true,
           },
         });
       }
     }
 
-    return tx.patient.findUniqueOrThrow({ where: { id: existing.id }, include: patientInclude });
+    return tx.pacientes.findUniqueOrThrow({ where: { id: existing.id }, include: patientInclude });
   });
 
   return toPatientProfile(updated);
@@ -193,29 +193,29 @@ export async function updateMyPatientProfile(
  * administrador ven el directorio completo de cuentas activas.
  */
 export async function listPatients(auth: AuthenticatedUser): Promise<Patient[]> {
-  const where: Prisma.PatientWhereInput = { user: { isActive: true } };
+  const where: Prisma.pacientesWhereInput = { usuarios: { activo: true } };
 
   if (auth.role === UserRole.PATIENT) {
-    where.userId = auth.id;
+    where.usuario_id = auth.id;
   }
 
-  const rows = await prisma.patient.findMany({
+  const rows = await prisma.pacientes.findMany({
     where,
     include: patientInclude,
-    orderBy: { user: { name: "asc" } },
+    orderBy: { usuarios: { nombre_completo: "asc" } },
   });
 
   return rows.map(toPatient);
 }
 
 export async function getPatientById(id: string, auth: AuthenticatedUser): Promise<Patient> {
-  const row = await prisma.patient.findUnique({ where: { id }, include: patientInclude });
+  const row = await prisma.pacientes.findUnique({ where: { id }, include: patientInclude });
 
   if (!row) {
     throw AppError.notFound("El paciente no existe");
   }
 
-  if (auth.role === UserRole.PATIENT && row.userId !== auth.id) {
+  if (auth.role === UserRole.PATIENT && row.usuario_id !== auth.id) {
     throw AppError.forbidden("No puedes consultar el expediente de otro paciente");
   }
 
