@@ -391,6 +391,12 @@ export function AgendaClient() {
             <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
               {isPatient ? "Mis Citas" : "Agenda Activa"}
             </span>
+            {(appointmentsLoading || patientsLoading) && (
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" />
+                Cargando...
+              </span>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
             {isPatient ? (
@@ -1006,7 +1012,7 @@ export function AgendaClient() {
                           {patient?.name
                             ? patient.name
                                 .split(" ")
-                                .map((n) => n[0])
+                                .map((n: string) => n[0])
                                 .slice(0, 2)
                                 .join("")
                             : "P"}

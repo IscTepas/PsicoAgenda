@@ -7,6 +7,14 @@ const API_PREFIX = "/api";
 function buildApiUrl(path: string): string {
   // Normalizar: si el caller ya incluyó /api, no duplicar.
   const normalizedPath = path.startsWith(API_PREFIX) ? path : `${API_PREFIX}${path}`;
+
+  // En el navegador preferimos rutas relativas para que Next.js las reescriba al
+  // backend mediante `rewrites`. Esto evita problemas de CORS y de puertos en
+  // desarrollo. En SSR (Server Components) necesitamos la URL absoluta.
+  if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_API_URL) {
+    return normalizedPath;
+  }
+
   return `${API_URL}${normalizedPath}`;
 }
 
@@ -24,7 +32,7 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions extends Omit<RequestInit, "body"> {
+export interface RequestOptions extends Omit<RequestInit, "body"> {
   /**
    * Credencial de acceso de la sesión. Si se omite se resuelve desde el proveedor de
    * identidad, de modo que las rutas protegidas nunca viajan anónimas por descuido.

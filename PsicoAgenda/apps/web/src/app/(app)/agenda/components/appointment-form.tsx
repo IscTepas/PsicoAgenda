@@ -155,6 +155,11 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const paramPatientId = searchParams.get("patientId")
   const defaultPatientId = initialAppointment?.patientId || paramPatientId || ""
 
+  // Patients loaded from API
+  const [patients, setPatients] = React.useState<Patient[]>([])
+  const [patientsLoading, setPatientsLoading] = React.useState(!isPatient)
+  const [currentPatientId, setCurrentPatientId] = React.useState<string>("")
+
   // Form State
   const [selectedPatientId, setSelectedPatientId] = React.useState<string>(defaultPatientId)
   const [patientSearch, setPatientSearch] = React.useState<string>("")
@@ -201,12 +206,14 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
   const [isRebookingMode, setIsRebookingMode] = React.useState<boolean>(false)
+  const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false)
 
   // Today check
   const today = React.useMemo(() => new Date(), [])
   const isAppointmentToday = React.useMemo(() => {
     if (!initialAppointment) return false
-    return isSameDay(new Date(initialAppointment.startTime), today)
+    const start = toDate(initialAppointment.startTime)
+    return start ? isSameDay(start, today) : false
   }, [initialAppointment, today])
 
   // El paciente autenticado solo puede agendarse a sí mismo: el directorio visible
@@ -264,8 +271,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       const existing = appointments.find((apt) => {
         // Exclude current appointment when in edit mode
         if (isEdit && apt.id === initialAppointment?.id) return false
-        const aptDate = new Date(apt.startTime)
-        return isSameDay(aptDate, selectedDate) && aptDate.getHours() === hourNum && apt.status !== AppointmentStatus.CANCELLED
+        const aptDate = toDate(apt.startTime)
+        return aptDate && isSameDay(aptDate, selectedDate) && aptDate.getHours() === hourNum && apt.status !== AppointmentStatus.CANCELLED
       })
 
       if (existing) {
@@ -298,6 +305,14 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     d.setHours(9, 0, 0, 0)
     setSelectedDate(d)
     setDateInputValue(formatDateToInput(d))
+  }
+
+  // Build startTime from selected date + hour
+  const buildStartTime = (): Date => {
+    const d = new Date(selectedDate)
+    const hour = parseInt(selectedHour.split(":")[0], 10)
+    d.setHours(hour, 0, 0, 0)
+    return d
   }
 
   // Form Submission
@@ -442,7 +457,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
             </h1>
             <p className="text-sm text-muted-foreground">
               {isEdit
-                ? `Gestión integral de la sesión #${initialAppointment?.id} con el paciente.`
+                ? `Gestión integral de la sesión con el paciente.`
                 : "Programa una nueva consulta clínica definiendo paciente, fecha, hora y modalidad."}
             </p>
           </div>
@@ -511,6 +526,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
             <Button
               type="button"
               onClick={() => handleRecordAttendance(true)}
+              disabled={isSubmitting}
               className={`h-9 rounded-xl text-xs font-medium gap-1.5 ${
                 attendance === AttendanceStatus.ATTENDED
                   ? "bg-primary text-primary-foreground ring-2 ring-primary/30 ring-offset-1"
@@ -524,6 +540,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               type="button"
               variant="outline"
               onClick={() => handleRecordAttendance(false)}
+              disabled={isSubmitting}
               className={`h-9 rounded-xl text-xs font-medium gap-1.5 ${
                 attendance === AttendanceStatus.NO_SHOW
                   ? "border-destructive/40 bg-destructive/10 text-destructive"
@@ -552,7 +569,27 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           </CardHeader>
 
           <CardContent className="space-y-3">
-            {selectedPatient ? (
+            {isPatient ? (
+              <div className="p-4 rounded-xl border border-primary/20 bg-primary/[0.02] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="size-11 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center text-sm shadow-2xs">
+                    {user?.name?.split(" ").map((n) => n[0]).slice(0, 2).join("") ?? "YO"}
+                  </div>
+                  <div>
+                    <div className="font-heading font-semibold text-foreground text-sm">
+                      {user?.name ?? "Mi cuenta"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Paciente
+                    </div>
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground self-end sm:self-center">
+                  <span>Terapeuta: </span>
+                  <strong className="text-foreground">{MOCK_PSYCHOLOGIST.name}</strong>
+                </div>
+              </div>
+            ) : selectedPatient ? (
               // Selected Patient Card View
               <div className="p-4 rounded-xl border border-primary/20 bg-primary/[0.02] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -615,6 +652,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                     type="text"
                     placeholder="Escribe el nombre, correo o teléfono del paciente..."
                     value={patientSearch}
+                    disabled={patientsLoading}
                     onChange={(e) => {
                       setPatientSearch(e.target.value)
                       setIsPatientDropdownOpen(true)
@@ -622,7 +660,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                     onFocus={() => setIsPatientDropdownOpen(true)}
                     className="pl-9 pr-9 h-11 text-sm rounded-xl border-border/80 focus-visible:ring-primary/20"
                   />
-                  {patientSearch && (
+                  {patientsLoading && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 size-4 animate-spin text-muted-foreground" />
+                  )}
+                  {patientSearch && !patientsLoading && (
                     <button
                       type="button"
                       onClick={() => setPatientSearch("")}
@@ -785,7 +826,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                     <button
                       key={hourStr}
                       type="button"
-                      disabled={!isAvailable}
+                      disabled={!isAvailable || dayAppointmentsLoading}
                       onClick={() => setSelectedHour(hourStr)}
                       className={`p-2.5 rounded-xl border text-xs font-medium transition-all text-center flex flex-col items-center gap-1 ${
                         isSelected
@@ -817,6 +858,12 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   )
                 })}
               </div>
+              {dayAppointmentsLoading && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" />
+                  <span>Consultando disponibilidad...</span>
+                </div>
+              )}
             </div>
 
             {/* Duración de la sesión */}
@@ -1009,6 +1056,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 variant="destructive"
                 size="sm"
                 onClick={() => setIsCancelModalOpen(true)}
+                disabled={isSubmitting || status === AppointmentStatus.CANCELLED}
                 className="h-10 px-3.5 rounded-xl text-xs font-medium gap-1.5"
               >
                 <XCircle className="size-4" />
@@ -1024,6 +1072,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   // Highlight and notify
                   setSuccessMessage("Modo Reagendar activo: Modifica la fecha u hora en las secciones 2 y 3.")
                 }}
+                disabled={isSubmitting || status === AppointmentStatus.CANCELLED}
                 className="h-10 px-3.5 rounded-xl text-xs font-medium border-border/80 hover:border-primary/50 gap-1.5"
               >
                 <RefreshCw className="size-4 text-muted-foreground" />
@@ -1057,17 +1106,22 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               disabled={isSaving}
               className="h-10 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm font-semibold text-sm gap-2"
             >
-              {isEdit ? (
-                <>
-                  <Save className="size-4" />
-                  <span>Actualizar Cambios</span>
-                </>
+              {isSubmitting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : isEdit ? (
+                <Save className="size-4" />
               ) : (
-                <>
-                  <Plus className="size-4 stroke-[2.5]" />
-                  <span>{isPatient ? "Solicitar Cita" : "Guardar Cita"}</span>
-                </>
+                <Plus className="size-4 stroke-[2.5]" />
               )}
+              <span>
+                {isSubmitting
+                  ? "Guardando..."
+                  : isEdit
+                  ? "Actualizar Cambios"
+                  : isPatient
+                  ? "Solicitar Cita"
+                  : "Guardar Cita"}
+              </span>
             </Button>
           </div>
         </div>
@@ -1126,9 +1180,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               type="button"
               variant="destructive"
               onClick={handleConfirmCancel}
+              disabled={isSubmitting}
               className="h-9 rounded-xl text-xs font-semibold"
             >
-              Confirmar Cancelación
+              {isSubmitting ? "Cancelando..." : "Confirmar Cancelación"}
             </Button>
           </DialogFooter>
         </DialogContent>
