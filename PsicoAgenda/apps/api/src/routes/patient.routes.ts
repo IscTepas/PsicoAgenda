@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  createLogEntrySchema,
   idParamSchema,
   updatePatientProfileSchema,
 } from "@psicoagenda/shared";
@@ -9,6 +10,11 @@ import {
   listPatientsController,
   updateMyPatientController,
 } from "@/controllers/patient.controller";
+import { getClinicalRecordController } from "@/controllers/clinical-record.controller";
+import {
+  createLogEntryController,
+  listLogEntriesController,
+} from "@/controllers/log-entry.controller";
 import { requireAuth } from "@/middleware/auth.middleware";
 import { validate } from "@/middleware/validate.middleware";
 
@@ -26,11 +32,26 @@ router.patch(
 // Lista y detalle son legibles por cualquier sesión válida; el servicio acota lo
 // que ve un paciente (solo su propio registro).
 router.get("/", requireAuth, listPatientsController);
+router.get("/:id", requireAuth, validate({ params: idParamSchema }), getPatientController);
+
+// Expediente clínico y bitácora: exclusivos del profesional dueño del paciente.
 router.get(
-  "/:id",
+  "/:id/clinical-record",
   requireAuth,
   validate({ params: idParamSchema }),
-  getPatientController,
+  getClinicalRecordController,
+);
+router.get(
+  "/:id/log-entries",
+  requireAuth,
+  validate({ params: idParamSchema }),
+  listLogEntriesController,
+);
+router.post(
+  "/:id/log-entries",
+  requireAuth,
+  validate({ params: idParamSchema, body: createLogEntrySchema }),
+  createLogEntryController,
 );
 
 export default router;

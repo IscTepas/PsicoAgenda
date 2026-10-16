@@ -21,8 +21,6 @@ import {
   FileText,
   Save,
   Plus,
-  HelpCircle,
-  Loader2,
 } from "lucide-react"
 import {
   AppointmentStatus,
@@ -34,7 +32,6 @@ import {
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Card,
@@ -52,7 +49,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
-import { MOCK_PSYCHOLOGIST } from "@/lib/mock-data"
 import { appointmentService, patientService } from "@/services"
 
 const AVAILABLE_HOURS = [
@@ -69,7 +65,7 @@ const AVAILABLE_HOURS = [
   "18:00",
 ]
 
-const DURATION_OPTIONS = [30, 45, 50, 60]
+const DURATION_OPTIONS = [45, 50, 60]
 
 const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -100,21 +96,13 @@ function parseInputToDate(dateStr: string): Date {
   return new Date(y, m - 1, d, 9, 0, 0, 0)
 }
 
-function toDate(value: Date | string | undefined | null): Date | undefined {
-  if (!value) return undefined
-  return value instanceof Date ? value : new Date(value)
-}
-
-function startOfDay(date: Date): Date {
-  const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  return d
-}
-
-function endOfDay(date: Date): Date {
-  const d = new Date(date)
-  d.setHours(23, 59, 59, 999)
-  return d
+// Mismo estilo de estado que el panel y la agenda: pastilla gris + punto de color.
+const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
+  [AppointmentStatus.CONFIRMED]: { label: "Confirmada", dot: "bg-primary" },
+  [AppointmentStatus.PENDING]: { label: "Pendiente", dot: "bg-amber-500" },
+  [AppointmentStatus.CANCELLED]: { label: "Cancelada", dot: "bg-destructive" },
+  [AppointmentStatus.COMPLETED]: { label: "Completada", dot: "bg-muted-foreground/50" },
+  [AppointmentStatus.NO_SHOW]: { label: "No asistió", dot: "bg-muted-foreground/50" },
 }
 
 interface AppointmentFormProps {
@@ -130,11 +118,42 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
   const isPatient = effectiveRole === UserRole.PATIENT
 
-  // Pre-selected patient from props or query param (or locked to currentPatient if isPatient)
+  // Datos reales de la API. `patients` es el directorio visible según el rol: el
+  // psicólogo ve todos; un paciente, solo su propio registro.
+  const [patients, setPatients] = React.useState<Patient[]>([])
+  const [appointments, setAppointments] = React.useState<Appointment[]>([])
+  const [isLoadingData, setIsLoadingData] = React.useState(true)
+  const [isSaving, setIsSaving] = React.useState(false)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+
+    const load = async () => {
+      setIsLoadingData(true)
+      setLoadError(null)
+      try {
+        const data = await patientService.list()
+        if (!cancelled) setPatients(data)
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : "No se pudieron cargar los pacientes")
+        }
+      } finally {
+        if (!cancelled) setIsLoadingData(false)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Pre-selected patient from props or query param. El paciente queda fijado a su
+  // propio registro cuando el directorio carga.
   const paramPatientId = searchParams.get("patientId")
-  const defaultPatientId = isPatient
-    ? ""
-    : initialAppointment?.patientId || paramPatientId || ""
+  const defaultPatientId = initialAppointment?.patientId || paramPatientId || ""
 
   // Patients loaded from API
   const [patients, setPatients] = React.useState<Patient[]>([])
@@ -146,16 +165,23 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const [patientSearch, setPatientSearch] = React.useState<string>("")
   const [isPatientDropdownOpen, setIsPatientDropdownOpen] = React.useState<boolean>(false)
 
-  // Date and Time State
+  // Date and Time State. Desde la agenda se puede llegar con ?fecha=AAAA-MM-DD&hora=HH:00
+  // (al tocar un hueco libre), así que esos valores precargan el formulario.
+  const paramDate = searchParams.get("fecha")
+  const paramHour = searchParams.get("hora")
   const initialDate = initialAppointment?.startTime
-    ? toDate(initialAppointment.startTime) ?? new Date()
-    : new Date()
+    ? new Date(initialAppointment.startTime)
+    : paramDate && /^\d{4}-\d{2}-\d{2}$/.test(paramDate)
+      ? parseInputToDate(paramDate)
+      : new Date()
   const [selectedDate, setSelectedDate] = React.useState<Date>(initialDate)
   const [dateInputValue, setDateInputValue] = React.useState<string>(formatDateToInput(initialDate))
 
   const initialHour = initialAppointment?.startTime
-    ? `${String((toDate(initialAppointment.startTime) ?? new Date()).getHours()).padStart(2, "0")}:00`
-    : "10:00"
+    ? `${String(initialAppointment.startTime.getHours()).padStart(2, "0")}:00`
+    : paramHour && AVAILABLE_HOURS.includes(paramHour)
+      ? paramHour
+      : "10:00"
   const [selectedHour, setSelectedHour] = React.useState<string>(initialHour)
   const [durationMinutes, setDurationMinutes] = React.useState<number>(initialAppointment?.durationMinutes || 50)
   const [modality, setModality] = React.useState<AppointmentModality>(
@@ -190,58 +216,39 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     return start ? isSameDay(start, today) : false
   }, [initialAppointment, today])
 
-  // Load patients (for psychologists) or current patient profile (for patients)
+  // El paciente autenticado solo puede agendarse a sí mismo: el directorio visible
+  // para él contiene únicamente su registro, así que la selección se deriva en vez
+  // de sincronizarse por efecto.
+  const lockedPatientId = isPatient ? (patients[0]?.id ?? "") : selectedPatientId
+
+  // Citas del día seleccionado: alimentan el mapa de disponibilidad horaria. Se
+  // piden acotadas por fecha para no traer la agenda completa.
   React.useEffect(() => {
     let cancelled = false
 
-    if (isPatient) {
-      patientService
-        .list()
-        .then((data) => {
-          if (cancelled) return
-          const me = data[0]
-          if (me) {
-            setCurrentPatientId(me.id)
-          } else {
-            setErrorMessage("No se encontró un perfil de paciente asociado a tu cuenta.")
-          }
-        })
-        .catch((err) => {
-          if (cancelled) return
-          setErrorMessage("No se pudo cargar tu perfil de paciente. Intenta de nuevo.")
-          console.error(err)
-        })
-        .finally(() => {
-          if (!cancelled) setPatientsLoading(false)
-        })
-      return () => {
-        cancelled = true
-      }
-    }
+    const start = new Date(selectedDate)
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(selectedDate)
+    end.setHours(23, 59, 59, 999)
 
-    patientService
-      .list()
+    appointmentService
+      .list({ from: start, to: end })
       .then((data) => {
-        if (cancelled) return
-        setPatients(data)
+        if (!cancelled) setAppointments(data)
       })
-      .catch((err) => {
-        if (cancelled) return
-        setErrorMessage("No se pudieron cargar los pacientes. Intenta de nuevo.")
-        console.error(err)
+      .catch(() => {
+        if (!cancelled) setAppointments([])
       })
-      .finally(() => {
-        if (!cancelled) setPatientsLoading(false)
-      })
+
     return () => {
       cancelled = true
     }
-  }, [isPatient])
+  }, [selectedDate])
 
   // Selected Patient Object
   const selectedPatient = React.useMemo(() => {
-    return patients.find((p) => p.id === selectedPatientId)
-  }, [patients, selectedPatientId])
+    return patients.find((p) => p.id === lockedPatientId)
+  }, [patients, lockedPatientId])
 
   // Autocomplete patient filter
   const filteredPatients = React.useMemo(() => {
@@ -253,31 +260,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         p.email.toLowerCase().includes(q) ||
         (p.phone && p.phone.includes(q))
     )
-  }, [patientSearch, patients])
-
-  // Day appointments loaded from API for availability
-  const [dayAppointments, setDayAppointments] = React.useState<Appointment[]>([])
-  const [dayAppointmentsLoading, setDayAppointmentsLoading] = React.useState(true)
-
-  React.useEffect(() => {
-    let cancelled = false
-    appointmentService
-      .list({ from: startOfDay(selectedDate), to: endOfDay(selectedDate) })
-      .then((data) => {
-        if (cancelled) return
-        setDayAppointments(data)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        console.error(err)
-      })
-      .finally(() => {
-        if (!cancelled) setDayAppointmentsLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [selectedDate])
+  }, [patients, patientSearch])
 
   // Slot Availability Map for the selected date
   const slotAvailability = React.useMemo(() => {
@@ -285,7 +268,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
     AVAILABLE_HOURS.forEach((hourStr) => {
       const hourNum = parseInt(hourStr.split(":")[0], 10)
-      const existing = dayAppointments.find((apt) => {
+      const existing = appointments.find((apt) => {
         // Exclude current appointment when in edit mode
         if (isEdit && apt.id === initialAppointment?.id) return false
         const aptDate = toDate(apt.startTime)
@@ -304,7 +287,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     })
 
     return map
-  }, [dayAppointments, selectedDate, isEdit, initialAppointment, patients])
+  }, [appointments, patients, selectedDate, isEdit, initialAppointment])
 
   // Handle date change from input
   const handleDateChange = (val: string) => {
@@ -338,8 +321,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     setErrorMessage(null)
     setSuccessMessage(null)
 
-    const patientId = selectedPatientId || currentPatientId
-    if (!patientId) {
+    if (!lockedPatientId) {
       setErrorMessage("Por favor selecciona un paciente antes de continuar.")
       return
     }
@@ -361,32 +343,45 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       return
     }
 
-    setIsSubmitting(true)
-    try {
-      const payload = {
-        patientId,
-        startTime: buildStartTime(),
-        durationMinutes,
-        modality,
-        reason: reason || undefined,
-      }
+    const [hour, minute] = selectedHour.split(":").map(Number)
+    const startTime = new Date(selectedDate)
+    startTime.setHours(hour, minute, 0, 0)
 
+    setIsSaving(true)
+    try {
       if (isEdit && initialAppointment) {
-        await appointmentService.update(initialAppointment.id, payload)
+        await appointmentService.update(initialAppointment.id, {
+          startTime,
+          durationMinutes,
+          modality,
+          reason: reason || undefined,
+        })
+
+        // El estado administrativo viaja por su propio endpoint; solo se llama si
+        // el usuario lo cambió respecto a la cita original.
+        if (status !== initialAppointment.status && status !== AppointmentStatus.CANCELLED) {
+          await appointmentService.changeStatus(initialAppointment.id, status)
+        }
+
         setSuccessMessage("¡Cita actualizada exitosamente!")
       } else {
-        await appointmentService.create(payload)
+        await appointmentService.create({
+          patientId: lockedPatientId,
+          startTime,
+          durationMinutes,
+          modality,
+          reason: reason || undefined,
+        })
         setSuccessMessage("¡Cita agendada exitosamente!")
       }
 
       setTimeout(() => {
         router.push("/agenda")
-      }, 1000)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Ocurrió un error al guardar la cita."
-      setErrorMessage(message)
+      }, 900)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "No se pudo guardar la cita")
     } finally {
-      setIsSubmitting(false)
+      setIsSaving(false)
     }
   }
 
@@ -399,7 +394,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
     if (!initialAppointment) return
 
-    setIsSubmitting(true)
+    setIsSaving(true)
     try {
       await appointmentService.cancel(initialAppointment.id, cancellationReason.trim())
       setStatus(AppointmentStatus.CANCELLED)
@@ -407,36 +402,34 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       setSuccessMessage("La cita ha sido cancelada correctamente.")
       setTimeout(() => {
         router.push("/agenda")
-      }, 1200)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Ocurrió un error al cancelar la cita."
-      setCancelError(message)
+      }, 1100)
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : "No se pudo cancelar la cita")
     } finally {
-      setIsSubmitting(false)
+      setIsSaving(false)
     }
   }
 
   // Attendance Registration
   const handleRecordAttendance = async (attended: boolean) => {
     if (!initialAppointment) return
-    const newStatus = attended ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW
-    setIsSubmitting(true)
+
+    const nextStatus = attended ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW
+
+    setIsSaving(true)
     try {
-      await appointmentService.updateStatus(initialAppointment.id, newStatus)
-      if (attended) {
-        setAttendance(AttendanceStatus.ATTENDED)
-        setStatus(AppointmentStatus.COMPLETED)
-        setSuccessMessage("Asistencia registrada: Paciente asistió a la sesión.")
-      } else {
-        setAttendance(AttendanceStatus.NO_SHOW)
-        setStatus(AppointmentStatus.NO_SHOW)
-        setSuccessMessage("Asistencia registrada: Paciente no asistió.")
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Ocurrió un error al registrar la asistencia."
-      setErrorMessage(message)
+      await appointmentService.changeStatus(initialAppointment.id, nextStatus)
+      setAttendance(attended ? AttendanceStatus.ATTENDED : AttendanceStatus.NO_SHOW)
+      setStatus(nextStatus)
+      setSuccessMessage(
+        attended
+          ? "Asistencia registrada: Paciente asistió a la sesión."
+          : "Asistencia registrada: Paciente no asistió.",
+      )
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "No se pudo registrar la asistencia")
     } finally {
-      setIsSubmitting(false)
+      setIsSaving(false)
     }
   }
 
@@ -473,31 +466,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           {isEdit && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground font-medium">Estado actual:</span>
-              {status === AppointmentStatus.CONFIRMED && (
-                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300">
-                  <CheckCircle2 className="size-3 mr-1 text-emerald-600" /> Confirmada
-                </Badge>
-              )}
-              {status === AppointmentStatus.PENDING && (
-                <Badge className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300">
-                  <AlertCircle className="size-3 mr-1 text-amber-600" /> Pendiente
-                </Badge>
-              )}
-              {status === AppointmentStatus.CANCELLED && (
-                <Badge className="bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300">
-                  <XCircle className="size-3 mr-1 text-rose-600" /> Cancelada
-                </Badge>
-              )}
-              {status === AppointmentStatus.COMPLETED && (
-                <Badge className="bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300">
-                  <Check className="size-3 mr-1" /> Completada
-                </Badge>
-              )}
-              {status === AppointmentStatus.NO_SHOW && (
-                <Badge className="bg-gray-100 text-gray-700 border-gray-200">
-                  <HelpCircle className="size-3 mr-1" /> No asistió
-                </Badge>
-              )}
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-foreground/80">
+                <span className={`size-1.5 rounded-full ${STATUS_PILL[status].dot}`} aria-hidden="true" />
+                {STATUS_PILL[status].label}
+              </span>
             </div>
           )}
         </div>
@@ -505,17 +477,28 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
       {/* Success / Error Alerts */}
       {successMessage && (
-        <div className="p-4 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-3 animate-in fade-in-50">
-          <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
+        <div role="status" className="p-4 rounded-xl bg-primary/10 text-foreground border border-primary/20 flex items-center gap-3 animate-in fade-in-50">
+          <CheckCircle2 className="size-5 text-primary shrink-0" />
           <p className="text-sm font-medium">{successMessage}</p>
         </div>
       )}
 
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 flex items-center gap-3 animate-in fade-in-50">
-          <AlertCircle className="size-5 text-rose-600 shrink-0" />
+        <div role="alert" className="p-4 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 flex items-center gap-3 animate-in fade-in-50">
+          <AlertCircle className="size-5 shrink-0" />
           <p className="text-sm font-medium">{errorMessage}</p>
         </div>
+      )}
+
+      {loadError && (
+        <div role="alert" className="p-4 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 flex items-center gap-3 animate-in fade-in-50">
+          <AlertCircle className="size-5 shrink-0" />
+          <p className="text-sm font-medium">{loadError}</p>
+        </div>
+      )}
+
+      {isLoadingData && !loadError && (
+        <p className="text-xs text-muted-foreground">Cargando datos de la agenda…</p>
       )}
 
       {/* SECCIÓN DESTACADA: REGISTRAR ASISTENCIA (Solo si es el día de la cita y no es paciente) */}
@@ -546,7 +529,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               disabled={isSubmitting}
               className={`h-9 rounded-xl text-xs font-medium gap-1.5 ${
                 attendance === AttendanceStatus.ATTENDED
-                  ? "bg-emerald-600 text-white"
+                  ? "bg-primary text-primary-foreground ring-2 ring-primary/30 ring-offset-1"
                   : "bg-primary text-primary-foreground hover:bg-primary/90"
               }`}
             >
@@ -560,7 +543,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               disabled={isSubmitting}
               className={`h-9 rounded-xl text-xs font-medium gap-1.5 ${
                 attendance === AttendanceStatus.NO_SHOW
-                  ? "border-rose-400 bg-rose-50 text-rose-700"
+                  ? "border-destructive/40 bg-destructive/10 text-destructive"
                   : "border-border/80 hover:bg-muted"
               }`}
             >
@@ -620,7 +603,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   <div>
                     <div className="font-heading font-semibold text-foreground text-sm flex items-center gap-2">
                       <span>{selectedPatient.name}</span>
-                      <span className="text-[11px] px-2 py-0.2 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300">
+                      <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                         {selectedPatient.isMinor ? "Menor de edad" : "Adulto"}
                       </span>
                     </div>
@@ -631,27 +614,34 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-center">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedPatientId("")
-                      setPatientSearch("")
-                      setIsPatientDropdownOpen(true)
-                    }}
-                    className="h-8 text-xs rounded-lg border-border/80 hover:border-primary/50"
-                  >
-                    <RefreshCw className="size-3.5 mr-1 text-muted-foreground" />
-                    Cambiar paciente
-                  </Button>
-                  <Button variant="ghost" size="sm" asChild className="h-8 text-xs text-primary">
-                    <Link href={`/pacientes/${selectedPatient.id}`} target="_blank">
-                      Ver expediente
-                    </Link>
-                  </Button>
-                </div>
+                {isPatient ? (
+                  <div className="text-xs text-muted-foreground self-end sm:self-center">
+                    <span>Terapeuta: </span>
+                    <strong className="text-foreground">Tu terapeuta asignado</strong>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 self-end sm:self-center">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedPatientId("")
+                        setPatientSearch("")
+                        setIsPatientDropdownOpen(true)
+                      }}
+                      className="h-8 text-xs rounded-lg border-border/80 hover:border-primary/50"
+                    >
+                      <RefreshCw className="size-3.5 mr-1 text-muted-foreground" />
+                      Cambiar paciente
+                    </Button>
+                    <Button variant="ghost" size="sm" asChild className="h-8 text-xs text-primary">
+                      <Link href={`/pacientes/${selectedPatient.id}`} target="_blank">
+                        Ver expediente
+                      </Link>
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               // Autocomplete Search Input
@@ -853,13 +843,13 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                           isSelected
                             ? "text-primary-foreground"
                             : isAvailable
-                            ? "text-emerald-600 dark:text-emerald-400"
+                            ? "text-primary"
                             : "text-muted-foreground/60"
                         }`}
                       >
                         <span
                           className={`size-1.5 rounded-full ${
-                            isSelected ? "bg-white" : isAvailable ? "bg-emerald-500" : "bg-rose-400"
+                            isSelected ? "bg-primary-foreground" : isAvailable ? "bg-primary" : "bg-destructive/60"
                           }`}
                         />
                         {isAvailable ? "Disponible" : "Ocupado"}
@@ -1018,7 +1008,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   onClick={() => setStatus(AppointmentStatus.CONFIRMED)}
                   className={`p-2.5 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
                     status === AppointmentStatus.CONFIRMED
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-2xs"
+                      ? "bg-primary text-primary-foreground border-primary shadow-2xs"
                       : "bg-card border-border/70 text-foreground hover:bg-muted/40"
                   }`}
                 >
@@ -1113,7 +1103,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSaving}
               className="h-10 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm font-semibold text-sm gap-2"
             >
               {isSubmitting ? (

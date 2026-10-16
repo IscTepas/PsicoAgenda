@@ -1,5 +1,7 @@
 import Link from "next/link"
+import Image from "next/image"
 import { APP_NAME } from "@psicoagenda/shared"
+import { Wordmark } from "@/components/brand/wordmark"
 import { ArrowLeft, ShieldCheck } from "lucide-react"
 import { RegisterForm } from "./register-form"
 
@@ -21,10 +23,8 @@ export default function RegisterPage() {
         </Link>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-          <div className="size-6 rounded-md bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
-            Ψ
-          </div>
-          <span>{APP_NAME}</span>
+          <Image src="/images/psicoagenda-icon.png" alt="" width={36} height={32} className="h-8 w-9 object-contain" />
+          <Wordmark className="text-sm" />
         </div>
       </header>
 

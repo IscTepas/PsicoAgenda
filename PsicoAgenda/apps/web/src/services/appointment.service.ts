@@ -1,74 +1,108 @@
-import {
-  AppointmentStatus,
-  type Appointment,
-  type AppointmentModality,
-} from "@psicoagenda/shared";
-import { apiFetch } from "@/lib/api-client";
+import type { Appointment, AppointmentModality, AppointmentStatus } from "@psicoagenda/shared"
+import { apiFetch } from "@/lib/api-client"
+
+/**
+ * La API serializa las fechas como cadenas ISO; el tipo compartido dice que son
+ * `Date`. La interfaz hace `appointment.startTime.getHours()`, así que cada
+ * respuesta se "revive" antes de salir de este módulo.
+ */
+interface SerializedAppointment
+  extends Omit<Appointment, "startTime" | "createdAt" | "updatedAt"> {
+  startTime: string
+  createdAt: string
+  updatedAt: string
+}
+
+function reviveAppointment(raw: SerializedAppointment): Appointment {
+  return {
+    ...raw,
+    startTime: new Date(raw.startTime),
+    createdAt: new Date(raw.createdAt),
+    updatedAt: new Date(raw.updatedAt),
+  }
+}
+
+export interface AppointmentListParams {
+  from?: Date
+  to?: Date
+  patientId?: string
+  psychologistId?: string
+  status?: AppointmentStatus
+}
 
 export interface CreateAppointmentPayload {
-  patientId: string;
-  startTime: Date;
-  durationMinutes: number;
-  modality: AppointmentModality;
-  reason?: string;
-  psychologistId?: string;
+  patientId: string
+  startTime: Date
+  durationMinutes: number
+  modality: AppointmentModality
+  reason?: string
 }
 
 export interface UpdateAppointmentPayload {
-  startTime?: Date;
-  durationMinutes?: number;
-  modality?: AppointmentModality;
-  reason?: string;
-  notes?: string;
+  startTime?: Date
+  durationMinutes?: number
+  modality?: AppointmentModality
+  reason?: string
+  notes?: string
 }
 
-export interface AppointmentListFilter {
-  from?: Date;
-  to?: Date;
-  status?: AppointmentStatus;
-  patientId?: string;
-  psychologistId?: string;
-}
+function buildQuery(params: AppointmentListParams): string {
+  const search = new URLSearchParams()
 
-function toQueryString(filter: AppointmentListFilter): string {
-  const params = new URLSearchParams();
-  if (filter.from) params.set("from", filter.from.toISOString());
-  if (filter.to) params.set("to", filter.to.toISOString());
-  if (filter.status) params.set("status", filter.status);
-  if (filter.patientId) params.set("patientId", filter.patientId);
-  if (filter.psychologistId)
-    params.set("psychologistId", filter.psychologistId);
-  const query = params.toString();
-  return query ? `?${query}` : "";
+  if (params.from) search.set("from", params.from.toISOString())
+  if (params.to) search.set("to", params.to.toISOString())
+  if (params.patientId) search.set("patientId", params.patientId)
+  if (params.psychologistId) search.set("psychologistId", params.psychologistId)
+  if (params.status) search.set("status", params.status)
+
+  const query = search.toString()
+  return query ? `?${query}` : ""
 }
 
 export const appointmentService = {
-  list: (filter: AppointmentListFilter = {}) =>
-    apiFetch<Appointment[]>(`/appointments${toQueryString(filter)}`),
+  list: async (params: AppointmentListParams = {}): Promise<Appointment[]> => {
+    const rows = await apiFetch<SerializedAppointment[]>(`/appointments${buildQuery(params)}`)
+    return rows.map(reviveAppointment)
+  },
 
-  getById: (id: string) => apiFetch<Appointment>(`/appointments/${id}`),
+  get: async (id: string, token?: string): Promise<Appointment> =>
+    reviveAppointment(await apiFetch<SerializedAppointment>(`/appointments/${id}`, { token })),
 
-  create: (payload: CreateAppointmentPayload) =>
-    apiFetch<Appointment>("/appointments", {
-      method: "POST",
-      body: payload,
-    }),
+  create: async (payload: CreateAppointmentPayload): Promise<Appointment> =>
+    reviveAppointment(
+      await apiFetch<SerializedAppointment>("/appointments", {
+        method: "POST",
+        body: {
+          ...payload,
+          startTime: payload.startTime.toISOString(),
+        },
+      }),
+    ),
 
-  update: (id: string, payload: UpdateAppointmentPayload) =>
-    apiFetch<Appointment>(`/appointments/${id}`, {
-      method: "PATCH",
-      body: payload,
-    }),
+  update: async (id: string, payload: UpdateAppointmentPayload): Promise<Appointment> =>
+    reviveAppointment(
+      await apiFetch<SerializedAppointment>(`/appointments/${id}`, {
+        method: "PATCH",
+        body: {
+          ...payload,
+          ...(payload.startTime ? { startTime: payload.startTime.toISOString() } : {}),
+        },
+      }),
+    ),
 
-  updateStatus: (id: string, status: AppointmentStatus) =>
-    apiFetch<Appointment>(`/appointments/${id}/status`, {
-      method: "PATCH",
-      body: { status },
-    }),
+  changeStatus: async (id: string, status: AppointmentStatus): Promise<Appointment> =>
+    reviveAppointment(
+      await apiFetch<SerializedAppointment>(`/appointments/${id}/status`, {
+        method: "PATCH",
+        body: { status },
+      }),
+    ),
 
-  cancel: (id: string, reason: string) =>
-    apiFetch<Appointment>(`/appointments/${id}/cancel`, {
-      method: "POST",
-      body: { reason },
-    }),
-};
+  cancel: async (id: string, reason: string): Promise<Appointment> =>
+    reviveAppointment(
+      await apiFetch<SerializedAppointment>(`/appointments/${id}/cancel`, {
+        method: "POST",
+        body: { reason },
+      }),
+    ),
+}

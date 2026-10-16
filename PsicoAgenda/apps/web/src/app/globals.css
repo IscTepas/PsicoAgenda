@@ -46,6 +46,8 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --color-brand-psico: var(--brand-psico);
+  --color-brand-agenda: var(--brand-agenda);
 }
 
 :root {
@@ -81,6 +83,10 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.51 0.096 184);
+  /* Colores de la palabra "PsicoAgenda" del logo original
+     (medidos del PNG: Psico #00386e, Agenda #20a689). */
+  --brand-psico: #00386e;
+  --brand-agenda: #20a689;
 }
 
 .dark {
@@ -115,6 +121,9 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.6 0.09 184);
+  /* Mismos tonos del logo, aclarados para leerse sobre fondo oscuro. */
+  --brand-psico: #8db4e2;
+  --brand-agenda: #3cc4a4;
 }
 
 @layer base {
@@ -126,5 +135,93 @@
   }
   html {
     @apply font-sans;
+    /* Color de acento del sistema: cursor de texto y controles nativos en verde. */
+    accent-color: var(--primary);
+    caret-color: var(--primary);
+  }
+  /* Respuesta inmediata al tocar: sin el retardo de doble toque ni el destello
+     gris del navegador; cada control ya muestra su propio estado activo. */
+  a,
+  button,
+  summary,
+  label,
+  [role="button"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Desplazamiento suave a anclas y apertura animada de <details>, solo si el
+   usuario no pidió reducir el movimiento. Sin soporte del navegador, simplemente
+   no anima. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+    interpolate-size: allow-keywords;
+  }
+
+  details.disclosure::details-content {
+    height: 0;
+    opacity: 0;
+    overflow: clip;
+    transition:
+      height 320ms cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 240ms ease-out,
+      content-visibility 320ms allow-discrete;
+  }
+
+  details.disclosure[open]::details-content {
+    height: auto;
+    opacity: 1;
+  }
+
+  /* Aparición ligada al desplazamiento: el bloque sube 16px y se aclara mientras
+     entra en pantalla. Sigue al dedo (no a un reloj), así que se puede revertir
+     subiendo. Sin soporte de scroll-driven animations, todo se ve estático. */
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 90%;
+    }
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+/* Borde de la barra superior como "scroll edge": invisible arriba del todo y
+   aparece en cuanto el contenido pasa por debajo. Sin soporte, queda fijo. */
+@supports (animation-timeline: scroll()) {
+  .scroll-edge {
+    animation: scroll-edge linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 48px;
+  }
+}
+
+@keyframes scroll-edge {
+  from {
+    border-bottom-color: transparent;
+  }
+}
+
+/* Material translúcido: sólido si el sistema pide menos transparencia y con
+   borde definido si pide más contraste. */
+@media (prefers-reduced-transparency: reduce) {
+  .material {
+    background-color: var(--background);
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .material {
+    background-color: var(--background);
+    border-bottom-color: var(--foreground);
   }
 }

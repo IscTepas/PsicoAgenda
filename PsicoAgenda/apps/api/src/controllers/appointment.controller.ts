@@ -1,5 +1,4 @@
 import type { RequestHandler } from "express";
-import type { AppointmentStatus } from "@psicoagenda/shared";
 import {
   cancelAppointment,
   changeAppointmentStatus,
@@ -7,33 +6,23 @@ import {
   getAppointmentById,
   listAppointments,
   updateAppointment,
+  type CreateAppointmentInput,
+  type ListAppointmentsFilter,
+  type UpdateAppointmentInput,
 } from "@/services/appointment.service";
 import type { AuthedRequest } from "@/types/express";
-import type { AppointmentFilter } from "@/services/appointment.service";
-import type {
-  CreateAppointmentInput,
-  UpdateAppointmentInput,
-} from "@/types/appointment";
 
-export const listAppointmentsController: RequestHandler = async (
-  req: AuthedRequest,
-  res,
-  next,
-) => {
+export const listAppointmentsController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     // `validate` ya dejó la query parseada (fechas como Date, uuid validados).
-    const filter = req.query as unknown as AppointmentFilter;
+    const filter = req.query as ListAppointmentsFilter;
     res.json(await listAppointments(req.auth!, filter));
   } catch (error) {
     next(error);
   }
 };
 
-export const getAppointmentController: RequestHandler = async (
-  req: AuthedRequest,
-  res,
-  next,
-) => {
+export const getAppointmentController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     const { id } = req.params as { id: string };
     res.json(await getAppointmentById(id, req.auth!));
@@ -42,29 +31,19 @@ export const getAppointmentController: RequestHandler = async (
   }
 };
 
-export const createAppointmentController: RequestHandler = async (
-  req: AuthedRequest,
-  res,
-  next,
-) => {
+export const createAppointmentController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
-    const body = req.body as CreateAppointmentInput;
-    const created = await createAppointment(req.auth!, body);
+    const created = await createAppointment(req.auth!, req.body as CreateAppointmentInput);
     res.status(201).json(created);
   } catch (error) {
     next(error);
   }
 };
 
-export const updateAppointmentController: RequestHandler = async (
-  req: AuthedRequest,
-  res,
-  next,
-) => {
+export const updateAppointmentController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     const { id } = req.params as { id: string };
-    const body = req.body as UpdateAppointmentInput;
-    res.json(await updateAppointment(req.auth!, id, body));
+    res.json(await updateAppointment(req.auth!, id, req.body as UpdateAppointmentInput));
   } catch (error) {
     next(error);
   }
@@ -77,18 +56,14 @@ export const changeAppointmentStatusController: RequestHandler = async (
 ) => {
   try {
     const { id } = req.params as { id: string };
-    const { status } = req.body as { status: AppointmentStatus };
+    const { status } = req.body as { status: Parameters<typeof changeAppointmentStatus>[2] };
     res.json(await changeAppointmentStatus(req.auth!, id, status));
   } catch (error) {
     next(error);
   }
 };
 
-export const cancelAppointmentController: RequestHandler = async (
-  req: AuthedRequest,
-  res,
-  next,
-) => {
+export const cancelAppointmentController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     const { id } = req.params as { id: string };
     const { reason } = req.body as { reason: string };

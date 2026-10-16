@@ -46,18 +46,20 @@ interface ApiErrorBody {
 }
 
 /**
- * Resuelve la credencial de acceso vigente desde el cliente de Supabase SSR.
+ * Resuelve la credencial de acceso vigente en el navegador, leyéndola del cliente
+ * compartido de Supabase.
  *
- * Se usa el cliente de navegador (browser client) incluso durante SSR porque no
- * depende de `next/headers`, que solo está disponible en Server Components del
- * App Router. `createBrowserClient` lee la cookie de sesión tanto en el
- * navegador como en el renderizado del servidor de componentes cliente.
+ * En el servidor devuelve `null` a propósito: este módulo también entra en el grafo
+ * de los Client Components, así que no puede depender de `@/lib/supabase/server`
+ * (que importa `next/headers`, prohibido fuera de Server Components). Los Server
+ * Components inyectan la credencial explícitamente (`token`), resuelta por
+ * `@/lib/api-client.server`.
  */
 async function resolveAccessToken(): Promise<string | null> {
-  const { createClient } = await import("@/lib/supabase/client");
-  const client = createClient();
+  if (typeof window === "undefined") return null;
 
-  const { data } = await client.auth.getSession();
+  const { createClient } = await import("@/lib/supabase/client");
+  const { data } = await createClient().auth.getSession();
   return data.session?.access_token ?? null;
 }
 

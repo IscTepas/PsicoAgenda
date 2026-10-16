@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation"
-import { APP_NAME, type Appointment } from "@psicoagenda/shared"
+import { APP_NAME } from "@psicoagenda/shared"
 import { AppointmentForm } from "../components/appointment-form"
-import { apiFetchServer } from "@/lib/api-client-server"
+import { appointmentService } from "@/services"
 import { ApiError } from "@/lib/api-client"
+import { getServerAccessToken } from "@/lib/api-client.server"
 
 export const metadata = {
   title: `Gestión de Cita | ${APP_NAME}`,
@@ -15,13 +16,15 @@ export default async function AppointmentDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
+  const token = await getServerAccessToken()
 
-  let appointment: Appointment
+  let appointment
   try {
-    appointment = await apiFetchServer<Appointment>(`/appointments/${id}`)
+    appointment = await appointmentService.get(id, token ?? undefined)
   } catch (error) {
-    // Si la cita no existe o el usuario no tiene permiso, se trata como 404.
-    if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
+    // La API es la autoridad: 404 si no existe y 403 si es de otro paciente o
+    // profesional. En ambos casos la cita no debe mostrarse.
+    if (error instanceof ApiError && [401, 403, 404].includes(error.status)) {
       notFound()
     }
     throw error

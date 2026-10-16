@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
-  Calendar,
   CalendarDays,
   Clock,
   FileText,
@@ -20,19 +19,16 @@ import {
   CheckCircle2,
   Lock,
   Edit3,
-  Sparkles,
   BookmarkCheck,
   Copy,
-  ExternalLink,
-  ChevronRight,
   ClipboardList,
   Save,
   Bookmark,
   X,
 } from "lucide-react"
 import {
-  APP_NAME,
   AppointmentModality,
+  AppointmentStatus,
   type Patient,
   type Appointment,
 } from "@psicoagenda/shared"
@@ -47,7 +43,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  CardFooter,
 } from "@/components/ui/card"
 import {
   Dialog,
@@ -64,6 +59,15 @@ import {
   formatAppointmentTime,
   formatShortDate,
 } from "@/lib/mock-data"
+
+// Mismo estilo de estado que el panel y la agenda: pastilla gris + punto de color.
+const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
+  [AppointmentStatus.CONFIRMED]: { label: "Confirmada", dot: "bg-primary" },
+  [AppointmentStatus.PENDING]: { label: "Pendiente", dot: "bg-amber-500" },
+  [AppointmentStatus.CANCELLED]: { label: "Cancelada", dot: "bg-destructive" },
+  [AppointmentStatus.COMPLETED]: { label: "Completada", dot: "bg-muted-foreground/50" },
+  [AppointmentStatus.NO_SHOW]: { label: "No asistió", dot: "bg-muted-foreground/50" },
+}
 
 function calculateAge(birthDate?: Date): number | null {
   if (!birthDate) return null
@@ -281,9 +285,10 @@ export function PatientClinicalRecord({
         </Button>
 
         <div className="flex items-center gap-2">
-          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300">
-            <CheckCircle2 className="size-3 mr-1 text-emerald-600" /> Expediente Activo
-          </Badge>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-foreground/80">
+            <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+            Expediente activo
+          </span>
           <span className="text-xs text-muted-foreground hidden sm:inline">
             Uso Clínico Exclusivo
           </span>
@@ -292,15 +297,16 @@ export function PatientClinicalRecord({
 
       {/* SUCCESS TOAST BANNER */}
       {successToast && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 text-emerald-900 border border-emerald-200 flex items-center justify-between animate-in fade-in-50">
+        <div role="status" className="p-3.5 rounded-xl bg-primary/10 text-foreground border border-primary/20 flex items-center justify-between animate-in fade-in-50">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <CheckCircle2 className="size-4 text-emerald-600" />
+            <CheckCircle2 className="size-4 text-primary" />
             <span>{successToast}</span>
           </div>
           <button
             type="button"
             onClick={() => setSuccessToast(null)}
-            className="text-emerald-700 hover:text-emerald-900"
+            className="rounded-md p-0.5 text-primary hover:text-foreground"
+            aria-label="Cerrar aviso"
           >
             <X className="size-4" />
           </button>
@@ -385,7 +391,7 @@ export function PatientClinicalRecord({
             {/* Contacto de Emergencia Resaltado */}
             <div className="p-3.5 rounded-xl border border-amber-300/80 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-800/60 flex items-start justify-between gap-3">
               <div className="space-y-1 min-w-0">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                <div className="flex items-center gap-1.5 text-sm font-semibold text-amber-800 dark:text-amber-300">
                   <Phone className="size-3.5 text-amber-600" />
                   <span>Contacto de Emergencia</span>
                   <span className="text-[10px] bg-amber-200/60 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 px-1.5 rounded-full font-bold">
@@ -435,7 +441,7 @@ export function PatientClinicalRecord({
             {patient.legalGuardian ? (
               <div className="p-3.5 rounded-xl border border-primary/25 bg-primary/[0.03] flex items-start justify-between gap-3">
                 <div className="space-y-1 min-w-0">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-primary uppercase tracking-wider">
+                  <div className="flex items-center gap-1.5 text-sm font-semibold text-primary">
                     <ShieldCheck className="size-3.5" />
                     <span>Tutor Legal Responsable</span>
                   </div>
@@ -517,7 +523,7 @@ export function PatientClinicalRecord({
 
             <CardContent className="pt-4 space-y-4">
               <div className="p-4 rounded-xl bg-primary/[0.03] border border-primary/20 space-y-1">
-                <span className="text-xs font-semibold text-primary uppercase tracking-wider">
+                <span className="text-xs font-medium text-primary">
                   Trastorno Diagnósticado
                 </span>
                 <p className="text-base font-bold text-foreground">
@@ -530,7 +536,7 @@ export function PatientClinicalRecord({
 
               {/* Antecedentes clínicos y familiares */}
               <div className="space-y-1.5 pt-2">
-                <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
                   <FileText className="size-3.5 text-muted-foreground" />
                   <span>Antecedentes Clínicos y Familiares</span>
                 </h4>
@@ -541,7 +547,7 @@ export function PatientClinicalRecord({
 
               {/* Alergias / Alertas Clínicas */}
               <div className="space-y-1.5 pt-2">
-                <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5 uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                <h4 className="text-sm font-semibold flex items-center gap-1.5 text-rose-700 dark:text-rose-400">
                   <AlertTriangle className="size-3.5 text-rose-500" />
                   <span>Alergias y Alertas Médicas Relevantes</span>
                 </h4>
@@ -552,7 +558,7 @@ export function PatientClinicalRecord({
 
               {/* Observaciones Generales */}
               <div className="space-y-1.5 pt-2">
-                <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
                   <ClipboardList className="size-3.5 text-muted-foreground" />
                   <span>Observaciones Generales de Evolución</span>
                 </h4>
@@ -574,7 +580,7 @@ export function PatientClinicalRecord({
             <CardContent className="pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  <span className="size-2 rounded-full bg-emerald-500" />
+                  <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
                   <span className="text-xs font-semibold text-foreground">
                     Consentimiento Informado Vigente y Firmado
                   </span>
@@ -584,9 +590,10 @@ export function PatientClinicalRecord({
                 </p>
               </div>
 
-              <Badge variant="outline" className="w-fit text-xs bg-emerald-50 text-emerald-800 border-emerald-200">
-                Firmado Digitalmente ✅
-              </Badge>
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                Firmado digitalmente
+              </span>
             </CardContent>
           </Card>
         </TabsContent>
@@ -668,7 +675,7 @@ export function PatientClinicalRecord({
                   <CardContent className="p-4 sm:p-5 space-y-3.5 text-xs text-foreground">
                     {/* Observaciones / Notas Clínicas */}
                     <div className="space-y-1">
-                      <span className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wider block">
+                      <span className="block text-xs font-medium text-muted-foreground">
                         Observaciones Clínicas & Evolución:
                       </span>
                       <p className="leading-relaxed bg-muted/20 p-3.5 rounded-xl border border-border/40 whitespace-pre-line">
@@ -679,7 +686,7 @@ export function PatientClinicalRecord({
                     {/* Intervenciones */}
                     {log.interventions && (
                       <div className="space-y-1">
-                        <span className="font-semibold text-primary uppercase text-[10px] tracking-wider block">
+                        <span className="block text-xs font-medium text-primary">
                           Técnicas e Intervenciones Aplicadas:
                         </span>
                         <p className="leading-relaxed bg-primary/[0.02] p-3 rounded-xl border border-primary/20 text-foreground">
@@ -691,11 +698,11 @@ export function PatientClinicalRecord({
                     {/* Tareas Intersesión */}
                     {log.homework && (
                       <div className="space-y-1">
-                        <span className="font-semibold text-muted-foreground uppercase text-[10px] tracking-wider block">
+                        <span className="block text-xs font-medium text-muted-foreground">
                           Acuerdos y Tareas Intersesión:
                         </span>
                         <p className="leading-relaxed bg-muted/15 p-3 rounded-xl border border-border/40 text-foreground italic">
-                          📝 {log.homework}
+                          {log.homework}
                         </p>
                       </div>
                     )}
@@ -743,9 +750,10 @@ export function PatientClinicalRecord({
                       <Badge variant="outline" className="text-[10px] capitalize">
                         {apt.modality === AppointmentModality.IN_PERSON ? "Presencial" : "Virtual"}
                       </Badge>
-                      <Badge variant="secondary" className="text-[10px] uppercase">
-                        {apt.status}
-                      </Badge>
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2 py-0.5 text-[11px] font-medium text-foreground/80">
+                        <span className={`size-1.5 rounded-full ${STATUS_PILL[apt.status].dot}`} aria-hidden="true" />
+                        {STATUS_PILL[apt.status].label}
+                      </span>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Motivo: {apt.reason || "Consulta psicológica"} · Duración: {apt.durationMinutes} min
@@ -788,10 +796,6 @@ export function PatientClinicalRecord({
         <DialogContent className="sm:max-w-2xl p-6 bg-card border-border/80">
           <form onSubmit={handleSaveLog} className="space-y-4">
             <DialogHeader className="space-y-1.5">
-              <div className="flex items-center gap-2 text-primary font-semibold text-xs tracking-wider uppercase">
-                <FileText className="size-4" />
-                <span>{editingLog ? "Editar Entrada de Bitácora" : "Nueva Nota de Sesión Clínica"}</span>
-              </div>
               <DialogTitle className="text-xl font-heading font-semibold text-foreground">
                 {editingLog ? `Modificar Sesión #${editingLog.sessionNumber}` : `Registrar Entrada en Bitácora`}
               </DialogTitle>

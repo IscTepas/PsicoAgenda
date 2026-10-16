@@ -24,7 +24,7 @@ export const passwordSchema = z
  */
 export const createAppointmentSchema = z.object({
   psychologistId: z.string().uuid().optional(),
-  patientId: z.string().uuid().optional(),
+  patientId: z.string().uuid(),
   startTime: z.coerce.date(),
   durationMinutes: z.number().int().min(45).max(60),
   modality: z.enum(["in_person", "virtual"]),

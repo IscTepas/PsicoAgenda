@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useRef } from "react"
-import Link from "next/link"
 import {
   Camera,
   User,
@@ -10,14 +9,12 @@ import {
   CheckCircle2,
   Globe,
   Palette,
-  Bell,
   Shield,
   Save,
   RotateCcw,
   AlertCircle,
   FileCheck,
   HeartPulse,
-  ChevronRight,
 } from "lucide-react"
 import { UserRole } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
@@ -343,7 +340,7 @@ export function PantallaPerfilUsuario() {
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Campo Nombre */}
               <div className="space-y-1.5 sm:col-span-2">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   <User className="size-3.5 text-primary" />
                   Nombre Completo
                 </label>
@@ -362,7 +359,7 @@ export function PantallaPerfilUsuario() {
 
               {/* Campo Teléfono */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   <Phone className="size-3.5 text-primary" />
                   Teléfono de Contacto
                 </label>
@@ -384,7 +381,7 @@ export function PantallaPerfilUsuario() {
 
               {/* Campo Correo */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   <Mail className="size-3.5 text-primary" />
                   Correo Electrónico
                 </label>
@@ -408,7 +405,7 @@ export function PantallaPerfilUsuario() {
               {!isPatient && (
                 <>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                       <FileCheck className="size-3.5 text-primary" />
                       Cédula Profesional
                     </label>
@@ -422,7 +419,7 @@ export function PantallaPerfilUsuario() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                       <HeartPulse className="size-3.5 text-primary" />
                       Especialidad Clínica
                     </label>
@@ -441,7 +438,7 @@ export function PantallaPerfilUsuario() {
               {isPatient && (
                 <>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                       <Shield className="size-3.5 text-primary" />
                       Contacto de Emergencia (Nombre)
                     </label>
@@ -455,7 +452,7 @@ export function PantallaPerfilUsuario() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                       <Phone className="size-3.5 text-primary" />
                       Teléfono de Emergencia
                     </label>
@@ -495,7 +492,7 @@ export function PantallaPerfilUsuario() {
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Zona Horaria */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   <Globe className="size-3.5 text-primary" />
                   Zona Horaria
                 </label>
@@ -524,7 +521,7 @@ export function PantallaPerfilUsuario() {
 
               {/* Diseño de interfaz (tema) */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   <Palette className="size-3.5 text-primary" />
                   Diseño de Interfaz
                 </label>
@@ -545,26 +542,6 @@ export function PantallaPerfilUsuario() {
                 </p>
               </div>
             </div>
-
-            <Link
-              href="/notificaciones/configuracion"
-              className="flex items-center justify-between gap-3 p-3.5 rounded-xl border border-border/60 bg-muted/10 hover:bg-muted/20 transition-colors group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 border border-primary/20">
-                  <Bell className="size-4" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">
-                    Preferencias de Notificaciones
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Canales de WhatsApp/Correo y anticipación de recordatorios
-                  </p>
-                </div>
-              </div>
-              <ChevronRight className="size-4 text-muted-foreground shrink-0 group-hover:translate-x-0.5 transition-transform" />
-            </Link>
           </CardContent>
         </Card>
 

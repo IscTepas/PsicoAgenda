@@ -1,36 +1,18 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
 import Link from "next/link"
 import {
-  CalendarDays,
-  Clock,
-  Video,
-  MapPin,
-  FileText,
-  CheckCircle2,
-  AlertCircle,
-  Plus,
-  Users,
-  Copy,
-  Check,
-  ChevronRight,
-  ChevronLeft,
-  Calendar,
-  CalendarSync,
-  CalendarCheck,
-  CalendarPlus,
-  HeartHandshake,
-  XCircle,
-  ExternalLink,
-  UserCheck,
-  User,
-  Phone,
-  Mail,
-  ShieldCheck,
-  Sparkles,
   Bell,
-  UserPlus,
+  CalendarPlus,
+  Check,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  MapPin,
+  Plus,
+  Video,
 } from "lucide-react"
 import {
   AppointmentStatus,
@@ -41,15 +23,6 @@ import {
   type Patient,
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -58,21 +31,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { PageHeader } from "../components/page-header"
 import { useSession } from "@/lib/use-session"
 import { cn } from "@/lib/utils"
-import {
-  MOCK_APPOINTMENTS,
-  MOCK_PATIENTS,
-  MOCK_PSYCHOLOGIST,
-  formatAppointmentTime,
-  formatShortDate,
-  getPatientById,
-  getPatientForUser,
-  getLatestHomeworkForPatient,
-} from "@/lib/mock-data"
+import { formatAppointmentTime, formatShortDate } from "@/lib/format"
+import { appointmentService, patientService } from "@/services"
+
+const MINUTE = 60_000
+const DAY = 24 * 60 * MINUTE
+const CLOCK_TICK = 30_000
 
 function getInitials(name: string): string {
   const parts = name.trim().split(" ")
@@ -80,43 +46,6 @@ function getInitials(name: string): string {
     return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
   }
   return (name[0] ?? "P").toUpperCase()
-}
-
-function getStatusBadge(status: AppointmentStatus) {
-  switch (status) {
-    case AppointmentStatus.CONFIRMED:
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-          <CheckCircle2 className="size-3" />
-          Confirmada
-        </span>
-      )
-    case AppointmentStatus.PENDING:
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-          <Clock className="size-3" />
-          Por confirmar
-        </span>
-      )
-    case AppointmentStatus.COMPLETED:
-      return (
-        <span className="inline-flex items-center rounded-full border border-border/50 bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-          Completada
-        </span>
-      )
-    case AppointmentStatus.CANCELLED:
-      return (
-        <span className="inline-flex items-center rounded-full border border-destructive/20 bg-destructive/10 px-2.5 py-0.5 text-[11px] font-medium text-destructive">
-          Cancelada
-        </span>
-      )
-    case AppointmentStatus.NO_SHOW:
-      return (
-        <span className="inline-flex items-center rounded-full border border-border/50 bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-          No asistió
-        </span>
-      )
-  }
 }
 
 function isSameDay(d1: Date, d2: Date): boolean {
@@ -127,92 +56,375 @@ function isSameDay(d1: Date, d2: Date): boolean {
   )
 }
 
-function getPsychologistStatusBadge(status: AppointmentStatus) {
-  switch (status) {
-    case AppointmentStatus.CONFIRMED:
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 text-primary px-2.5 py-0.5 text-[11px] font-semibold tracking-tight shadow-2xs">
-          <CheckCircle2 className="size-3 text-primary" />
-          Confirmada
-        </span>
-      )
-    case AppointmentStatus.PENDING:
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800 px-2.5 py-0.5 text-[11px] font-medium shadow-2xs">
-          <Clock className="size-3 text-amber-600 dark:text-amber-400" />
-          Pendiente
-        </span>
-      )
-    case AppointmentStatus.COMPLETED:
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 text-muted-foreground px-2.5 py-0.5 text-[11px] font-medium">
-          <CheckCircle2 className="size-3 text-muted-foreground" />
-          Completada
-        </span>
-      )
-    case AppointmentStatus.CANCELLED:
-      return (
-        <span className="inline-flex items-center gap-1 rounded-full border border-destructive/30 bg-destructive/10 text-destructive px-2.5 py-0.5 text-[11px] font-medium line-through">
-          <XCircle className="size-3" />
-          Cancelada
-        </span>
-      )
-    default:
-      return (
-        <span className="inline-flex items-center rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-          {status}
-        </span>
-      )
-  }
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
 }
 
-function PsychologistDashboardView({ user }: { user: any }) {
-  const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS)
-  const [agendaFilter, setAgendaFilter] = useState<"all" | "confirmed" | "pending">("all")
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function getEndTime(apt: Appointment): Date {
+  return new Date(new Date(apt.startTime).getTime() + (apt.durationMinutes || 50) * MINUTE)
+}
+
+function isOpenAppointment(apt: Appointment): boolean {
+  return apt.status === AppointmentStatus.CONFIRMED || apt.status === AppointmentStatus.PENDING
+}
+
+/** "en 25 min", "en 2 h 10 min", "mañana", "en 3 días". */
+function formatRelative(target: Date, now: Date): string {
+  const minutes = Math.round((target.getTime() - now.getTime()) / MINUTE)
+  if (minutes <= 0) return "ahora"
+  if (isSameDay(target, now)) {
+    if (minutes < 60) return `en ${minutes} min`
+    const hours = Math.floor(minutes / 60)
+    const rest = minutes % 60
+    return rest ? `en ${hours} h ${rest} min` : `en ${hours} h`
+  }
+  const days = Math.round((startOfDay(target).getTime() - startOfDay(now).getTime()) / DAY)
+  return days === 1 ? "mañana" : `en ${days} días`
+}
+
+function formatHourLabel(hour: number): string {
+  const h12 = hour % 12 === 0 ? 12 : hour % 12
+  return `${h12} ${hour < 12 ? "a.m." : "p.m."}`
+}
+
+// Reloj compartido: avanza cada 30 s. En el servidor no hay "ahora" (null), así
+// la cuenta regresiva y la línea de tiempo solo aparecen ya hidratadas.
+function subscribeClock(onTick: () => void) {
+  const id = setInterval(onTick, CLOCK_TICK)
+  return () => clearInterval(id)
+}
+const getClockSnapshot = () => Math.floor(Date.now() / CLOCK_TICK) * CLOCK_TICK
+const getServerClockSnapshot = () => null
+
+function useNow(): Date | null {
+  const timestamp = useSyncExternalStore(subscribeClock, getClockSnapshot, getServerClockSnapshot)
+  return useMemo(() => (timestamp === null ? null : new Date(timestamp)), [timestamp])
+}
+
+// Un solo estilo de estado en todo el panel: pastilla neutra + punto de color.
+const STATUS_META: Record<AppointmentStatus, { label: string; dot: string }> = {
+  [AppointmentStatus.CONFIRMED]: { label: "Confirmada", dot: "bg-primary" },
+  [AppointmentStatus.PENDING]: { label: "Por confirmar", dot: "bg-amber-500" },
+  [AppointmentStatus.COMPLETED]: { label: "Completada", dot: "bg-muted-foreground/50" },
+  [AppointmentStatus.CANCELLED]: { label: "Cancelada", dot: "bg-destructive" },
+  [AppointmentStatus.NO_SHOW]: { label: "No asistió", dot: "bg-muted-foreground/50" },
+}
+
+function StatusLabel({ status, label }: { status: AppointmentStatus; label?: string }) {
+  const meta = STATUS_META[status]
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-foreground/80">
+      <span className={cn("size-1.5 rounded-full", meta.dot)} aria-hidden="true" />
+      {label ?? meta.label}
+    </span>
+  )
+}
+
+function ModalityLabel({ modality }: { modality: AppointmentModality }) {
+  const isVirtual = modality === AppointmentModality.VIRTUAL
+  const Icon = isVirtual ? Video : MapPin
+  return (
+    <span className="inline-flex items-center gap-1">
+      <Icon className="size-3" aria-hidden="true" />
+      {isVirtual ? "Virtual" : "Presencial"}
+    </span>
+  )
+}
+
+function NotificationsButton({ count, className }: { count: number; className?: string }) {
+  return (
+    <Link
+      href="/notificaciones"
+      className={cn(
+        "relative inline-flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.97]",
+        className
+      )}
+      aria-label={`Notificaciones (${count} sin leer)`}
+      title="Notificaciones"
+    >
+      <Bell className="size-[18px]" />
+      {count > 0 && (
+        <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground ring-2 ring-background">
+          {count}
+        </span>
+      )}
+    </Link>
+  )
+}
+
+function ActionNotice({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <div
+      role="status"
+      className="flex items-center justify-between gap-3 rounded-xl bg-primary/10 px-4 py-3 text-sm text-foreground animate-in fade-in slide-in-from-top-1 duration-200"
+    >
+      <span className="flex items-center gap-2.5">
+        <CheckCircle2 className="size-4 shrink-0 text-primary" />
+        {message}
+      </span>
+      <button
+        type="button"
+        onClick={onClose}
+        className="shrink-0 rounded-md px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/10"
+      >
+        Cerrar
+      </button>
+    </div>
+  )
+}
+
+/** Indicador "en vivo": late solo mientras una sesión está en curso. */
+function LiveDot({ pulsing }: { pulsing: boolean }) {
+  return (
+    <span className="relative flex size-2" aria-hidden="true">
+      {pulsing && (
+        <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-60 motion-reduce:hidden" />
+      )}
+      <span className="relative inline-flex size-2 rounded-full bg-primary" />
+    </span>
+  )
+}
+
+const TIMELINE_TONE: Record<AppointmentStatus, string> = {
+  [AppointmentStatus.CONFIRMED]: "bg-primary text-primary-foreground hover:bg-primary/90",
+  [AppointmentStatus.PENDING]:
+    "bg-amber-100 text-amber-900 ring-1 ring-inset ring-amber-300 hover:bg-amber-200/70 dark:bg-amber-500/20 dark:text-amber-100 dark:ring-amber-500/40",
+  [AppointmentStatus.COMPLETED]: "bg-muted-foreground/15 text-muted-foreground hover:bg-muted-foreground/25",
+  [AppointmentStatus.NO_SHOW]: "bg-muted-foreground/15 text-muted-foreground hover:bg-muted-foreground/25",
+  [AppointmentStatus.CANCELLED]: "hidden",
+}
+
+/**
+ * La jornada como una barra: cada cita ocupa su hora real, los huecos libres se
+ * ven a simple vista y la línea de "ahora" avanza sola.
+ */
+function DayTimeline({
+  appointments,
+  patientById,
+  now,
+  highlightId,
+  onSelect,
+}: {
+  appointments: Appointment[]
+  patientById: Map<string, Patient>
+  now: Date | null
+  highlightId?: string
+  onSelect: (apt: Appointment) => void
+}) {
+  const visible = appointments.filter((apt) => apt.status !== AppointmentStatus.CANCELLED)
+
+  const startHour = Math.min(8, ...visible.map((apt) => new Date(apt.startTime).getHours()))
+  const endHour = Math.max(
+    20,
+    ...visible.map((apt) => {
+      const end = getEndTime(apt)
+      return end.getHours() + (end.getMinutes() > 0 ? 1 : 0)
+    })
+  )
+  const span = endHour - startHour
+  const toPct = (d: Date) =>
+    Math.min(100, Math.max(0, ((d.getHours() + d.getMinutes() / 60 - startHour) / span) * 100))
+
+  const nowPct = now ? toPct(now) : null
+  const hourMarks: number[] = []
+  for (let h = startHour + (startHour % 2); h <= endHour; h += 2) hourMarks.push(h)
+
+  return (
+    <div className="@container space-y-2">
+      <div className="relative h-12 overflow-hidden rounded-xl bg-muted/60">
+        {/* Tiempo transcurrido, apenas sombreado */}
+        {nowPct !== null && (
+          <div
+            className="absolute inset-y-0 left-0 bg-foreground/[0.035]"
+            style={{ width: `${nowPct}%` }}
+            aria-hidden="true"
+          />
+        )}
+
+        {visible.map((apt) => {
+          const start = new Date(apt.startTime)
+          const left = toPct(start)
+          const width = Math.max(toPct(getEndTime(apt)) - left, 3)
+          const patientName = patientById.get(apt.patientId)?.name ?? "Paciente"
+
+          return (
+            <button
+              key={apt.id}
+              type="button"
+              onClick={() => onSelect(apt)}
+              title={`${formatAppointmentTime(start)} · ${patientName} · ${STATUS_META[apt.status].label}`}
+              aria-label={`${formatAppointmentTime(start)}, ${patientName}, ${STATUS_META[apt.status].label}`}
+              className={cn(
+                "absolute inset-y-1.5 flex items-center overflow-hidden rounded-lg px-2 text-left text-[11px] font-medium transition-[background-color,transform] duration-150 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                TIMELINE_TONE[apt.status],
+                apt.id === highlightId && "outline-2 outline-offset-2 outline-primary"
+              )}
+              style={{ left: `${left}%`, width: `${width}%` }}
+            >
+              <span className="truncate">{patientName.split(" ")[0]}</span>
+            </button>
+          )
+        })}
+
+        {nowPct !== null && nowPct > 0 && nowPct < 100 && (
+          <div
+            className="pointer-events-none absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground"
+            style={{ left: `${nowPct}%` }}
+            aria-hidden="true"
+          >
+            <span className="absolute left-1/2 top-0 size-2 -translate-x-1/2 rounded-full bg-foreground" />
+          </div>
+        )}
+      </div>
+
+      <div className="relative h-4 text-[10px] tabular-nums text-muted-foreground" aria-hidden="true">
+        {hourMarks.map((h) => (
+          <span
+            key={h}
+            className={cn(
+              "absolute whitespace-nowrap",
+              h === startHour ? "" : h === endHour ? "-translate-x-full" : "-translate-x-1/2",
+              // En anchos angostos, una etiqueta cada 4 h para que no se encimen
+              (h - hourMarks[0]) % 4 !== 0 && "hidden @lg:inline"
+            )}
+            style={{ left: `${((h - startHour) / span) * 100}%` }}
+          >
+            {formatHourLabel(h)}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+type AgendaFilter = "all" | "confirmed" | "pending"
+
+const FILTER_EMPTY_COPY: Record<AgendaFilter, string> = {
+  all: "No hay citas este día",
+  confirmed: "No hay citas confirmadas este día",
+  pending: "No hay citas por confirmar este día",
+}
+
+type SessionUser = ReturnType<typeof useSession>["user"]
+
+function PsychologistDashboardView({ user }: { user: SessionUser }) {
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [patients, setPatients] = useState<Patient[]>([])
+  const [agendaFilter, setAgendaFilter] = useState<AgendaFilter>("all")
   const [activeSessionAppointment, setActiveSessionAppointment] = useState<Appointment | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
+  const listRef = useRef<HTMLElement>(null)
+
+  const [isDataLoading, setIsDataLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    Promise.all([appointmentService.list(), patientService.list()])
+      .then(([appointmentRows, patientRows]) => {
+        if (cancelled) return
+        setAppointments(appointmentRows)
+        setPatients(patientRows)
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("No se pudieron cargar tus datos. Intenta recargar la página.")
+      })
+      .finally(() => {
+        if (!cancelled) setIsDataLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const patientById = useMemo(
+    () => new Map(patients.map((patient) => [patient.id, patient])),
+    [patients],
+  )
 
   // Mini-calendario state
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date())
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date>(new Date())
 
   const today = useMemo(() => new Date(), [])
+  const now = useNow()
+  const clock = now ?? today
 
   // Nombre y saludo personalizado: "Hola, Psic. [Nombre]"
-  const rawName = user?.name || MOCK_PSYCHOLOGIST.name
-  const cleanName = rawName.replace(/^(Dra.|Dr.|Psic.|Lic.)s*/i, "")
+  const rawName = user?.name || "Psicólogo"
+  const cleanName = rawName.replace(/^(Dra\.|Dr\.|Psic\.|Lic\.)\s*/i, "")
   const psychologistGreeting = `Hola, Psic. ${cleanName}`
 
-  // Citas de hoy exclusivamente
-  const todayAppointments = useMemo(() => {
-    return appointments
-      .filter((apt) => isSameDay(new Date(apt.startTime), today))
+  const appointmentsOn = (day: Date) =>
+    appointments
+      .filter((apt) => isSameDay(new Date(apt.startTime), day))
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-  }, [appointments, today])
 
-  // Métricas rápidas
-  const confirmedTodayCount = useMemo(() => {
-    return todayAppointments.filter((apt) => apt.status === AppointmentStatus.CONFIRMED).length
-  }, [todayAppointments])
+  const todayAppointments = useMemo(
+    () =>
+      appointments
+        .filter((apt) => isSameDay(new Date(apt.startTime), today))
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+    [appointments, today]
+  )
 
-  const pendingTodayCount = useMemo(() => {
-    return todayAppointments.filter((apt) => apt.status === AppointmentStatus.PENDING).length
-  }, [todayAppointments])
+  // Qué sigue: la sesión en curso o, si no hay, la próxima abierta de hoy.
+  const openToday = todayAppointments.filter(isOpenAppointment)
+  const currentAppointment =
+    openToday.find((apt) => new Date(apt.startTime) <= clock && clock < getEndTime(apt)) ?? null
+  const upcomingAppointment = openToday.find((apt) => new Date(apt.startTime) > clock) ?? null
+  const focusAppointment = currentAppointment ?? upcomingAppointment
+  const focusPatient = focusAppointment ? patientById.get(focusAppointment.patientId) : undefined
+  // Sesiones que ya terminaron pero siguen abiertas: falta registrar asistencia.
+  const unregisteredToday = openToday.filter((apt) => getEndTime(apt) <= clock)
 
-  const cancelledThisWeekCount = useMemo(() => {
-    return appointments.filter((apt) => apt.status === AppointmentStatus.CANCELLED).length || 1
-  }, [appointments])
+  const tomorrow = new Date(today.getTime() + DAY)
+  const tomorrowAppointments = appointmentsOn(tomorrow).filter(isOpenAppointment)
 
-  // Filtrado de citas de hoy
-  const filteredTodayAppointments = useMemo(() => {
-    if (agendaFilter === "confirmed") {
-      return todayAppointments.filter((apt) => apt.status === AppointmentStatus.CONFIRMED)
-    }
-    if (agendaFilter === "pending") {
-      return todayAppointments.filter((apt) => apt.status === AppointmentStatus.PENDING)
-    }
-    return todayAppointments
-  }, [todayAppointments, agendaFilter])
+  const todayConfirmed = todayAppointments.filter((a) => a.status === AppointmentStatus.CONFIRMED).length
+  const todayPending = todayAppointments.filter((a) => a.status === AppointmentStatus.PENDING).length
+  const lastOpenToday = openToday[openToday.length - 1]
+
+  // Cola de confirmación: pendientes de hoy en adelante.
+  const pendingQueue = useMemo(
+    () =>
+      appointments
+        .filter(
+          (apt) =>
+            apt.status === AppointmentStatus.PENDING &&
+            new Date(apt.startTime) >= startOfDay(today)
+        )
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+        .slice(0, 4),
+    [appointments, today]
+  )
+
+  // Lista: el día elegido en el calendario (hoy por defecto)
+  const isViewingToday = isSameDay(selectedCalendarDate, today)
+  const dayAppointments = appointmentsOn(selectedCalendarDate)
+  const dayConfirmed = dayAppointments.filter((a) => a.status === AppointmentStatus.CONFIRMED).length
+  const dayPending = dayAppointments.filter((a) => a.status === AppointmentStatus.PENDING).length
+  const filteredDayAppointments = dayAppointments.filter((apt) => {
+    if (agendaFilter === "confirmed") return apt.status === AppointmentStatus.CONFIRMED
+    if (agendaFilter === "pending") return apt.status === AppointmentStatus.PENDING
+    return true
+  })
+
+  const selectedDayTitle = isViewingToday
+    ? "Citas de hoy"
+    : capitalize(
+        selectedCalendarDate.toLocaleDateString("es-MX", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        })
+      )
 
   // Mini-calendario mensual: cálculo de días de la cuadrícula
   const monthDays = useMemo(() => {
@@ -220,56 +432,35 @@ function PsychologistDashboardView({ user }: { user: any }) {
     const month = calendarMonth.getMonth()
     const firstDay = new Date(year, month, 1)
     const lastDay = new Date(year, month + 1, 0)
-    
+
     // Lunes como inicio (0=Lu ... 6=Do)
     const startDayIndex = (firstDay.getDay() + 6) % 7
     const prevMonthLastDay = new Date(year, month, 0).getDate()
-    
-    const days: {
-      date: Date
-      isCurrentMonth: boolean
-      hasAppointments: boolean
-      isToday: boolean
-      isSelected: boolean
-    }[] = []
-    
-    // Días del mes previo
+
+    const buildDay = (d: Date, isCurrentMonth: boolean) => ({
+      date: d,
+      isCurrentMonth,
+      hasAppointments: appointments.some(
+        (a) => a.status !== AppointmentStatus.CANCELLED && isSameDay(new Date(a.startTime), d)
+      ),
+      isToday: isSameDay(d, today),
+      isSelected: isSameDay(d, selectedCalendarDate),
+    })
+
+    const days: ReturnType<typeof buildDay>[] = []
+
     for (let i = startDayIndex - 1; i >= 0; i--) {
-      const d = new Date(year, month - 1, prevMonthLastDay - i)
-      days.push({
-        date: d,
-        isCurrentMonth: false,
-        hasAppointments: appointments.some((a) => isSameDay(new Date(a.startTime), d)),
-        isToday: isSameDay(d, today),
-        isSelected: isSameDay(d, selectedCalendarDate),
-      })
+      days.push(buildDay(new Date(year, month - 1, prevMonthLastDay - i), false))
     }
-    
-    // Días del mes actual
     for (let i = 1; i <= lastDay.getDate(); i++) {
-      const d = new Date(year, month, i)
-      days.push({
-        date: d,
-        isCurrentMonth: true,
-        hasAppointments: appointments.some((a) => isSameDay(new Date(a.startTime), d)),
-        isToday: isSameDay(d, today),
-        isSelected: isSameDay(d, selectedCalendarDate),
-      })
+      days.push(buildDay(new Date(year, month, i), true))
     }
-    
     // Rellenar días del mes siguiente hasta completar múltiplo de 7
     const remaining = (7 - (days.length % 7)) % 7
     for (let i = 1; i <= remaining; i++) {
-      const d = new Date(year, month + 1, i)
-      days.push({
-        date: d,
-        isCurrentMonth: false,
-        hasAppointments: appointments.some((a) => isSameDay(new Date(a.startTime), d)),
-        isToday: isSameDay(d, today),
-        isSelected: isSameDay(d, selectedCalendarDate),
-      })
+      days.push(buildDay(new Date(year, month + 1, i), false))
     }
-    
+
     return days
   }, [calendarMonth, appointments, today, selectedCalendarDate])
 
@@ -281,503 +472,546 @@ function PsychologistDashboardView({ user }: { user: any }) {
     setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
   }
 
-  const handleRegisterAttendance = (aptId: string) => {
-    setAppointments((prev) =>
-      prev.map((apt) =>
-        apt.id === aptId
-          ? { ...apt, status: AppointmentStatus.COMPLETED }
-          : apt
-      )
-    )
-    setActionNotice("Asistencia registrada con éxito. La sesión fue completada.")
-    setActiveSessionAppointment(null)
+  const selectDay = (day: Date) => {
+    setSelectedCalendarDate(day)
+    setCalendarMonth(new Date(day.getFullYear(), day.getMonth(), 1))
+    setAgendaFilter("all")
+  }
+
+  const scrollToList = () => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    listRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" })
+  }
+
+  const showPendingToday = () => {
+    selectDay(today)
+    setAgendaFilter("pending")
+    scrollToList()
+  }
+
+  const showNotice = (message: string) => {
+    setActionNotice(message)
     setTimeout(() => setActionNotice(null), 3500)
   }
 
-  const handleConfirmAppointment = (aptId: string) => {
-    setAppointments((prev) =>
-      prev.map((apt) =>
-        apt.id === aptId
-          ? { ...apt, status: AppointmentStatus.CONFIRMED }
-          : apt
-      )
-    )
-    setActionNotice("Cita confirmada correctamente.")
-    setActiveSessionAppointment(null)
-    setTimeout(() => setActionNotice(null), 3500)
+  const handleRegisterAttendance = async (aptId: string) => {
+    try {
+      const updated = await appointmentService.changeStatus(aptId, AppointmentStatus.COMPLETED)
+      setAppointments((prev) => prev.map((apt) => (apt.id === aptId ? updated : apt)))
+      setActiveSessionAppointment(null)
+      showNotice("Asistencia registrada. La sesión quedó como completada.")
+    } catch {
+      showNotice("No se pudo registrar la asistencia. Intenta de nuevo.")
+    }
   }
 
-  // Formato del mes para el mini-calendario (ej. "Octubre 2026")
-  const monthLabel = calendarMonth.toLocaleDateString("es-MX", {
-    month: "long",
-    year: "numeric",
-  })
-  const formattedMonth = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)
+  const handleConfirmAppointment = async (aptId: string) => {
+    try {
+      const updated = await appointmentService.changeStatus(aptId, AppointmentStatus.CONFIRMED)
+      setAppointments((prev) => prev.map((apt) => (apt.id === aptId ? updated : apt)))
+      setActiveSessionAppointment(null)
+      const name = patientById.get(appointments.find((a) => a.id === aptId)?.patientId ?? "")?.name
+      showNotice(name ? `Cita con ${name} confirmada.` : "Cita confirmada.")
+    } catch {
+      showNotice("No se pudo confirmar la cita. Intenta de nuevo.")
+    }
+  }
 
-  // Formato de fecha para el subtítulo de la cabecera
-  const formattedToday = today.toLocaleDateString("es-MX", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  })
-  const formattedTodayHeader = formattedToday.charAt(0).toUpperCase() + formattedToday.slice(1)
+  const formattedMonth = capitalize(
+    calendarMonth.toLocaleDateString("es-MX", { month: "long", year: "numeric" })
+  )
+
+  const formattedTodayHeader = capitalize(
+    today.toLocaleDateString("es-MX", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+    })
+  )
+
+  const filters: { value: AgendaFilter; label: string; count: number }[] = [
+    { value: "all", label: "Todas", count: dayAppointments.length },
+    { value: "confirmed", label: "Confirmadas", count: dayConfirmed },
+    { value: "pending", label: "Por confirmar", count: dayPending },
+  ]
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      {/* 1. CABECERA (HEADER CON IDENTIDAD CLÍNICA) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5 border-b border-border/70">
+    <div className="mx-auto max-w-6xl space-y-8">
+      {/* Encabezado: saludo + acciones principales */}
+      <header className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground font-heading">
+          <p className="text-sm text-muted-foreground">{formattedTodayHeader}</p>
+          <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             {psychologistGreeting}
           </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground flex items-center gap-2">
-            <span>{formattedTodayHeader}</span>
-            <span className="opacity-40">•</span>
-            <span className="font-medium text-primary">Panel de Práctica Clínica</span>
-          </p>
         </div>
 
-        {/* Campana de Notificaciones con Indicador Numérico y Foto de Perfil */}
-        <div className="flex items-center gap-3">
-          <Link
-            href="/notificaciones"
-            className="relative p-2.5 rounded-xl border border-border/80 bg-card text-foreground hover:bg-muted/70 hover:border-primary/40 transition-colors shadow-2xs"
-            title="Notificaciones de citas y recordatorios"
-            aria-label="Notificaciones"
-          >
-            <Bell className="size-5" />
-            <span className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold shadow-xs ring-2 ring-background">
-              3
-            </span>
-          </Link>
-
-          <Link
-            href="/perfil"
-            className="flex items-center gap-2.5 p-1.5 pr-3 rounded-xl border border-border/80 bg-card hover:bg-muted/60 hover:border-primary/40 transition-colors shadow-2xs group"
-            title="Configuración de Perfil Clínico"
-          >
-            <div className="relative size-8 rounded-lg bg-primary/10 text-primary font-bold text-xs flex items-center justify-center border border-primary/20">
-              {getInitials(rawName)}
-              <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-primary ring-2 ring-background" />
-            </div>
-            <div className="hidden md:block text-left">
-              <p className="text-xs font-semibold leading-tight text-foreground group-hover:text-primary transition-colors truncate max-w-[120px]">
-                Psic. {cleanName}
-              </p>
-              <p className="text-[10px] text-primary font-medium leading-none mt-0.5">
-                En consulta
-              </p>
-            </div>
-          </Link>
+        {/* En móvil, notificaciones y reportes ya viven en la barra inferior */}
+        <div className="flex items-center gap-2">
+          <NotificationsButton count={3} className="hidden sm:inline-flex" />
+          <Button asChild variant="ghost" className="hidden text-muted-foreground sm:inline-flex">
+            <Link href="/reportes">
+              <FileText />
+              Generar reporte
+            </Link>
+          </Button>
+          <Button asChild className="flex-1 sm:flex-none">
+            <Link href="/agenda/nueva">
+              <Plus />
+              Nueva cita
+            </Link>
+          </Button>
         </div>
-      </div>
+      </header>
 
-      {/* AVISO DE ACCIÓN (FEEDBACK) */}
       {actionNotice && (
-        <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-xs text-foreground shadow-2xs animate-in fade-in duration-200">
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="size-4 text-primary" />
-            <span className="font-medium">{actionNotice}</span>
-          </div>
-          <button
-            onClick={() => setActionNotice(null)}
-            className="text-primary hover:text-foreground text-xs px-2 py-0.5"
-          >
-            Cerrar
-          </button>
-        </div>
+        <ActionNotice message={actionNotice} onClose={() => setActionNotice(null)} />
       )}
 
-      {/* 2. SECCIÓN DE ACCIONES RÁPIDAS (3 BOTONES PRINCIPALES DESTACADOS) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-        {/* Botón 1: + Nueva Cita (Verde primario base del sistema, como en el panel lateral) */}
-        <Link
-          href="/agenda/nueva"
-          className="group flex items-center justify-between p-4 rounded-xl border border-primary/20 bg-primary text-primary-foreground hover:bg-primary/90 transition-all shadow-xs active:scale-[0.99]"
-        >
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <Plus className="size-4 shrink-0 stroke-[2.5]" />
-              <span className="font-semibold text-sm tracking-tight">+ Nueva Cita</span>
-            </div>
-            <p className="text-xs text-primary-foreground/80">
-              Agendar consulta en calendario
-            </p>
-          </div>
-          <ChevronRight className="size-4 opacity-80 group-hover:translate-x-0.5 transition-transform" />
-        </Link>
+      {/* TU DÍA: qué sigue + la jornada completa de un vistazo */}
+      <section aria-label="Tu día" className="@container overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex flex-col gap-5 p-5 sm:p-6 @3xl:flex-row @3xl:items-center @3xl:justify-between">
+          {focusAppointment ? (
+            <>
+              <div className="min-w-0 space-y-3">
+                <p className="flex flex-wrap items-center gap-x-2 text-sm font-medium text-primary">
+                  <LiveDot pulsing={Boolean(currentAppointment)} />
+                  <span className="whitespace-nowrap">{currentAppointment ? "En curso" : "Siguiente cita"}</span>
+                  {now && (
+                    <span className="whitespace-nowrap font-normal text-muted-foreground">
+                      ·{" "}
+                      {currentAppointment
+                        ? `termina ${formatRelative(getEndTime(currentAppointment), now)}`
+                        : formatRelative(new Date(focusAppointment.startTime), now)}
+                    </span>
+                  )}
+                </p>
 
-        {/* Botón 2: + Nuevo Paciente */}
-        <Link
-          href="/pacientes"
-          className="group flex items-center justify-between p-4 rounded-xl border border-border/80 bg-card text-foreground hover:border-primary/40 hover:bg-primary/[0.03] transition-all shadow-2xs"
-        >
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2.5">
-              <div className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <UserPlus className="size-3.5 stroke-[2.2]" />
-              </div>
-              <span className="font-semibold text-sm tracking-tight group-hover:text-primary transition-colors">+ Nuevo Paciente</span>
-            </div>
-            <p className="text-xs text-muted-foreground pl-9.5">
-              Registrar expediente clínico
-            </p>
-          </div>
-          <ChevronRight className="size-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-        </Link>
-
-        {/* Botón 3: Generar Reporte */}
-        <Link
-          href="/reportes"
-          className="group flex items-center justify-between p-4 rounded-xl border border-border/80 bg-card text-foreground hover:border-primary/40 hover:bg-primary/[0.03] transition-all shadow-2xs"
-        >
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-2.5">
-              <div className="size-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <FileText className="size-3.5 stroke-[2.2]" />
-              </div>
-              <span className="font-semibold text-sm tracking-tight group-hover:text-primary transition-colors">Generar Reporte</span>
-            </div>
-            <p className="text-xs text-muted-foreground pl-9.5">
-              Hojas de asistencia y métricas
-            </p>
-          </div>
-          <ChevronRight className="size-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-        </Link>
-      </div>
-
-      {/* DISPOSICIÓN PRINCIPAL EN 2 COLUMNAS (IZQUIERDA Y DERECHA) */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* 3. COLUMNA PRINCIPAL (IZQUIERDA - PRÓXIMAS CITAS PROGRAMADAS PARA HOY) */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-border/70">
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h2 className="text-base sm:text-lg font-bold text-foreground tracking-tight font-heading">
-                  Próximas Citas (Hoy)
-                </h2>
-                <span className="px-2 py-0.5 text-xs font-semibold rounded-md border border-primary/20 bg-primary/10 text-primary">
-                  {todayAppointments.length}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Consultas agendadas exclusivamente para el día de hoy
-              </p>
-            </div>
-
-            {/* Filtros rápidos: Todas, Confirmadas, Pendientes */}
-            <div className="flex items-center rounded-lg border border-border/80 p-0.5 bg-muted/40 text-xs self-start sm:self-auto">
-              <button
-                onClick={() => setAgendaFilter("all")}
-                className={cn(
-                  "px-2.5 py-1 rounded-md font-medium transition-colors",
-                  agendaFilter === "all"
-                    ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Todas ({todayAppointments.length})
-              </button>
-              <button
-                onClick={() => setAgendaFilter("confirmed")}
-                className={cn(
-                  "px-2.5 py-1 rounded-md font-medium transition-colors",
-                  agendaFilter === "confirmed"
-                    ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Confirmadas ({confirmedTodayCount})
-              </button>
-              <button
-                onClick={() => setAgendaFilter("pending")}
-                className={cn(
-                  "px-2.5 py-1 rounded-md font-medium transition-colors",
-                  agendaFilter === "pending"
-                    ? "bg-primary text-primary-foreground shadow-2xs font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Pendientes ({pendingTodayCount})
-              </button>
-            </div>
-          </div>
-
-          {/* LISTA DE TARJETAS DE CITAS DE HOY */}
-          <div className="space-y-3">
-            {filteredTodayAppointments.map((apt) => {
-              const patient = getPatientById(apt.patientId)
-              const patientName = patient?.name || "Paciente"
-              const startTime = formatAppointmentTime(new Date(apt.startTime))
-              const endTime = formatAppointmentTime(
-                new Date(new Date(apt.startTime).getTime() + (apt.durationMinutes || 50) * 60 * 1000)
-              )
-
-              return (
-                <div
-                  key={apt.id}
-                  className="rounded-xl border border-border/80 bg-card p-4 transition-all hover:border-primary/40 hover:shadow-xs shadow-2xs space-y-3"
-                >
-                  {/* Fila superior: Hora, Modalidad y Estado de la cita */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 text-primary font-mono text-xs font-semibold border border-primary/20">
-                        <Clock className="size-3 text-primary" />
-                        {startTime} – {endTime}
+                <div className="flex items-center gap-4">
+                  <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                    {getInitials(focusPatient?.name ?? "Paciente")}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-xl font-semibold tracking-tight text-foreground">
+                      {focusPatient?.name ?? "Paciente"}
+                    </p>
+                    <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
+                      <span className="tabular-nums">
+                        {formatAppointmentTime(new Date(focusAppointment.startTime))} –{" "}
+                        {formatAppointmentTime(getEndTime(focusAppointment))}
                       </span>
-
-                      {apt.modality === AppointmentModality.VIRTUAL ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground px-2 py-0.5 rounded-md border border-border/60 bg-muted/40">
-                          <Video className="size-3 text-primary" />
-                          Virtual
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground px-2 py-0.5 rounded-md border border-border/60 bg-muted/40">
-                          <MapPin className="size-3 text-primary" />
-                          Presencial
-                        </span>
+                      <span aria-hidden="true">·</span>
+                      <ModalityLabel modality={focusAppointment.modality} />
+                      {focusAppointment.reason && (
+                        <>
+                          <span aria-hidden="true" className="hidden sm:inline">·</span>
+                          <span className="hidden truncate sm:inline">{focusAppointment.reason}</span>
+                        </>
                       )}
-                    </div>
-
-                    {/* Estado de la cita con color primario base */}
-                    <div>{getPsychologistStatusBadge(apt.status)}</div>
-                  </div>
-
-                  {/* Fila central: Nombre del Paciente y Motivo de Consulta */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="size-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center font-bold text-xs text-primary shrink-0">
-                        {getInitials(patientName)}
-                      </div>
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-sm text-foreground">
-                            {patientName}
-                          </p>
-                          {patient?.isMinor && (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded border border-border/70 text-muted-foreground bg-muted/50">
-                              Menor de edad
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground line-clamp-1">
-                          {apt.reason || "Sesión de terapia clínica programada"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Fila inferior: Botones de acceso rápido "Ver Expediente" y "Iniciar Sesión" */}
-                  <div className="pt-2 border-t border-border/40 flex flex-wrap items-center justify-between gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      asChild
-                      className="h-8 text-xs font-medium border-border/80 text-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/[0.04] rounded-lg"
-                    >
-                      <Link href={`/pacientes/${apt.patientId}`}>
-                        <FileText className="mr-1.5 size-3.5 text-muted-foreground" />
-                        Ver Expediente
-                      </Link>
-                    </Button>
-
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => setActiveSessionAppointment(apt)}
-                        className="h-8 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg shadow-xs active:scale-[0.98]"
-                      >
-                        <CheckCircle2 className="mr-1.5 size-3.5" />
-                        Iniciar Sesión
-                      </Button>
-                    </div>
+                    </p>
                   </div>
                 </div>
-              )
-            })}
 
-            {filteredTodayAppointments.length === 0 && (
-              <div className="rounded-xl border border-dashed border-border/80 p-8 text-center space-y-2.5 bg-card">
-                <CalendarDays className="size-8 mx-auto text-muted-foreground stroke-1" />
-                <p className="text-sm font-semibold text-foreground">
-                  No hay citas {agendaFilter !== "all" ? `${agendaFilter}s` : ""} programadas para hoy
+                {focusAppointment.status === AppointmentStatus.PENDING && (
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    Esta cita aún no está confirmada.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 @3xl:shrink-0">
+                {focusAppointment.modality === AppointmentModality.VIRTUAL && (
+                  <Button
+                    variant="outline"
+                    onClick={() => window.open("https://meet.google.com/psi-diag-ses", "_blank")}
+                  >
+                    <Video />
+                    Videollamada
+                  </Button>
+                )}
+                <Button asChild variant="outline">
+                  <Link href={`/pacientes/${focusAppointment.patientId}`}>Expediente</Link>
+                </Button>
+                <Button onClick={() => setActiveSessionAppointment(focusAppointment)}>
+                  {currentAppointment ? "Registrar sesión" : "Iniciar sesión"}
+                </Button>
+              </div>
+            </>
+          ) : unregisteredToday.length > 0 ? (
+            <>
+              <div className="min-w-0 space-y-1.5">
+                <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+                  <span className="size-2 rounded-full bg-amber-500" aria-hidden="true" />
+                  Falta registrar asistencia
                 </p>
-                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                  Puedes revisar las demás citas en la agenda o registrar una nueva sesión clínica.
+                <p className="text-xl font-semibold tracking-tight text-foreground">
+                  {unregisteredToday.length === 1
+                    ? "Tienes 1 sesión de hoy sin registrar"
+                    : `Tienes ${unregisteredToday.length} sesiones de hoy sin registrar`}
                 </p>
-                <Button
-                  size="sm"
-                  asChild
-                  className="mt-2 text-xs bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg"
+                <p className="text-sm text-muted-foreground">
+                  Toca cada bloque de la línea del día, o empieza por la primera.
+                </p>
+              </div>
+              <Button
+                className="@3xl:shrink-0"
+                onClick={() => setActiveSessionAppointment(unregisteredToday[0])}
+              >
+                Registrar {patientById.get(unregisteredToday[0].patientId)?.name.split(" ")[0] ?? "sesión"}
+              </Button>
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <CheckCircle2 className="size-4 text-primary" />
+                Día completado
+              </p>
+              <p className="text-xl font-semibold tracking-tight text-foreground">
+                No te quedan citas por hoy
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {tomorrowAppointments.length > 0
+                  ? `Mañana: ${tomorrowAppointments.length} ${tomorrowAppointments.length === 1 ? "cita" : "citas"}, la primera a las ${formatAppointmentTime(new Date(tomorrowAppointments[0].startTime))}`
+                  : "Mañana no tienes citas programadas."}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4 border-t border-border bg-muted/20 px-5 py-5 sm:px-6">
+          <DayTimeline
+            appointments={todayAppointments}
+            now={now}
+            highlightId={focusAppointment?.id}
+            onSelect={setActiveSessionAppointment}
+          />
+
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm">
+            <p className="flex flex-wrap items-center gap-x-1.5 text-muted-foreground">
+              <span>
+                <span className="font-semibold tabular-nums text-foreground">{todayAppointments.length}</span>{" "}
+                {todayAppointments.length === 1 ? "cita" : "citas"} hoy
+              </span>
+              <span aria-hidden="true">·</span>
+              <span>
+                <span className="font-semibold tabular-nums text-foreground">{todayConfirmed}</span>{" "}
+                {todayConfirmed === 1 ? "confirmada" : "confirmadas"}
+              </span>
+              {todayPending > 0 && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <button
+                    type="button"
+                    onClick={showPendingToday}
+                    className="rounded-md font-medium text-amber-700 underline-offset-4 hover:underline dark:text-amber-400"
+                  >
+                    {todayPending} por confirmar
+                  </button>
+                </>
+              )}
+              {lastOpenToday && getEndTime(lastOpenToday) > clock && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>Libre desde las {formatAppointmentTime(getEndTime(lastOpenToday))}</span>
+                </>
+              )}
+            </p>
+
+            <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+              <span className="flex items-center gap-1.5">
+                <span className="size-2 rounded-sm bg-primary" />
+                Confirmada
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="size-2 rounded-sm bg-amber-300 dark:bg-amber-500/60" />
+                Por confirmar
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="size-2 rounded-sm bg-muted-foreground/30" />
+                Completada
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
+        {/* Citas del día elegido. Las filas se adaptan al ancho de la tarjeta
+            (container queries), no al de la ventana. */}
+        <section ref={listRef} className="@container scroll-mt-20 space-y-4">
+          <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
+            <div className="flex items-baseline gap-3">
+              <h2 className="text-lg font-semibold tracking-tight text-foreground">{selectedDayTitle}</h2>
+              {!isViewingToday && (
+                <button
+                  type="button"
+                  onClick={() => selectDay(today)}
+                  className="text-sm font-medium text-primary hover:underline"
                 >
-                  <Link href="/agenda/nueva">+ Nueva Cita</Link>
+                  Volver a hoy
+                </button>
+              )}
+            </div>
+
+            {/* Control segmentado: la selección se marca con superficie, no con color */}
+            <div className="inline-flex self-start rounded-xl bg-muted p-1 @lg:self-auto">
+              {filters.map((filter) => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() => setAgendaFilter(filter.value)}
+                  aria-pressed={agendaFilter === filter.value}
+                  className={cn(
+                    "whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150",
+                    agendaFilter === filter.value
+                      ? "bg-card text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {filter.label}
+                  <span className="ml-1.5 tabular-nums text-muted-foreground">{filter.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-border bg-card">
+            {filteredDayAppointments.length > 0 ? (
+              <ul className="divide-y divide-border">
+                {filteredDayAppointments.map((apt) => {
+                  const patient = getPatientById(apt.patientId)
+                  const patientName = patient?.name || "Paciente"
+                  const isNext = isViewingToday && apt.id === focusAppointment?.id
+                  const isClosed = !isOpenAppointment(apt)
+                  const isUnregistered = isViewingToday && !isClosed && getEndTime(apt) <= clock
+
+                  return (
+                    <li
+                      key={apt.id}
+                      className={cn(
+                        "flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-muted/30 @2xl:flex-row @2xl:items-center @2xl:gap-5 @2xl:px-5",
+                        isNext && "bg-primary/[0.04]",
+                        isClosed && "text-muted-foreground"
+                      )}
+                    >
+                      <div className="flex min-w-0 flex-1 items-center gap-4">
+                        <div className="w-[4.5rem] shrink-0 whitespace-nowrap">
+                          <p className={cn("text-sm font-semibold tabular-nums", isClosed ? "text-muted-foreground" : "text-foreground")}>
+                            {formatAppointmentTime(new Date(apt.startTime))}
+                          </p>
+                          <p className="text-xs tabular-nums text-muted-foreground">
+                            {formatAppointmentTime(getEndTime(apt))}
+                          </p>
+                        </div>
+
+                        <div
+                          className={cn(
+                            "flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                            isClosed ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"
+                          )}
+                        >
+                          {getInitials(patientName)}
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className={cn("flex items-center gap-2 truncate text-sm font-medium", isClosed ? "text-muted-foreground" : "text-foreground")}>
+                            <span className="truncate">{patientName}</span>
+                            {patient?.isMinor && (
+                              <span className="text-xs font-normal text-muted-foreground">Menor</span>
+                            )}
+                            {isNext && (
+                              <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                Siguiente
+                              </span>
+                            )}
+                          </p>
+                          <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                            <ModalityLabel modality={apt.modality} />
+                            <span aria-hidden="true">·</span>
+                            <span className="truncate">{apt.reason || "Sesión de terapia"}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 @2xl:justify-end">
+                        {isUnregistered ? (
+                          <StatusLabel status={AppointmentStatus.PENDING} label="Sin registrar" />
+                        ) : (
+                          <StatusLabel status={apt.status} />
+                        )}
+                        <div className="flex items-center gap-1">
+                          <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+                            <Link href={`/pacientes/${apt.patientId}`}>Expediente</Link>
+                          </Button>
+                          {isViewingToday && !isClosed ? (
+                            <Button size="sm" onClick={() => setActiveSessionAppointment(apt)}>
+                              {isUnregistered ? "Registrar" : "Iniciar"}
+                            </Button>
+                          ) : (
+                            <Button asChild variant="outline" size="sm">
+                              <Link href={`/agenda/${apt.id}`}>Detalles</Link>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <div className="space-y-3 px-6 py-12 text-center">
+                <p className="text-sm font-medium text-foreground">{FILTER_EMPTY_COPY[agendaFilter]}</p>
+                <p className="mx-auto max-w-sm text-sm text-muted-foreground">
+                  Elige otro día en el calendario o programa una nueva sesión.
+                </p>
+                <Button asChild variant="outline" size="sm" className="mt-1">
+                  <Link href="/agenda/nueva">
+                    <Plus />
+                    Nueva cita
+                  </Link>
                 </Button>
               </div>
             )}
           </div>
-        </div>
+        </section>
 
-        {/* 4. COLUMNA SECUNDARIA (DERECHA - MINI-CALENDARIO Y MÉTRICAS RÁPIDAS) */}
-        <div className="space-y-4">
-          {/* MINI-CALENDARIO MENSUAL CON EL COLOR DEL PANEL LATERAL (PRIMARY) */}
-          <div className="rounded-xl border border-border/80 bg-card p-4 space-y-3.5 shadow-2xs">
-            {/* Cabecera del mini-calendario */}
-            <div className="flex items-center justify-between border-b border-border/40 pb-2.5">
-              <span className="font-bold text-xs sm:text-sm text-foreground tracking-tight">
-                {formattedMonth}
-              </span>
-              <div className="flex items-center gap-1">
-                <button
+        <div className="grid content-start gap-6 sm:grid-cols-2 xl:grid-cols-1">
+          {/* Mini-calendario: tocar un día muestra sus citas en la lista */}
+          <aside className="space-y-4 rounded-2xl border border-border bg-card p-5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold tracking-tight text-foreground">{formattedMonth}</span>
+              <div className="flex items-center">
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={handlePrevMonth}
-                  className="p-1 rounded-md border border-border/70 hover:bg-muted/70 text-muted-foreground hover:text-foreground"
-                  title="Mes anterior"
                   aria-label="Mes anterior"
+                  className="text-muted-foreground"
                 >
-                  <ChevronLeft className="size-3.5" />
-                </button>
-                <button
+                  <ChevronLeft />
+                </Button>
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={handleNextMonth}
-                  className="p-1 rounded-md border border-border/70 hover:bg-muted/70 text-muted-foreground hover:text-foreground"
-                  title="Mes siguiente"
                   aria-label="Mes siguiente"
+                  className="text-muted-foreground"
                 >
-                  <ChevronRight className="size-3.5" />
-                </button>
+                  <ChevronRight />
+                </Button>
               </div>
             </div>
 
-            {/* Días de la semana abreviados */}
-            <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-muted-foreground uppercase">
-              <span>Lu</span>
-              <span>Ma</span>
-              <span>Mi</span>
-              <span>Ju</span>
-              <span>Vi</span>
-              <span>Sá</span>
-              <span>Do</span>
+            <div className="grid grid-cols-7 text-center text-[11px] font-medium text-muted-foreground">
+              {["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"].map((d) => (
+                <span key={d}>{d}</span>
+              ))}
             </div>
 
-            {/* Matriz de días */}
-            <div className="grid grid-cols-7 gap-1 text-center text-xs">
-              {monthDays.map((item, idx) => {
-                const dayNumber = item.date.getDate()
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => setSelectedCalendarDate(item.date)}
-                    className={cn(
-                      "h-8 rounded-md flex flex-col items-center justify-center relative transition-colors text-[11px]",
-                      !item.isCurrentMonth && "text-muted-foreground/40",
-                      item.isCurrentMonth && "text-foreground hover:bg-muted/60",
-                      item.isToday && "bg-primary text-primary-foreground font-bold hover:bg-primary/90 shadow-xs",
-                      item.isSelected && !item.isToday && "ring-2 ring-primary font-semibold text-primary"
-                    )}
-                  >
-                    <span>{dayNumber}</span>
-                    {/* Indicador de citas en el día */}
-                    {item.hasAppointments && (
-                      <span
-                        className={cn(
-                          "size-1 rounded-full absolute bottom-1",
-                          item.isToday
-                            ? "bg-primary-foreground"
-                            : "bg-primary"
-                        )}
-                      />
-                    )}
-                  </button>
-                )
-              })}
+            <div className="grid grid-cols-7 gap-y-1 text-center">
+              {monthDays.map((item, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => selectDay(item.date)}
+                  aria-label={item.date.toLocaleDateString("es-MX", { day: "numeric", month: "long" })}
+                  aria-current={item.isToday ? "date" : undefined}
+                  aria-pressed={item.isSelected}
+                  className={cn(
+                    "relative mx-auto flex size-8 items-center justify-center rounded-full text-xs tabular-nums transition-colors active:scale-95",
+                    !item.isCurrentMonth && "text-muted-foreground/40",
+                    item.isCurrentMonth && !item.isToday && "text-foreground hover:bg-muted",
+                    item.isSelected && !item.isToday && "bg-primary/10 font-semibold text-primary hover:bg-primary/15",
+                    item.isToday && "bg-primary font-semibold text-primary-foreground",
+                    item.isToday && !item.isSelected && "ring-2 ring-primary/30 ring-offset-2 ring-offset-card"
+                  )}
+                >
+                  {item.date.getDate()}
+                  {item.hasAppointments && (
+                    <span
+                      className={cn(
+                        "absolute bottom-0.5 size-1 rounded-full",
+                        item.isToday ? "bg-primary-foreground" : "bg-primary"
+                      )}
+                      aria-hidden="true"
+                    />
+                  )}
+                </button>
+              ))}
             </div>
 
-            {/* Pie del calendario con leyenda y enlace directo a la agenda completa */}
-            <div className="pt-2 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground">
+            <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <span className="size-1.5 rounded-full bg-primary inline-block" />
+                <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
                 Días con citas
               </span>
               <Link
                 href="/agenda"
-                className="font-medium text-primary hover:underline flex items-center gap-1"
+                className="flex items-center gap-0.5 font-medium text-primary hover:underline"
               >
-                <span>Ver agenda</span>
-                <ChevronRight className="size-3" />
+                Ver agenda
+                <ChevronRight className="size-3.5" />
               </Link>
             </div>
-          </div>
+          </aside>
 
-          {/* BLOQUE DE MÉTRICAS RÁPIDAS CON EL COLOR BASE PRIMARY */}
-          <div className="rounded-xl border border-border/80 bg-card p-4 space-y-3 shadow-2xs">
-            <div className="flex items-center justify-between pb-2 border-b border-border/50">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-foreground font-heading flex items-center gap-1.5">
-                <span className="size-2 rounded-full bg-primary inline-block" />
-                Métricas Rápidas
-              </h3>
-              <span className="text-[10px] text-muted-foreground font-mono">
-                Semana en curso
-              </span>
+          {/* Por confirmar: lo que necesita una respuesta, con la acción a la mano */}
+          <aside className="space-y-3 rounded-2xl border border-border bg-card p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold tracking-tight text-foreground">Por confirmar</h2>
+              {pendingQueue.length > 0 && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">
+                  {pendingQueue.length}
+                </span>
+              )}
             </div>
 
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  <CalendarDays className="size-3.5 text-primary" />
-                  Citas hoy
-                </span>
-                <span className="font-bold text-foreground text-sm tabular-nums">
-                  {todayAppointments.length}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  <CheckCircle2 className="size-3.5 text-primary" />
-                  Confirmadas hoy
-                </span>
-                <span className="font-bold text-primary text-sm tabular-nums">
-                  {confirmedTodayCount}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  <Clock className="size-3.5 text-amber-600 dark:text-amber-400" />
-                  Pendientes hoy
-                </span>
-                <span className="font-bold text-amber-700 dark:text-amber-400 text-sm tabular-nums">
-                  {pendingTodayCount}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between py-1.5 border-b border-border/40">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  <XCircle className="size-3.5 text-red-500 dark:text-red-400" />
-                  Canceladas esta semana
-                </span>
-                <span className="font-bold text-red-600 dark:text-red-400 text-sm tabular-nums">
-                  {cancelledThisWeekCount}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between py-1.5">
-                <span className="text-muted-foreground flex items-center gap-2">
-                  <Users className="size-3.5 text-primary" />
-                  Pacientes activos
-                </span>
-                <span className="font-bold text-foreground text-sm tabular-nums">
-                  {MOCK_PATIENTS.length}
-                </span>
-              </div>
-            </div>
-          </div>
+            {pendingQueue.length > 0 ? (
+              <ul className="space-y-1">
+                {pendingQueue.map((apt) => {
+                  const start = new Date(apt.startTime)
+          const patientName = patientById.get(apt.patientId)?.name ?? "Paciente"
+                  return (
+                    <li
+                      key={apt.id}
+                      className="-mx-2 flex items-center gap-3 rounded-xl px-2 py-2 animate-in fade-in duration-200"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => selectDay(start)}
+                        className="min-w-0 flex-1 text-left"
+                        title="Ver ese día"
+                      >
+                        <p className="truncate text-sm font-medium text-foreground">{patientName}</p>
+                        <p className="text-xs tabular-nums text-muted-foreground">
+                          {isSameDay(start, today) ? "Hoy" : capitalize(formatShortDate(start))} ·{" "}
+                          {formatAppointmentTime(start)}
+                        </p>
+                      </button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleConfirmAppointment(apt.id)}
+                      >
+                        Confirmar
+                      </Button>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : (
+              <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
+                <CheckCircle2 className="size-4 text-primary" />
+                Todas tus próximas citas están confirmadas.
+              </p>
+            )}
+          </aside>
         </div>
       </div>
 
-      {/* MODAL DIALOG: INICIAR SESIÓN / REGISTRAR ASISTENCIA */}
+      {/* Iniciar sesión / registrar asistencia */}
       {activeSessionAppointment && (
         <Dialog
           open={Boolean(activeSessionAppointment)}
@@ -785,87 +1019,70 @@ function PsychologistDashboardView({ user }: { user: any }) {
             if (!open) setActiveSessionAppointment(null)
           }}
         >
-          <DialogContent className="max-w-md border-border/80 bg-background text-foreground">
+          <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-base font-bold flex items-center gap-2">
-                <CheckCircle2 className="size-5 text-primary" />
-                <span>Gestión de Sesión Clínica</span>
+              <DialogTitle className="text-lg font-semibold tracking-tight">
+                Sesión con {getPatientById(activeSessionAppointment.patientId)?.name ?? "paciente"}
               </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">
-                Paciente: {getPatientById(activeSessionAppointment.patientId)?.name}
+              <DialogDescription>
+                Registra la asistencia al terminar la consulta.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-3 py-2 text-xs">
-              <div className="p-3 rounded-lg bg-muted/40 border border-border/70 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Horario programado:</span>
-                  <span className="font-mono font-semibold">
-                    {formatAppointmentTime(new Date(activeSessionAppointment.startTime))}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Modalidad:</span>
-                  <span className="font-medium capitalize">
-                    {activeSessionAppointment.modality === AppointmentModality.VIRTUAL ? "Videollamada" : "Presencial"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Motivo:</span>
-                  <span className="font-medium truncate max-w-[200px]">
-                    {activeSessionAppointment.reason || "Sin especificar"}
-                  </span>
-                </div>
+            <dl className="divide-y divide-border rounded-xl bg-muted/40 text-sm">
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <dt className="text-muted-foreground">Horario</dt>
+                <dd className="font-medium tabular-nums">
+                  {formatAppointmentTime(new Date(activeSessionAppointment.startTime))} –{" "}
+                  {formatAppointmentTime(getEndTime(activeSessionAppointment))}
+                </dd>
               </div>
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <dt className="text-muted-foreground">Modalidad</dt>
+                <dd className="font-medium">
+                  {activeSessionAppointment.modality === AppointmentModality.VIRTUAL ? "Videollamada" : "Presencial"}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <dt className="text-muted-foreground">Motivo</dt>
+                <dd className="truncate font-medium">{activeSessionAppointment.reason || "Sin especificar"}</dd>
+              </div>
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <dt className="text-muted-foreground">Estado</dt>
+                <dd>
+                  <StatusLabel status={activeSessionAppointment.status} />
+                </dd>
+              </div>
+            </dl>
 
-              {activeSessionAppointment.modality === AppointmentModality.VIRTUAL && (
-                <div className="p-3 rounded-lg border border-primary/25 bg-primary/5 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Video className="size-4 text-primary" />
-                    <span className="font-medium text-xs">Enlace de videollamada</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs border-primary/30 text-primary hover:bg-primary/10"
-                    onClick={() => {
-                      window.open("https://meet.google.com/psi-diag-ses", "_blank")
-                    }}
-                  >
-                    Unirse ahora
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border/60">
+            {activeSessionAppointment.modality === AppointmentModality.VIRTUAL && (
               <Button
                 variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => setActiveSessionAppointment(null)}
+                className="w-full"
+                onClick={() => window.open("https://meet.google.com/psi-diag-ses", "_blank")}
               >
+                <Video />
+                Unirse a la videollamada
+              </Button>
+            )}
+
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button variant="ghost" onClick={() => setActiveSessionAppointment(null)}>
                 Cerrar
               </Button>
-
               {activeSessionAppointment.status === AppointmentStatus.PENDING && (
                 <Button
-                  size="sm"
                   variant="outline"
-                  className="text-xs border-amber-400 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300"
                   onClick={() => handleConfirmAppointment(activeSessionAppointment.id)}
                 >
-                  Confirmar Cita
+                  Confirmar cita
                 </Button>
               )}
-
-              <Button
-                size="sm"
-                className="text-xs bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs"
-                onClick={() => handleRegisterAttendance(activeSessionAppointment.id)}
-              >
-                Registrar Asistencia
-              </Button>
+              {isOpenAppointment(activeSessionAppointment) && (
+                <Button onClick={() => handleRegisterAttendance(activeSessionAppointment.id)}>
+                  Registrar asistencia
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -874,10 +1091,12 @@ function PsychologistDashboardView({ user }: { user: any }) {
   )
 }
 
-function PatientDashboardView({ user }: { user: any }) {
+function PatientDashboardView({ user }: { user: SessionUser }) {
   const patient = getPatientForUser(user)
   const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS)
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null)
+  const [completedTasks, setCompletedTasks] = useState<ReadonlySet<number>>(new Set())
+  const now = useNow()
 
   // Modales
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
@@ -889,30 +1108,39 @@ function PatientDashboardView({ user }: { user: any }) {
   const cleanFirstName = patient?.name?.trim().split(" ")[0] || "Paciente"
   const friendlyGreeting = `Hola, ${cleanFirstName}`
 
-  // Citas del paciente
+  const homework = useMemo(() => getLatestHomeworkForPatient(patient.id).slice(0, 3), [patient.id])
+
   const patientAppointments = useMemo(() => {
     return appointments.filter((a) => a.patientId === patient.id)
   }, [appointments, patient.id])
 
-  const now = useMemo(() => new Date(), [])
+  const today = useMemo(() => new Date(), [])
+  const clock = now ?? today
 
-  // Próximas citas (no canceladas ni completadas)
+  // Próximas citas: abiertas y que todavía no terminan
   const upcomingAppointments = useMemo(() => {
     return patientAppointments
-      .filter((a) => a.status !== AppointmentStatus.COMPLETED && a.status !== AppointmentStatus.CANCELLED)
+      .filter((a) => isOpenAppointment(a) && getEndTime(a) > clock)
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-  }, [patientAppointments])
+  }, [patientAppointments, clock])
 
-  // Cita más próxima (Héroe)
   const nextAppointment = upcomingAppointments[0] || null
 
-  // Citas pasadas ("Mis últimas citas")
   const pastAppointments = useMemo(() => {
     return patientAppointments
-      .filter((a) => a.status === AppointmentStatus.COMPLETED || a.status === AppointmentStatus.CANCELLED || new Date(a.startTime) < now)
+      .filter((a) => a.status === AppointmentStatus.COMPLETED || a.status === AppointmentStatus.CANCELLED || new Date(a.startTime) < today)
       .filter((a) => a.id !== nextAppointment?.id)
       .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
-  }, [patientAppointments, now, nextAppointment])
+  }, [patientAppointments, today, nextAppointment])
+
+  const toggleTask = (index: number) => {
+    setCompletedTasks((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
 
   const handleCancelAppointment = (aptId: string) => {
     const finalReason = cancellationReason === "Otro" ? (otherReason || "Sin especificar") : cancellationReason
@@ -928,512 +1156,399 @@ function PatientDashboardView({ user }: { user: any }) {
       )
     )
     setCancelModalOpen(false)
-    setFeedbackNotice("Tu cita ha sido cancelada. Tu psicóloga ha sido notificada.")
+    setFeedbackNotice("Tu cita fue cancelada y tu psicólogo/a ya fue notificado/a.")
     setTimeout(() => setFeedbackNotice(null), 4000)
   }
 
-  // Formato de fecha amigable para la tarjeta héroe
-  const formatHeroDate = (date: Date | string) => {
-    const d = new Date(date)
-    const options: Intl.DateTimeFormatOptions = {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }
-    const formatted = d.toLocaleDateString("es-MX", options)
-    return formatted.charAt(0).toUpperCase() + formatted.slice(1)
-  }
+  const formatHeroDate = (date: Date | string) =>
+    capitalize(
+      new Date(date).toLocaleDateString("es-MX", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      })
+    )
+
+  const nextStart = nextAppointment ? new Date(nextAppointment.startTime) : null
+  const countdown =
+    now && nextStart
+      ? nextStart <= now
+        ? "en curso"
+        : isSameDay(nextStart, now)
+          ? `hoy, ${formatRelative(nextStart, now)}`
+          : formatRelative(nextStart, now)
+      : null
+
+  const tasksDone = completedTasks.size
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* 1. CABECERA (HEADER AMIGABLE) */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-border/70">
+    <div className="mx-auto max-w-4xl space-y-8">
+      {/* Encabezado */}
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground font-heading">
+          <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             {friendlyGreeting}
           </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground">
-            Bienvenida a tu espacio personal de bienestar y acompañamiento terapéutico
+          <p className="text-sm text-muted-foreground">
+            Aquí tienes tu próxima sesión y lo que necesitas para llegar con todo listo.
           </p>
         </div>
 
-        {/* Notificaciones, Perfil y Acción Principal */}
-        <div className="flex items-center gap-3">
-          {/* Acción Principal: + Solicitar Nueva Cita (visible en cabecera) */}
-          <Button
-            asChild
-            className="hidden sm:inline-flex h-9 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold shadow-xs active:scale-[0.98] transition-all"
-          >
+        <div className="hidden items-center gap-2 sm:flex">
+          <NotificationsButton count={2} />
+          <Button asChild>
             <Link href="/agenda/nueva">
-              <Plus className="mr-1.5 size-4 stroke-[2.5]" />
-              + Solicitar Nueva Cita
+              <Plus />
+              Solicitar cita
             </Link>
           </Button>
-
-          {/* Icono de Notificaciones */}
-          <Link
-            href="/notificaciones"
-            className="relative p-2.5 rounded-xl border border-border/80 bg-card text-foreground hover:bg-muted/70 hover:border-primary/40 transition-colors shadow-2xs"
-            title="Notificaciones y recordatorios de citas"
-            aria-label="Notificaciones"
-          >
-            <Bell className="size-5" />
-            <span className="absolute -top-1.5 -right-1.5 flex size-4.5 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold shadow-xs ring-2 ring-background">
-              2
-            </span>
-          </Link>
-
-          {/* Foto de Perfil */}
-          <Link
-            href="/perfil"
-            className="flex items-center gap-2 p-1.5 pr-3 rounded-xl border border-border/80 bg-card hover:bg-muted/60 hover:border-primary/40 transition-colors shadow-2xs group"
-            title="Mi Perfil"
-          >
-            <div className="relative size-8 rounded-lg bg-primary/10 text-primary font-bold text-xs flex items-center justify-center border border-primary/20">
-              {getInitials(patient?.name || "Paciente")}
-              <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-primary ring-2 ring-background" />
-            </div>
-            <div className="hidden md:block text-left">
-              <p className="text-xs font-semibold leading-tight text-foreground group-hover:text-primary transition-colors truncate max-w-[110px]">
-                {cleanFirstName}
-              </p>
-              <p className="text-[10px] text-muted-foreground leading-none mt-0.5">
-                Paciente
-              </p>
-            </div>
-          </Link>
         </div>
-      </div>
+      </header>
 
-      {/* AVISO DE ACCIÓN (FEEDBACK) */}
       {feedbackNotice && (
-        <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-xs text-foreground shadow-2xs animate-in fade-in duration-200">
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="size-4 text-primary" />
-            <span className="font-medium">{feedbackNotice}</span>
-          </div>
-          <button
-            onClick={() => setFeedbackNotice(null)}
-            className="text-primary hover:text-foreground text-xs px-2 py-0.5"
-          >
-            Cerrar
-          </button>
-        </div>
+        <ActionNotice message={feedbackNotice} onClose={() => setFeedbackNotice(null)} />
       )}
 
-      {/* 2. TARJETA DESTACADA (HÉROE - PRÓXIMA CITA) */}
-      {nextAppointment ? (
-        <Card className="border border-primary/25 bg-card shadow-xs relative overflow-hidden rounded-2xl">
-          {/* Barra superior de acento con el verde base */}
-          <div className="h-1.5 w-full bg-primary/80" />
-
-          <CardHeader className="p-5 sm:p-6 pb-4 border-b border-border/40 bg-muted/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="size-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <CalendarCheck className="size-5" />
-              </div>
-              <div>
-                <CardTitle className="text-base sm:text-lg font-bold text-foreground font-heading">
-                  Tu Próxima Cita
-                </CardTitle>
-                <CardDescription className="text-xs text-muted-foreground">
-                  Atención personalizada con {MOCK_PSYCHOLOGIST.name}
-                </CardDescription>
-              </div>
-            </div>
-
-            {/* Estado de la Cita */}
-            <div>
-              {nextAppointment.status === AppointmentStatus.CONFIRMED ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 text-primary px-3 py-1 text-xs font-semibold shadow-2xs">
-                  <CheckCircle2 className="size-3.5 text-primary" />
-                  Confirmada
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 px-3 py-1 text-xs font-medium shadow-2xs">
-                  <Clock className="size-3.5 text-amber-600 dark:text-amber-400" />
-                  Por confirmar
-                </span>
-              )}
-            </div>
-          </CardHeader>
-
-          <CardContent className="p-5 sm:p-6 space-y-6">
-            <div className="grid gap-5 sm:grid-cols-3">
-              {/* Fecha y Hora */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                  Fecha y Hora
-                </span>
-                <p className="text-base sm:text-lg font-bold text-foreground font-heading">
-                  {formatHeroDate(nextAppointment.startTime)}
-                </p>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 text-primary font-mono text-xs font-semibold border border-primary/20">
-                  <Clock className="size-3 text-primary" />
-                  <span>{formatAppointmentTime(new Date(nextAppointment.startTime))} hrs</span>
-                  <span className="opacity-50">({nextAppointment.durationMinutes} min)</span>
-                </div>
-              </div>
-
-              {/* Modalidad de la Sesión */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                  Modalidad
-                </span>
-                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  {nextAppointment.modality === AppointmentModality.VIRTUAL ? (
-                    <>
-                      <div className="size-6 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-                        <Video className="size-3.5" />
-                      </div>
-                      <span>Sesión Virtual (Videollamada)</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="size-6 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-                        <MapPin className="size-3.5" />
-                      </div>
-                      <span>Presencial en Consultorio</span>
-                    </>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {nextAppointment.modality === AppointmentModality.VIRTUAL
-                    ? "Enlace encriptado y confidencial listo para tu sesión."
-                    : "Paseo de la Reforma #450, Piso 3, Consultorio 3B, CDMX."}
-                </p>
-              </div>
-
-              {/* Psicólogo Asignado */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                  Psicólogo / Terapeuta
-                </span>
-                <div className="flex items-center gap-2.5">
-                  <div className="size-8 rounded-lg bg-primary/10 text-primary font-bold text-xs flex items-center justify-center border border-primary/20 shrink-0">
-                    AG
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-foreground">
-                      {MOCK_PSYCHOLOGIST.name}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {MOCK_PSYCHOLOGIST.specialty}
-                    </p>
-                  </div>
-                </div>
-                {nextAppointment.reason && (
-                  <p className="text-xs text-muted-foreground pt-1 italic line-clamp-1">
-                    "{nextAppointment.reason}"
-                  </p>
+      {/* Próxima cita */}
+      {nextAppointment && nextStart ? (
+        <section className="space-y-6 rounded-2xl border border-border bg-card p-6 sm:p-8">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <p className="flex flex-wrap items-center gap-x-2 text-sm font-medium text-primary">
+                <LiveDot pulsing={false} />
+                <span className="whitespace-nowrap">Tu próxima cita</span>
+                {countdown && (
+                  <span className="whitespace-nowrap font-normal text-muted-foreground">· {countdown}</span>
                 )}
+              </p>
+              <h2 className="font-heading text-2xl font-semibold tracking-tight text-foreground sm:text-[1.75rem]">
+                {formatHeroDate(nextStart)}
+              </h2>
+              <p className="text-base tabular-nums text-muted-foreground">
+                {formatAppointmentTime(nextStart)} – {formatAppointmentTime(getEndTime(nextAppointment))}
+              </p>
+              <div className="pt-2 sm:hidden">
+                <StatusLabel status={nextAppointment.status} />
               </div>
             </div>
+            <div className="hidden sm:block">
+              <StatusLabel status={nextAppointment.status} />
+            </div>
+          </div>
 
-            {/* Si es virtual: Enlace de videollamada */}
-            {nextAppointment.modality === AppointmentModality.VIRTUAL && (
-              <div className="p-3.5 rounded-xl border border-primary/25 bg-primary/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <Video className="size-4 text-primary shrink-0" />
-                  <span className="text-xs text-foreground font-medium">
-                    Tu sala de videollamada se habilitará antes de la hora fijada.
+          <dl className="grid gap-6 border-t border-border pt-6 sm:grid-cols-3">
+            <div className="space-y-1">
+              <dt className="text-xs text-muted-foreground">Modalidad</dt>
+              <dd className="flex items-center gap-2 text-sm font-medium text-foreground">
+                {nextAppointment.modality === AppointmentModality.VIRTUAL ? (
+                  <>
+                    <Video className="size-4 text-primary" />
+                    Videollamada
+                  </>
+                ) : (
+                  <>
+                    <MapPin className="size-4 text-primary" />
+                    Presencial
+                  </>
+                )}
+              </dd>
+              <dd className="text-xs leading-relaxed text-muted-foreground">
+                {nextAppointment.modality === AppointmentModality.VIRTUAL
+                  ? "El enlace se habilita antes de la hora."
+                  : "Paseo de la Reforma #450, Piso 3, Consultorio 3B, CDMX."}
+              </dd>
+            </div>
+
+            <div className="space-y-1">
+              <dt className="text-xs text-muted-foreground">Psicólogo/a</dt>
+              <dd className="flex items-center gap-2.5">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                  {getInitials(MOCK_PSYCHOLOGIST.name.replace(/^(Dra\.|Dr\.)\s*/i, ""))}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-foreground">
+                    {MOCK_PSYCHOLOGIST.name}
                   </span>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-xs border-primary/30 text-primary hover:bg-primary/10 font-semibold"
-                  onClick={() => window.open("https://meet.google.com/psi-diag-ses", "_blank")}
-                >
-                  <Video className="mr-1.5 size-3.5" />
-                  Abrir Videollamada
-                </Button>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {MOCK_PSYCHOLOGIST.specialty}
+                  </span>
+                </span>
+              </dd>
+            </div>
+
+            {nextAppointment.reason && (
+              <div className="space-y-1">
+                <dt className="text-xs text-muted-foreground">Motivo</dt>
+                <dd className="text-sm text-foreground">{nextAppointment.reason}</dd>
               </div>
             )}
+          </dl>
 
-            {/* BOTONES SECUNDARIOS: Reagendar y Cancelar */}
-            <div className="pt-4 border-t border-border/50 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRescheduleModalOpen(true)}
-                  className="rounded-xl border-border/80 text-xs font-medium hover:border-primary/40 hover:text-primary hover:bg-primary/[0.03]"
-                >
-                  <CalendarSync className="mr-1.5 size-3.5 text-primary" />
-                  Reagendar
-                </Button>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCancelModalOpen(true)}
-                  className="rounded-xl border-border/80 text-xs font-medium text-muted-foreground hover:text-destructive hover:border-destructive/40 hover:bg-destructive/10"
-                >
-                  <XCircle className="mr-1.5 size-3.5" />
-                  Cancelar
-                </Button>
-              </div>
-
-              <Link
-                href={`/agenda/${nextAppointment.id}`}
-                className="text-xs font-medium text-primary hover:underline flex items-center gap-1"
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-6">
+            {nextAppointment.modality === AppointmentModality.VIRTUAL && (
+              <Button
+                className="w-full sm:w-auto"
+                onClick={() => window.open("https://meet.google.com/psi-diag-ses", "_blank")}
               >
-                <span>Ver detalles completos</span>
-                <ChevronRight className="size-3" />
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
+                <Video />
+                Abrir videollamada
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="flex-1 sm:flex-none"
+              onClick={() => setRescheduleModalOpen(true)}
+            >
+              Reagendar
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setCancelModalOpen(true)}
+              className="flex-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive sm:flex-none"
+            >
+              Cancelar
+            </Button>
+            <Link
+              href={`/agenda/${nextAppointment.id}`}
+              className="flex w-full items-center justify-center gap-0.5 pt-1 text-sm font-medium text-primary hover:underline sm:ml-auto sm:w-auto sm:pt-0"
+            >
+              Ver detalles
+              <ChevronRight className="size-4" />
+            </Link>
+          </div>
+        </section>
       ) : (
-        /* Estado Vacío del Héroe: No hay citas próximas */
-        <Card className="border border-border/80 bg-card shadow-xs rounded-2xl p-8 sm:p-10 text-center">
-          <div className="max-w-md mx-auto space-y-4">
-            <div className="size-14 rounded-2xl bg-primary/10 text-primary mx-auto flex items-center justify-center border border-primary/20">
-              <CalendarPlus className="size-7" />
-            </div>
+        <section className="rounded-2xl border border-border bg-card px-6 py-12 text-center sm:py-16">
+          <div className="mx-auto max-w-sm space-y-4">
+            <CalendarPlus className="mx-auto size-8 text-primary" strokeWidth={1.5} />
             <div className="space-y-1.5">
-              <h3 className="text-lg font-bold font-heading text-foreground">
-                No tienes citas próximas programadas
-              </h3>
-              <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
-                La constancia es un pilar esencial en tu proceso terapéutico. Puedes programar una sesión en el día y horario que mejor te convenga.
+              <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                No tienes citas próximas
+              </h2>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Elige el día y horario que mejor te acomode para tu siguiente sesión.
               </p>
             </div>
-            <Button
-              asChild
-              className="h-11 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-sm font-semibold shadow-xs"
-            >
+            <Button asChild size="lg">
               <Link href="/agenda/nueva">
-                <Plus className="mr-1.5 size-4 stroke-[2.5]" />
-                Solicitar Cita con Dra. Ana García
+                <Plus />
+                Solicitar cita
               </Link>
             </Button>
           </div>
-        </Card>
+        </section>
       )}
 
-      {/* 3. SECCIÓN INFERIOR (ACTIVIDAD RECIENTE: MIS ÚLTIMAS CITAS) */}
-      <div className="space-y-3 pt-2">
-        <div className="flex items-center justify-between pb-1 border-b border-border/60">
-          <div>
-            <h2 className="text-base sm:text-lg font-bold tracking-tight text-foreground font-heading">
-              Mis últimas citas
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Historial breve de tus consultas anteriores en PsicoAgenda
-            </p>
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Antes de tu sesión: las tareas que dejó el/la psicólogo/a */}
+        <section className="space-y-4 rounded-2xl border border-border bg-card p-5 sm:p-6">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold tracking-tight text-foreground">Antes de tu sesión</h2>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {tasksDone} de {homework.length}
+              </span>
+            </div>
+            <div
+              className="h-1.5 overflow-hidden rounded-full bg-muted"
+              role="progressbar"
+              aria-label="Tareas completadas"
+              aria-valuemin={0}
+              aria-valuemax={homework.length}
+              aria-valuenow={tasksDone}
+            >
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                style={{ width: `${homework.length ? (tasksDone / homework.length) * 100 : 0}%` }}
+              />
+            </div>
           </div>
 
-          <Button variant="ghost" size="sm" asChild className="text-xs text-primary hover:text-primary/80">
-            <Link href="/agenda" className="flex items-center gap-1">
-              <span>Ver todas</span>
-              <ChevronRight className="size-3.5" />
-            </Link>
-          </Button>
-        </div>
-
-        {pastAppointments.length > 0 ? (
-          <div className="space-y-2.5">
-            {pastAppointments.slice(0, 4).map((apt) => {
-              const aptDate = formatShortDate(new Date(apt.startTime))
-              const aptTime = formatAppointmentTime(new Date(apt.startTime))
-              const isAttended = apt.attendanceStatus === AttendanceStatus.ATTENDED || apt.status === AppointmentStatus.COMPLETED
-              const isCancelled = apt.status === AppointmentStatus.CANCELLED
-
+          <ul className="space-y-1">
+            {homework.map((task, index) => {
+              const done = completedTasks.has(index)
               return (
-                <div
-                  key={apt.id}
-                  className="rounded-xl border border-border/80 bg-card p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-primary/30 transition-all shadow-2xs"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="size-9 rounded-lg bg-muted/60 border border-border/60 flex items-center justify-center text-muted-foreground shrink-0 mt-0.5">
-                      <CalendarDays className="size-4 text-primary" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm text-foreground">
-                          {aptDate} · {aptTime} hrs
-                        </span>
-                        <span className="text-[11px] text-muted-foreground px-2 py-0.2 rounded border border-border/60 bg-muted/40">
-                          {apt.modality === AppointmentModality.VIRTUAL ? "Virtual" : "Presencial"}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Atendida por {MOCK_PSYCHOLOGIST.name} • {apt.reason || "Consulta clínica"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Estado de la cita pasada: Asistió / Cancelada */}
-                  <div className="flex items-center gap-2 self-start sm:self-center">
-                    {isAttended ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 text-primary px-2.5 py-0.5 text-xs font-medium shadow-2xs">
-                        <CheckCircle2 className="size-3 text-primary" />
-                        Asistió
-                      </span>
-                    ) : isCancelled ? (
-                      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/60 text-muted-foreground px-2.5 py-0.5 text-xs font-medium">
-                        <XCircle className="size-3" />
-                        Cancelada
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full border border-border bg-muted/60 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-                        Completada
-                      </span>
-                    )}
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      asChild
-                      className="size-7 p-0 rounded-lg text-muted-foreground hover:text-foreground"
+                <li key={index}>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={done}
+                    onClick={() => toggleTask(index)}
+                    className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-xl px-2 py-2.5 text-left transition-colors hover:bg-muted/50 active:scale-[0.99]"
+                  >
+                    <span
+                      className={cn(
+                        "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors duration-150",
+                        done ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/40"
+                      )}
                     >
-                      <Link href={`/agenda/${apt.id}`} title="Ver detalles">
-                        <ChevronRight className="size-4" />
-                      </Link>
-                    </Button>
-                  </div>
-                </div>
+                      {done && <Check className="size-3 animate-in zoom-in-50 duration-150" strokeWidth={3} />}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-sm leading-relaxed transition-colors",
+                        done ? "text-muted-foreground line-through decoration-muted-foreground/50" : "text-foreground"
+                      )}
+                    >
+                      {task}
+                    </span>
+                  </button>
+                </li>
               )
             })}
+          </ul>
+
+          <p className="text-xs text-muted-foreground">
+            {homework.length > 0 && tasksDone === homework.length
+              ? "Todo listo para tu próxima sesión."
+              : `Indicaciones de ${MOCK_PSYCHOLOGIST.name} en tu última sesión.`}
+          </p>
+        </section>
+
+        {/* Citas recientes */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold tracking-tight text-foreground">Citas recientes</h2>
+            <Link
+              href="/agenda"
+              className="flex items-center gap-0.5 text-sm font-medium text-primary hover:underline"
+            >
+              Ver todas
+              <ChevronRight className="size-4" />
+            </Link>
           </div>
-        ) : (
-          <div className="p-8 text-center rounded-xl border border-dashed border-border/70 bg-card text-xs text-muted-foreground">
-            Aún no tienes un historial previo de citas registradas.
-          </div>
-        )}
+
+          {pastAppointments.length > 0 ? (
+            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+              {pastAppointments.slice(0, 4).map((apt) => {
+                const isAttended = apt.attendanceStatus === AttendanceStatus.ATTENDED || apt.status === AppointmentStatus.COMPLETED
+
+                return (
+                  <li key={apt.id}>
+                    <Link
+                      href={`/agenda/${apt.id}`}
+                      className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/30"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium tabular-nums text-foreground">
+                          {formatShortDate(new Date(apt.startTime))} · {formatAppointmentTime(new Date(apt.startTime))}
+                        </p>
+                        <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                          <ModalityLabel modality={apt.modality} />
+                          <span aria-hidden="true">·</span>
+                          <span className="truncate">{apt.reason || "Consulta"}</span>
+                        </p>
+                      </div>
+                      <StatusLabel
+                        status={isAttended ? AppointmentStatus.CONFIRMED : apt.status}
+                        label={isAttended ? "Asistió" : undefined}
+                      />
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <div className="rounded-2xl border border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
+              Aún no tienes citas anteriores.
+            </div>
+          )}
+        </section>
       </div>
 
-      {/* ACCIÓN PRINCIPAL FLOTANTE (Móvil) */}
+      {/* Acción principal flotante (móvil) */}
       <Link
         href="/agenda/nueva"
-        className="fixed bottom-20 right-4 lg:hidden z-30 flex items-center gap-2 px-4 py-3 rounded-full bg-primary text-primary-foreground shadow-lg font-semibold text-xs active:scale-95 transition-all"
-        title="Solicitar Nueva Cita"
+        className="fixed bottom-20 right-4 z-30 flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-lg transition-transform active:scale-95 lg:hidden"
       >
-        <Plus className="size-4 stroke-[2.5]" />
-        <span>+ Solicitar Cita</span>
+        <Plus className="size-4" />
+        Solicitar cita
       </Link>
 
-      {/* MODAL 1: REAGENDAR CITA */}
+      {/* Reagendar */}
       {nextAppointment && (
         <Dialog open={rescheduleModalOpen} onOpenChange={setRescheduleModalOpen}>
-          <DialogContent className="max-w-md border-border/80 bg-background text-foreground">
+          <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-base font-bold flex items-center gap-2">
-                <CalendarSync className="size-5 text-primary" />
-                <span>Reagendar Cita</span>
-              </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">
-                Sesión con {MOCK_PSYCHOLOGIST.name}
+              <DialogTitle className="text-lg font-semibold tracking-tight">Reagendar cita</DialogTitle>
+              <DialogDescription>
+                Tu cita actual es el {formatHeroDate(nextAppointment.startTime).toLowerCase()} a las{" "}
+                {formatAppointmentTime(new Date(nextAppointment.startTime))}. Podrás elegir un nuevo
+                horario según la disponibilidad de {MOCK_PSYCHOLOGIST.name}.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-3 py-2 text-xs">
-              <p className="text-muted-foreground leading-relaxed">
-                Actualmente tienes tu cita programada para el{" "}
-                <strong className="text-foreground">{formatHeroDate(nextAppointment.startTime)}</strong> a las{" "}
-                <strong className="text-foreground">{formatAppointmentTime(new Date(nextAppointment.startTime))} hrs</strong>.
-              </p>
-              <p className="text-muted-foreground leading-relaxed">
-                Al reagendar, podrás explorar el calendario de disponibilidad de tu psicóloga y seleccionar un nuevo horario conveniente.
-              </p>
-            </div>
-
-            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border/60">
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => setRescheduleModalOpen(false)}
-              >
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button variant="ghost" onClick={() => setRescheduleModalOpen(false)}>
                 Volver
               </Button>
-              <Button
-                size="sm"
-                asChild
-                className="text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                <Link href={`/agenda/${nextAppointment.id}`}>
-                  Ir a Seleccionar Nueva Fecha
-                </Link>
+              <Button asChild>
+                <Link href={`/agenda/${nextAppointment.id}`}>Elegir nueva fecha</Link>
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       )}
 
-      {/* MODAL 2: CANCELAR CITA */}
+      {/* Cancelar */}
       {nextAppointment && (
         <Dialog open={cancelModalOpen} onOpenChange={setCancelModalOpen}>
-          <DialogContent className="max-w-md border-border/80 bg-background text-foreground">
+          <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-base font-bold flex items-center gap-2 text-destructive">
-                <XCircle className="size-5" />
-                <span>Cancelar Cita Programada</span>
-              </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">
-                Cita del {formatHeroDate(nextAppointment.startTime)} a las {formatAppointmentTime(new Date(nextAppointment.startTime))} hrs
+              <DialogTitle className="text-lg font-semibold tracking-tight">Cancelar cita</DialogTitle>
+              <DialogDescription>
+                {formatHeroDate(nextAppointment.startTime)} · {formatAppointmentTime(new Date(nextAppointment.startTime))}.
+                Cuéntanos el motivo para avisar a tu psicólogo/a y liberar el espacio.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-3 py-2 text-xs">
-              <p className="text-muted-foreground leading-relaxed">
-                Lamentamos que no puedas asistir. Por favor compártenos el motivo de la cancelación para informar a tu psicóloga y liberar el espacio clínico:
-              </p>
-
-              <div className="space-y-2 pt-1">
-                {[
-                  "Inconveniente de horario o imprevisto",
-                  "Motivos de salud física",
-                  "Compromiso laboral o escolar",
-                  "Otro",
-                ].map((reason) => (
-                  <label
-                    key={reason}
-                    className="flex items-center gap-2.5 p-2.5 rounded-lg border border-border/60 hover:bg-muted/30 cursor-pointer transition-colors"
-                  >
-                    <input
-                      type="radio"
-                      name="cancel-reason"
-                      value={reason}
-                      checked={cancellationReason === reason}
-                      onChange={(e) => setCancellationReason(e.target.value)}
-                      className="accent-primary"
-                    />
-                    <span className="text-xs text-foreground font-medium">{reason}</span>
-                  </label>
-                ))}
-              </div>
+            <fieldset className="space-y-2">
+              <legend className="sr-only">Motivo de cancelación</legend>
+              {[
+                "Inconveniente de horario o imprevisto",
+                "Motivos de salud física",
+                "Compromiso laboral o escolar",
+                "Otro",
+              ].map((reason) => (
+                <label
+                  key={reason}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-2.5 text-sm transition-colors",
+                    cancellationReason === reason
+                      ? "border-primary/40 bg-primary/5"
+                      : "border-border hover:bg-muted/40"
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="cancel-reason"
+                    value={reason}
+                    checked={cancellationReason === reason}
+                    onChange={(e) => setCancellationReason(e.target.value)}
+                    className="accent-primary"
+                  />
+                  {reason}
+                </label>
+              ))}
 
               {cancellationReason === "Otro" && (
                 <textarea
                   value={otherReason}
                   onChange={(e) => setOtherReason(e.target.value)}
-                  placeholder="Escribe brevemente el motivo..."
+                  placeholder="Escribe brevemente el motivo"
                   rows={2}
-                  className="w-full rounded-lg border border-border p-2.5 text-xs text-foreground bg-muted/20 focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="w-full rounded-xl border border-input bg-transparent px-3.5 py-2.5 text-sm text-foreground outline-none animate-in fade-in slide-in-from-top-1 duration-200 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40"
                 />
               )}
-            </div>
+            </fieldset>
 
-            <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border/60">
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => setCancelModalOpen(false)}
-              >
-                Mantener mi Cita
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button variant="ghost" onClick={() => setCancelModalOpen(false)}>
+                Mantener cita
               </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                className="text-xs"
-                onClick={() => handleCancelAppointment(nextAppointment.id)}
-              >
-                Confirmar Cancelación
+              <Button variant="destructive" onClick={() => handleCancelAppointment(nextAppointment.id)}>
+                Cancelar cita
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1453,4 +1568,3 @@ export function DashboardView() {
 
   return <PsychologistDashboardView user={user} />
 }
-

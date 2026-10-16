@@ -4,15 +4,11 @@ import {
   getPatientById,
   listPatients,
   updateMyPatientProfile,
+  type UpdatePatientProfileInput,
 } from "@/services/patient.service";
 import type { AuthedRequest } from "@/types/express";
-import type { UpdatePatientProfileInput } from "@/types/patient";
 
-export const getMyPatientController: RequestHandler = async (
-  req: AuthedRequest,
-  res,
-  next,
-) => {
+export const getMyPatientController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     res.json(await getMyPatientProfile(req.auth!));
   } catch (error) {
@@ -20,11 +16,7 @@ export const getMyPatientController: RequestHandler = async (
   }
 };
 
-export const updateMyPatientController: RequestHandler = async (
-  req: AuthedRequest,
-  res,
-  next,
-) => {
+export const updateMyPatientController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     const input = req.body as UpdatePatientProfileInput;
     res.json(await updateMyPatientProfile(req.auth!, input));
@@ -33,11 +25,7 @@ export const updateMyPatientController: RequestHandler = async (
   }
 };
 
-export const listPatientsController: RequestHandler = async (
-  req: AuthedRequest,
-  res,
-  next,
-) => {
+export const listPatientsController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     // `requireAuth` ya garantizó que `auth` existe.
     res.json(await listPatients(req.auth!));
@@ -46,11 +34,7 @@ export const listPatientsController: RequestHandler = async (
   }
 };
 
-export const getPatientController: RequestHandler = async (
-  req: AuthedRequest,
-  res,
-  next,
-) => {
+export const getPatientController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     const { id } = req.params as { id: string };
     res.json(await getPatientById(id, req.auth!));

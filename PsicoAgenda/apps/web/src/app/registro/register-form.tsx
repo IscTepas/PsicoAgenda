@@ -1,21 +1,14 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { useState, useMemo, useEffect } from "react"
 import { z } from "zod"
 import { emailSchema, passwordSchema, APP_NAME } from "@psicoagenda/shared"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   Form,
   FormControl,
@@ -38,9 +31,6 @@ import { Badge } from "@/components/ui/badge"
 import {
   ShieldAlert,
   CheckCircle2,
-  Mail,
-  Calendar,
-  HeartHandshake,
   Loader2,
   Eye,
   EyeOff,
@@ -178,7 +168,7 @@ export function RegisterForm() {
     },
   });
 
-  const watchBirthDate = form.watch("birthDate");
+  const watchBirthDate = useWatch({ control: form.control, name: "birthDate" });
 
   // Detección automática y reactiva de minoría de edad (< 18 años)
   const isMinor = useMemo(() => {
@@ -256,7 +246,7 @@ export function RegisterForm() {
   // Estado de confirmación (Email enviado)
   if (submittedEmail) {
     return (
-      <div className="w-full max-w-md rounded-[28px] bg-card p-8 border border-border shadow-sm text-center flex flex-col items-center gap-4">
+      <div className="w-full max-w-md rounded-4xl bg-card p-8 border border-border shadow-sm text-center flex flex-col items-center gap-4">
         <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-1">
           <CheckCircle2 className="size-8" />
         </div>
@@ -290,12 +280,17 @@ export function RegisterForm() {
   }
 
   return (
-    <div className="w-full max-w-xl rounded-[28px] bg-card p-7 sm:p-9 border border-border shadow-sm flex flex-col gap-6">
-      {/* Cabecera con isotipo verde y blanco de PsicoAgenda */}
+    <div className="w-full max-w-xl rounded-4xl bg-card p-7 sm:p-9 border border-border shadow-sm flex flex-col gap-6">
+      {/* Cabecera con el logo de PsicoAgenda */}
       <div className="text-center flex flex-col items-center">
-        <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary text-2xl font-bold shadow-2xs mb-3">
-          Ψ
-        </div>
+        <Image
+          src="/images/psicoagenda-logo.png"
+          alt={APP_NAME}
+          width={167}
+          height={116}
+          className="mb-2 h-[116px] w-[167px] object-contain"
+          priority
+        />
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
           Crear una nueva cuenta
         </h1>
@@ -306,7 +301,10 @@ export function RegisterForm() {
 
       <div className="space-y-6">
         {error ? (
-          <Alert variant="destructive" className="rounded-xl">
+          <Alert
+            variant="destructive"
+            className="rounded-xl animate-in fade-in slide-in-from-top-1 duration-200"
+          >
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
@@ -326,13 +324,10 @@ export function RegisterForm() {
                 psicólogo/a se asigna desde el panel administrativo. */}
 
               {/* SECCIÓN 1: Credenciales y datos básicos */}
-              <div className="space-y-4 pt-1">
-                <div className="flex items-center gap-2 pb-1 border-b border-border">
-                  <Mail className="size-3.5 text-primary" />
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Datos de acceso
-                  </span>
-                </div>
+              <div className="space-y-4">
+                <h2 className="text-sm font-semibold text-foreground">
+                  Datos de acceso
+                </h2>
 
                 <FormField
                   control={form.control}
@@ -456,13 +451,10 @@ export function RegisterForm() {
               </div>
 
               {/* SECCIÓN 2: Ficha personal, tutor y contacto de emergencia */}
-              <div className="space-y-4 pt-1">
-                  <div className="flex items-center gap-2 pb-1 border-b border-border">
-                    <Calendar className="size-3.5 text-primary" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Información personal
-                    </span>
-                  </div>
+              <div className="space-y-4 pt-2">
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Información personal
+                  </h2>
 
                   <div className="grid sm:grid-cols-2 gap-4">
                     <FormField
@@ -531,7 +523,7 @@ export function RegisterForm() {
 
                   {/* BLOQUE REACTIVO: Tutor legal si es menor de edad */}
                   {isMinor ? (
-                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3.5">
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3.5 animate-in fade-in slide-in-from-top-1 duration-200">
                       <div className="flex items-start gap-2">
                         <ShieldAlert className="size-4 text-primary shrink-0 mt-0.5" />
                         <div>
@@ -627,13 +619,10 @@ export function RegisterForm() {
                   ) : null}
 
                   {/* BLOQUE: Contacto de emergencia (RD-12) */}
-                  <div className="space-y-3 pt-2">
-                    <div className="flex items-center gap-2 pb-1 border-b border-border">
-                      <HeartHandshake className="size-3.5 text-primary" />
-                      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Contacto de emergencia (RD-12)
-                      </span>
-                    </div>
+                  <div className="space-y-3 pt-3">
+                    <h2 className="text-sm font-semibold text-foreground">
+                      Contacto de emergencia
+                    </h2>
 
                     <div className="grid sm:grid-cols-2 gap-4">
                       <FormField

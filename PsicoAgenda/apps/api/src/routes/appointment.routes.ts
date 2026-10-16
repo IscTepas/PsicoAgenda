@@ -20,24 +20,9 @@ import { validate } from "@/middleware/validate.middleware";
 
 const router = Router();
 
-router.get(
-  "/",
-  requireAuth,
-  validate({ query: appointmentListQuerySchema }),
-  listAppointmentsController,
-);
-router.get(
-  "/:id",
-  requireAuth,
-  validate({ params: idParamSchema }),
-  getAppointmentController,
-);
-router.post(
-  "/",
-  requireAuth,
-  validate({ body: createAppointmentSchema }),
-  createAppointmentController,
-);
+router.get("/", requireAuth, validate({ query: appointmentListQuerySchema }), listAppointmentsController);
+router.get("/:id", requireAuth, validate({ params: idParamSchema }), getAppointmentController);
+router.post("/", requireAuth, validate({ body: createAppointmentSchema }), createAppointmentController);
 router.patch(
   "/:id",
   requireAuth,

@@ -92,6 +92,38 @@ export interface Psychologist extends User {
   bio?: string;
 }
 
+/** Preferencias de cuenta que aplican a cualquier rol. */
+export interface ProfilePreferences {
+  timeZone: string;
+  photoUrl?: string;
+  notifyWhatsapp: boolean;
+  notifyEmail: boolean;
+}
+
+export interface PsychologistProfile extends Psychologist, ProfilePreferences {}
+
+export interface PatientProfile extends Patient, ProfilePreferences {}
+
+/**
+ * Entrada de bitácora tal como la consume la interfaz clínica. Es la proyección
+ * legible de `LogEntry` (que guarda `sessionNotes`/`objectives`/`nextSessionPlan`).
+ */
+export interface SessionLogEntry {
+  id: string;
+  patientId: string;
+  appointmentId?: string;
+  sessionNumber: number;
+  date: Date;
+  psychologistName: string;
+  modality: AppointmentModality;
+  sessionType: string;
+  notes: string;
+  interventions?: string;
+  homework?: string;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
 export interface Patient extends User {
   role: UserRole.PATIENT;
   birthDate?: Date;
