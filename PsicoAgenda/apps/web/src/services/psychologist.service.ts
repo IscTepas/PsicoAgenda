@@ -1,4 +1,4 @@
-import type { PsychologistProfile } from "@psicoagenda/shared"
+import type { PsychologistProfile, PsychologistSchedule } from "@psicoagenda/shared"
 import { apiFetch } from "@/lib/api-client"
 
 /** La API serializa las fechas como ISO; el dominio las usa como `Date`. */
@@ -46,4 +46,10 @@ export const psychologistService = {
         body: payload,
       }),
     ),
+
+  getSchedule: async (psychologistId: string, token?: string): Promise<PsychologistSchedule> =>
+    apiFetch<PsychologistSchedule>(`/psychologists/${psychologistId}/schedule`, { token }),
+
+  getMySchedule: async (token?: string): Promise<PsychologistSchedule> =>
+    apiFetch<PsychologistSchedule>("/psychologists/me/schedule", { token }),
 }

@@ -6,6 +6,7 @@ import {
   getAppointmentById,
   listAppointments,
   updateAppointment,
+  updateAppointmentPayment,
   type CreateAppointmentInput,
   type ListAppointmentsFilter,
   type UpdateAppointmentInput,
@@ -68,6 +69,20 @@ export const cancelAppointmentController: RequestHandler = async (req: AuthedReq
     const { id } = req.params as { id: string };
     const { reason } = req.body as { reason: string };
     res.json(await cancelAppointment(req.auth!, id, reason));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateAppointmentPaymentController: RequestHandler = async (
+  req: AuthedRequest,
+  res,
+  next,
+) => {
+  try {
+    const { id } = req.params as { id: string };
+    const { status } = req.body as { status: Parameters<typeof updateAppointmentPayment>[2] };
+    res.json(await updateAppointmentPayment(req.auth!, id, status));
   } catch (error) {
     next(error);
   }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { AppointmentModality, UserRole } from "@psicoagenda/shared";
+import { AppointmentModality, PaymentStatus, UserRole } from "@psicoagenda/shared";
 import { prisma, disconnectPrisma } from "@/lib/prisma";
 import { rol_usuario } from "@/generated/prisma/enums";
 import {
@@ -8,6 +8,7 @@ import {
   createAppointment,
   getAppointmentById,
   listAppointments,
+  updateAppointmentPayment,
 } from "@/services/appointment.service";
 import { getPatientById, listPatients } from "@/services/patient.service";
 import type { AuthenticatedUser } from "@/utils/jwt";
@@ -101,13 +102,39 @@ describe("services integration against real database", () => {
     appointmentId = appointment.id;
     expect(appointment.psychologistId).toBe(psychologistId);
     expect(appointment.patientId).toBe(patientId);
-    expect(appointment.status).toBe("confirmed");
+    // La cita nace pendiente de confirmación por el profesional.
+    expect(appointment.status).toBe("pending");
+    // Adulto, presencial y a 48h: tarifa base sin recargos.
+    expect(appointment.price).toBe(800);
+    // El honorario nace con la cita, pendiente de cobro y por el mismo importe.
+    expect(appointment.payment).toMatchObject({
+      appointmentId: appointment.id,
+      amount: "800",
+      status: PaymentStatus.PENDING,
+    });
   });
 
   it("reads the appointment through the service", async () => {
     const found = await getAppointmentById(appointmentId, psychologistAuth);
 
     expect(found.id).toBe(appointmentId);
+  });
+
+  it("marks the honorarium as paid and then as waived", async () => {
+    const paid = await updateAppointmentPayment(psychologistAuth, appointmentId, PaymentStatus.PAID);
+
+    expect(paid.payment?.status).toBe(PaymentStatus.PAID);
+    // El CHECK `ck_pagos_fecha` exige marca de cobro cuando el estado es PAGADO.
+    expect(paid.payment?.paidAt).toBeInstanceOf(Date);
+
+    const waived = await updateAppointmentPayment(
+      psychologistAuth,
+      appointmentId,
+      PaymentStatus.WAIVED,
+    );
+
+    expect(waived.payment?.status).toBe(PaymentStatus.WAIVED);
+    expect(waived.payment?.paidAt).toBeUndefined();
   });
 
   it("lists appointments for the psychologist", async () => {
@@ -162,9 +189,12 @@ describe("services integration against real database", () => {
     await prisma.usuarios.deleteMany({ where: { id: otherPatientUserId } }).catch(() => {});
   });
 
-  it("cancels the appointment through the service", async () => {
+  it("cancels the appointment and drops its honorarium", async () => {
     const cancelled = await cancelAppointment(psychologistAuth, appointmentId, "Test cancellation");
 
     expect(cancelled.status).toBe("cancelled");
+    // Cancelar no debe dejar una deuda pendiente colgando.
+    expect(cancelled.payment).toBeUndefined();
+    expect(await prisma.pagos_honorarios.findUnique({ where: { cita_id: appointmentId } })).toBeNull();
   });
 });

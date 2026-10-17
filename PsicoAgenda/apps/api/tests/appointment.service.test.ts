@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AppointmentModality,
   AppointmentStatus as SharedStatus,
+  PaymentStatus,
   UserRole,
 } from "@psicoagenda/shared";
 
@@ -9,6 +10,7 @@ const { prismaMock } = vi.hoisted(() => {
   const citas = {
     findMany: vi.fn(),
     findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
     findFirst: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
@@ -16,8 +18,9 @@ const { prismaMock } = vi.hoisted(() => {
   };
   const pacientes = { findUnique: vi.fn() };
   const psicologos = { findUnique: vi.fn() };
+  const pagos_honorarios = { create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() };
 
-  return { prismaMock: { citas, pacientes, psicologos, $transaction: vi.fn() } };
+  return { prismaMock: { citas, pacientes, psicologos, pagos_honorarios, $transaction: vi.fn() } };
 });
 
 vi.mock("@/lib/prisma", () => ({
@@ -32,6 +35,7 @@ const {
   getAppointmentById,
   listAppointments,
   updateAppointment,
+  updateAppointmentPayment,
 } = await import("@/services/appointment.service");
 
 /**
@@ -70,8 +74,24 @@ function appointmentRow(overrides: Record<string, unknown> = {}) {
     motivo: null,
     notas_internas: null,
     motivo_cancelacion: null,
+    precio: null,
     cancelada_por_id: null,
     cancelada_en: null,
+    creado_en: START,
+    actualizado_en: START,
+    // Relación 1:1 con los honorarios de la cita.
+    pagos_honorarios: null,
+    ...overrides,
+  };
+}
+
+function paymentRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "77777777-7777-4777-8777-777777777777",
+    cita_id: APPOINTMENT_ID,
+    monto: "800",
+    estado: "PENDIENTE",
+    pagado_en: null,
     creado_en: START,
     actualizado_en: START,
     ...overrides,
@@ -103,8 +123,10 @@ describe("createAppointment", () => {
     expect(data).toMatchObject({
       psicologo_id: PSYCH_ID,
       paciente_id: PATIENT_ID,
-      estado: "CONFIRMADA",
+      estado: "PENDIENTE",
       tipo_sesion: "CONSULTA_INICIAL",
+      // Adulto, presencial y sin recargo de mismo día (la cita es futura).
+      precio: 800,
     });
     expect(result.id).toBe(APPOINTMENT_ID);
   });
@@ -169,6 +191,34 @@ describe("createAppointment", () => {
     ).rejects.toMatchObject({ statusCode: 403 });
 
     expect(prismaMock.citas.create).not.toHaveBeenCalled();
+  });
+
+  it("crea el honorario pendiente con el precio calculado", async () => {
+    prismaMock.citas.count.mockResolvedValue(0);
+    prismaMock.citas.create.mockResolvedValue(
+      appointmentRow({ pagos_honorarios: paymentRow({ monto: "800" }) }),
+    );
+
+    const result = await createAppointment(psychologist, {
+      patientId: PATIENT_ID,
+      startTime: START,
+      durationMinutes: 60,
+      modality: AppointmentModality.IN_PERSON,
+    });
+
+    const { data } = lastCallArg(prismaMock.citas.create) as {
+      data: { pagos_honorarios?: { create?: Record<string, unknown> } };
+    };
+
+    expect(data.pagos_honorarios?.create).toMatchObject({
+      monto: 800,
+      estado: "PENDIENTE",
+    });
+    expect(result.payment).toMatchObject({
+      appointmentId: APPOINTMENT_ID,
+      amount: "800",
+      status: PaymentStatus.PENDING,
+    });
   });
 });
 
@@ -279,6 +329,17 @@ describe("cancelAppointment", () => {
     expect(data.cancelada_en).toBeInstanceOf(Date);
   });
 
+  it("elimina el honorario para no dejar una deuda colgando", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ paciente_id: PATIENT_ID }));
+    prismaMock.citas.update.mockResolvedValue(appointmentRow({ estado: "CANCELADA" }));
+
+    await cancelAppointment(patient, APPOINTMENT_ID, "Me surgió un imprevisto");
+
+    expect(prismaMock.pagos_honorarios.deleteMany).toHaveBeenCalledWith({
+      where: { cita_id: APPOINTMENT_ID },
+    });
+  });
+
   it("rechaza cancelar una cita ya cancelada", async () => {
     prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ estado: "CANCELADA" }));
 
@@ -286,5 +347,102 @@ describe("cancelAppointment", () => {
       statusCode: 409,
     });
     expect(prismaMock.citas.update).not.toHaveBeenCalled();
+    expect(prismaMock.pagos_honorarios.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateAppointmentPayment", () => {
+  it("marca el honorario como pagado con su fecha de cobro", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(
+      appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow() }),
+    );
+    prismaMock.citas.findUniqueOrThrow.mockResolvedValue(
+      appointmentRow({
+        estado: "COMPLETADA",
+        pagos_honorarios: paymentRow({ estado: "PAGADO", pagado_en: START }),
+      }),
+    );
+
+    const result = await updateAppointmentPayment(psychologist, APPOINTMENT_ID, PaymentStatus.PAID);
+
+    const { data } = lastCallArg(prismaMock.pagos_honorarios.update) as {
+      data: Record<string, unknown>;
+    };
+
+    expect(data.estado).toBe("PAGADO");
+    expect(data.pagado_en).toBeInstanceOf(Date);
+    expect(result.payment?.status).toBe(PaymentStatus.PAID);
+  });
+
+  it("condona el honorario sin fecha de cobro", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(
+      appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow() }),
+    );
+    prismaMock.citas.findUniqueOrThrow.mockResolvedValue(
+      appointmentRow({
+        estado: "COMPLETADA",
+        pagos_honorarios: paymentRow({ estado: "CONDONADO" }),
+      }),
+    );
+
+    const result = await updateAppointmentPayment(psychologist, APPOINTMENT_ID, PaymentStatus.WAIVED);
+
+    const { data } = lastCallArg(prismaMock.pagos_honorarios.update) as {
+      data: Record<string, unknown>;
+    };
+
+    expect(data.estado).toBe("CONDONADO");
+    expect(data.pagado_en).toBeNull();
+    expect(result.payment?.status).toBe(PaymentStatus.WAIVED);
+  });
+
+  it("crea el honorario cuando la cita es anterior a la tabla de pagos", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(
+      appointmentRow({ estado: "COMPLETADA", precio: 800, pagos_honorarios: null }),
+    );
+    prismaMock.citas.findUniqueOrThrow.mockResolvedValue(
+      appointmentRow({
+        estado: "COMPLETADA",
+        precio: 800,
+        pagos_honorarios: paymentRow({ estado: "PAGADO", pagado_en: START }),
+      }),
+    );
+
+    await updateAppointmentPayment(psychologist, APPOINTMENT_ID, PaymentStatus.PAID);
+
+    const { data } = lastCallArg(prismaMock.pagos_honorarios.create) as {
+      data: Record<string, unknown>;
+    };
+
+    expect(data).toMatchObject({
+      cita_id: APPOINTMENT_ID,
+      monto: 800,
+      estado: "PAGADO",
+    });
+    expect(prismaMock.pagos_honorarios.update).not.toHaveBeenCalled();
+  });
+
+  it("impide que un paciente toque el estado de pago", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(
+      appointmentRow({ paciente_id: PATIENT_ID, pagos_honorarios: paymentRow() }),
+    );
+
+    await expect(
+      updateAppointmentPayment(patient, APPOINTMENT_ID, PaymentStatus.PAID),
+    ).rejects.toMatchObject({ statusCode: 403 });
+
+    expect(prismaMock.pagos_honorarios.update).not.toHaveBeenCalled();
+  });
+
+  it("rechaza cobrar una cita cancelada", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(
+      appointmentRow({ estado: "CANCELADA", pagos_honorarios: paymentRow() }),
+    );
+
+    await expect(
+      updateAppointmentPayment(psychologist, APPOINTMENT_ID, PaymentStatus.PAID),
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(prismaMock.pagos_honorarios.update).not.toHaveBeenCalled();
   });
 });

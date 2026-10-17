@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { UserRole } from "@psicoagenda/shared";
+import { patientListQuerySchema, UserRole } from "@psicoagenda/shared";
 
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: { pacientes: { findMany: vi.fn(), findUnique: vi.fn() } },
@@ -38,8 +38,9 @@ function patientRow(overrides: Record<string, unknown> = {}) {
       creado_en: new Date("2030-01-01T00:00:00.000Z"),
       actualizado_en: new Date("2030-01-01T00:00:00.000Z"),
     },
-    tutores_legales: null,
-    contactos_emergencia: [],
+    tutores: null,
+    // Relación to-one: una sola ficha de contacto por paciente.
+    contactos_emergencia: null,
     ...overrides,
   };
 }
@@ -59,6 +60,35 @@ describe("listPatients", () => {
 
     expect(args.where).toMatchObject({ usuario_id: PATIENT_USER_ID });
   });
+
+  it("coercede limit/offset de la query a números antes de llegar a Prisma", async () => {
+    prismaMock.pacientes.findMany.mockResolvedValue([]);
+
+    // Express entrega la query como strings; la ruta la pasa por
+    // `validate({ query: patientListQuerySchema })` antes que el servicio.
+    const filter = patientListQuerySchema.parse({ limit: "100", offset: "0" });
+    await listPatients(patient, filter);
+
+    const call = prismaMock.pacientes.findMany.mock.calls.at(-1);
+    const args = (call?.[0] ?? {}) as { take?: unknown; skip?: unknown };
+
+    expect(args.take).toBe(100);
+    expect(args.skip).toBe(0);
+  });
+
+  it("deriva offset de page cuando la query no trae offset", async () => {
+    prismaMock.pacientes.findMany.mockResolvedValue([]);
+
+    const filter = patientListQuerySchema.parse({ page: "2" });
+    await listPatients(patient, filter);
+
+    const call = prismaMock.pacientes.findMany.mock.calls.at(-1);
+    const args = (call?.[0] ?? {}) as { take?: unknown; skip?: unknown };
+
+    // page 2 con el limit por defecto de 100 del servicio.
+    expect(args.take).toBe(100);
+    expect(args.skip).toBe(100);
+  });
 });
 
 describe("getPatientById", () => {
@@ -68,13 +98,18 @@ describe("getPatientById", () => {
     await expect(getPatientById(PATIENT_ID, patient)).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it("mapea la fila a la forma pública con el contacto de emergencia principal", async () => {
+  it("mapea la fila a la forma pública con el contacto de emergencia", async () => {
     prismaMock.pacientes.findUnique.mockResolvedValue(
       patientRow({
-        contactos_emergencia: [
-          { id: "c1", paciente_id: PATIENT_ID, nombre_completo: "Madre", telefono: "3000000000", parentesco: "Madre", es_principal: false, creado_en: new Date("2030-01-01T00:00:00.000Z") },
-          { id: "c2", paciente_id: PATIENT_ID, nombre_completo: "Padre", telefono: "3111111111", parentesco: null, es_principal: true, creado_en: new Date("2030-01-01T00:00:00.000Z") },
-        ],
+        contactos_emergencia: {
+          id: "c2",
+          paciente_id: PATIENT_ID,
+          nombre_completo: "Padre",
+          telefono: "3111111111",
+          parentesco: null,
+          es_principal: true,
+          creado_en: new Date("2030-01-01T00:00:00.000Z"),
+        },
       }),
     );
 

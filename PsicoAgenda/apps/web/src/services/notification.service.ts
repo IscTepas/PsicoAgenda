@@ -18,8 +18,9 @@ function reviveNotification(raw: SerializedNotification): Notification {
 }
 
 export const notificationService = {
-  list: async (token?: string): Promise<Notification[]> => {
-    const rows = await apiFetch<SerializedNotification[]>("/notifications", { token })
+  list: async (token?: string, limit?: number): Promise<Notification[]> => {
+    const q = limit && limit > 0 ? `?limit=${Math.min(limit, 100)}` : ""
+    const rows = await apiFetch<SerializedNotification[]>(`/notifications${q}`, { token })
     return rows.map(reviveNotification)
   },
 }

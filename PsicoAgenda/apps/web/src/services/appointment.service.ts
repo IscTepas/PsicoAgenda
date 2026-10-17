@@ -1,4 +1,10 @@
-import type { Appointment, AppointmentModality, AppointmentStatus } from "@psicoagenda/shared"
+import type {
+  Appointment,
+  AppointmentModality,
+  AppointmentStatus,
+  HonorariumPayment,
+  PaymentStatus,
+} from "@psicoagenda/shared"
 import { apiFetch } from "@/lib/api-client"
 
 /**
@@ -6,11 +12,28 @@ import { apiFetch } from "@/lib/api-client"
  * `Date`. La interfaz hace `appointment.startTime.getHours()`, así que cada
  * respuesta se "revive" antes de salir de este módulo.
  */
+interface SerializedPayment
+  extends Omit<HonorariumPayment, "paidAt" | "createdAt" | "updatedAt"> {
+  paidAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
 interface SerializedAppointment
-  extends Omit<Appointment, "startTime" | "createdAt" | "updatedAt"> {
+  extends Omit<Appointment, "startTime" | "createdAt" | "updatedAt" | "payment"> {
   startTime: string
   createdAt: string
   updatedAt: string
+  payment?: SerializedPayment
+}
+
+function revivePayment(raw: SerializedPayment): HonorariumPayment {
+  return {
+    ...raw,
+    paidAt: raw.paidAt ? new Date(raw.paidAt) : undefined,
+    createdAt: new Date(raw.createdAt),
+    updatedAt: new Date(raw.updatedAt),
+  }
 }
 
 function reviveAppointment(raw: SerializedAppointment): Appointment {
@@ -19,6 +42,7 @@ function reviveAppointment(raw: SerializedAppointment): Appointment {
     startTime: new Date(raw.startTime),
     createdAt: new Date(raw.createdAt),
     updatedAt: new Date(raw.updatedAt),
+    payment: raw.payment ? revivePayment(raw.payment) : undefined,
   }
 }
 
@@ -28,6 +52,9 @@ export interface AppointmentListParams {
   patientId?: string
   psychologistId?: string
   status?: AppointmentStatus
+  limit?: number
+  offset?: number
+  page?: number
 }
 
 export interface CreateAppointmentPayload {
@@ -54,6 +81,9 @@ function buildQuery(params: AppointmentListParams): string {
   if (params.patientId) search.set("patientId", params.patientId)
   if (params.psychologistId) search.set("psychologistId", params.psychologistId)
   if (params.status) search.set("status", params.status)
+  if (params.limit !== undefined) search.set("limit", String(params.limit))
+  if (params.offset !== undefined) search.set("offset", String(params.offset))
+  if (params.page !== undefined) search.set("page", String(params.page))
 
   const query = search.toString()
   return query ? `?${query}` : ""
@@ -103,6 +133,14 @@ export const appointmentService = {
       await apiFetch<SerializedAppointment>(`/appointments/${id}/cancel`, {
         method: "POST",
         body: { reason },
+      }),
+    ),
+
+  updatePayment: async (id: string, status: PaymentStatus): Promise<Appointment> =>
+    reviveAppointment(
+      await apiFetch<SerializedAppointment>(`/appointments/${id}/payment`, {
+        method: "PATCH",
+        body: { status },
       }),
     ),
 }

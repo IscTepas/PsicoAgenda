@@ -3,20 +3,26 @@ import {
   AppointmentModality as SharedModality,
   AppointmentStatus as SharedStatus,
   AttendanceStatus,
+  PaymentStatus,
   UserRole,
   type Appointment,
 } from "@psicoagenda/shared";
 import type { Prisma } from "@/generated/prisma/client";
 import {
   estado_cita,
+  estado_pago,
   modalidad_cita,
   tipo_sesion,
 } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/app-error";
 import type { AuthenticatedUser } from "@/utils/jwt";
+import { calculateAppointmentPrice, getEffectiveDurationMinutes } from "@/utils/pricing";
 
-type AppointmentRow = Prisma.citasModel;
+// La cita viaja siempre con su fila de honorarios: el panel muestra si ya se cobró.
+const appointmentInclude = { pagos_honorarios: true } as const;
+
+type AppointmentRow = Prisma.citasGetPayload<{ include: typeof appointmentInclude }>;
 
 export interface CreateAppointmentInput {
   psychologistId?: string;
@@ -96,6 +102,29 @@ const toSchemaModality = (modality: SharedModality): modalidad_cita => {
   }
 };
 
+const toSharedPaymentStatus = (status: estado_pago): PaymentStatus => {
+  switch (status) {
+    case estado_pago.PENDIENTE:
+      return PaymentStatus.PENDING;
+    case estado_pago.PAGADO:
+      return PaymentStatus.PAID;
+    case estado_pago.CONDONADO:
+      return PaymentStatus.WAIVED;
+  }
+};
+
+/** Solo se marca cobrado o condonado; `pending` es el estado inicial de la fila. */
+const toSchemaPaymentStatus = (status: PaymentStatus): estado_pago => {
+  switch (status) {
+    case PaymentStatus.PENDING:
+      return estado_pago.PENDIENTE;
+    case PaymentStatus.PAID:
+      return estado_pago.PAGADO;
+    case PaymentStatus.WAIVED:
+      return estado_pago.CONDONADO;
+  }
+};
+
 /**
  * La asistencia no es una columna: se deriva del estado. Una cita completada se
  * asistió; una marcada como no presentada, no. Cualquier otro estado todavía no
@@ -120,20 +149,46 @@ const ACTIVE_STATUSES: estado_cita[] = [
 const durationOf = (start: Date, end: Date): number =>
   Math.round((end.getTime() - start.getTime()) / 60_000);
 
-const toAppointment = (row: AppointmentRow): Appointment => ({
-  id: row.id,
-  psychologistId: row.psicologo_id,
-  patientId: row.paciente_id,
-  startTime: row.inicio,
-  durationMinutes: durationOf(row.inicio, row.fin),
-  status: toSharedStatus(row.estado),
-  modality: toSharedModality(row.modalidad),
-  attendanceStatus: toAttendanceStatus(row.estado),
-  reason: row.motivo ?? undefined,
-  notes: row.notas_internas ?? undefined,
-  createdAt: row.creado_en,
-  updatedAt: row.actualizado_en,
-});
+const toAppointment = (row: AppointmentRow): Appointment => {
+  const payment = row.pagos_honorarios;
+
+  return {
+    id: row.id,
+    psychologistId: row.psicologo_id,
+    patientId: row.paciente_id,
+    startTime: row.inicio,
+    durationMinutes: durationOf(row.inicio, row.fin),
+    status: toSharedStatus(row.estado),
+    modality: toSharedModality(row.modalidad),
+    attendanceStatus: toAttendanceStatus(row.estado),
+    reason: row.motivo ?? undefined,
+    notes: row.notas_internas ?? undefined,
+    // `precio` es el snapshot de la tarifa; `payment` es el estado de cobro.
+    price: row.precio ?? undefined,
+    payment: payment
+      ? {
+          id: payment.id,
+          appointmentId: payment.cita_id,
+          // Decimal(12,2) viaja como string para no perder precisión en JSON.
+          amount: payment.monto.toString(),
+          status: toSharedPaymentStatus(payment.estado),
+          paidAt: payment.pagado_en ?? undefined,
+          createdAt: payment.creado_en,
+          updatedAt: payment.actualizado_en,
+        }
+      : undefined,
+    createdAt: row.creado_en,
+    updatedAt: row.actualizado_en,
+  };
+};
+
+/** Menor de edad: cumple 18 años en el futuro respecto a hoy. */
+function isPatientMinor(birthDate: Date | null): boolean {
+  if (!birthDate) return false;
+  const turnsEighteen = new Date(birthDate);
+  turnsEighteen.setFullYear(turnsEighteen.getFullYear() + 18);
+  return turnsEighteen > new Date();
+}
 
 /**
  * El perfil de psicólogo cuelga del usuario y su identificador no viaja en la
@@ -283,13 +338,17 @@ export async function listAppointments(
     where.psicologo_id = await requirePsychologistId(auth);
   }
 
-  const rows = await prisma.citas.findMany({ where, orderBy: { inicio: "asc" } });
+  const rows = await prisma.citas.findMany({
+    where,
+    orderBy: { inicio: "asc" },
+    include: appointmentInclude,
+  });
 
   return rows.map(toAppointment);
 }
 
 export async function getAppointmentById(id: string, auth: AuthenticatedUser): Promise<Appointment> {
-  const row = await prisma.citas.findUnique({ where: { id } });
+  const row = await prisma.citas.findUnique({ where: { id }, include: appointmentInclude });
 
   if (!row) {
     throw AppError.notFound("La cita no existe");
@@ -314,7 +373,7 @@ export async function createAppointment(
 ): Promise<Appointment> {
   const patient = await prisma.pacientes.findUnique({
     where: { id: input.patientId },
-    select: { id: true, psicologo_id: true },
+    select: { id: true, psicologo_id: true, fecha_nacimiento: true },
   });
 
   if (!patient) {
@@ -337,7 +396,18 @@ export async function createAppointment(
     previousAppointments === 0 ? tipo_sesion.CONSULTA_INICIAL : tipo_sesion.INDIVIDUAL;
 
   const start = input.startTime;
-  const end = new Date(start.getTime() + input.durationMinutes * 60_000);
+
+  // Reglas de precio: menores de edad solo 30 minutos y tarifa $1000; adultos
+  // $800; +30% si la cita es el mismo día; −$100 por modalidad virtual.
+  const isMinor = isPatientMinor(patient.fecha_nacimiento);
+  const effectiveDuration = getEffectiveDurationMinutes(isMinor, input.durationMinutes);
+  const end = new Date(start.getTime() + effectiveDuration * 60_000);
+  const price = calculateAppointmentPrice({
+    isMinor,
+    startTime: start,
+    modality: input.modality,
+    durationMinutes: effectiveDuration,
+  });
 
   try {
     const created = await prisma.$transaction(async (tx) => {
@@ -350,13 +420,22 @@ export async function createAppointment(
           paciente_id: patient.id,
           inicio: start,
           fin: end,
-          // El formulario nace en "confirmada": el psicólogo agenda sobre su propia
-          // disponibilidad, no deja una reserva pendiente de aceptar.
-          estado: estado_cita.CONFIRMADA,
+          // La cita nace PENDIENTE: el profesional debe confirmarla manualmente.
+          estado: estado_cita.PENDIENTE,
           modalidad: toSchemaModality(input.modality),
           tipo_sesion: sessionType,
           motivo: input.reason ?? null,
+          precio: price,
+          // El honorario nace con la cita, pendiente de cobro, por el precio calculado.
+          pagos_honorarios: {
+            create: {
+              id: randomUUID(),
+              monto: price,
+              estado: estado_pago.PENDIENTE,
+            },
+          },
         },
+        include: appointmentInclude,
       });
     });
 
@@ -371,7 +450,7 @@ export async function updateAppointment(
   id: string,
   input: UpdateAppointmentInput,
 ): Promise<Appointment> {
-  const row = await prisma.citas.findUnique({ where: { id } });
+  const row = await prisma.citas.findUnique({ where: { id }, include: appointmentInclude });
 
   if (!row) {
     throw AppError.notFound("La cita no existe");
@@ -412,6 +491,7 @@ export async function updateAppointment(
           motivo: input.reason,
           notas_internas: input.notes,
         },
+        include: appointmentInclude,
       });
     });
 
@@ -426,7 +506,7 @@ export async function changeAppointmentStatus(
   id: string,
   status: SharedStatus,
 ): Promise<Appointment> {
-  const row = await prisma.citas.findUnique({ where: { id } });
+  const row = await prisma.citas.findUnique({ where: { id }, include: appointmentInclude });
 
   if (!row) {
     throw AppError.notFound("La cita no existe");
@@ -443,6 +523,7 @@ export async function changeAppointmentStatus(
   const updated = await prisma.citas.update({
     where: { id },
     data: { estado: toSchemaStatus(status) },
+    include: appointmentInclude,
   });
 
   return toAppointment(updated);
@@ -453,7 +534,7 @@ export async function cancelAppointment(
   id: string,
   reason: string,
 ): Promise<Appointment> {
-  const row = await prisma.citas.findUnique({ where: { id } });
+  const row = await prisma.citas.findUnique({ where: { id }, include: appointmentInclude });
 
   if (!row) {
     throw AppError.notFound("La cita no existe");
@@ -473,15 +554,81 @@ export async function cancelAppointment(
     throw AppError.conflict("La cita ya está cancelada");
   }
 
-  // El CHECK `ck_citas_cancelacion` exige motivo y marca de cancelación juntos.
-  const updated = await prisma.citas.update({
-    where: { id },
-    data: {
-      estado: estado_cita.CANCELADA,
-      motivo_cancelacion: reason,
-      cancelada_por_id: auth.id,
-      cancelada_en: new Date(),
-    },
+  // El CHECK `ck_citas_cancelacion` exige motivo y marca de cancelación juntos. La
+  // fila de honorarios se borra en la misma transacción: el enum no tiene estado
+  // "cancelado", así que cancelar no debe dejar una deuda pendiente colgando.
+  const updated = await prisma.$transaction(async (tx) => {
+    await tx.pagos_honorarios.deleteMany({ where: { cita_id: id } });
+
+    return tx.citas.update({
+      where: { id },
+      data: {
+        estado: estado_cita.CANCELADA,
+        motivo_cancelacion: reason,
+        cancelada_por_id: auth.id,
+        cancelada_en: new Date(),
+      },
+      include: appointmentInclude,
+    });
+  });
+
+  return toAppointment(updated);
+}
+
+/**
+ * Marca el honorario de una cita como cobrado o condonado. Solo lo hace el
+ * psicólogo dueño de la cita (o el administrador). Las citas anteriores a la
+ * tabla de pagos no tienen fila: se crea entonces con el estado pedido.
+ */
+export async function updateAppointmentPayment(
+  auth: AuthenticatedUser,
+  id: string,
+  status: PaymentStatus,
+): Promise<Appointment> {
+  const row = await prisma.citas.findUnique({ where: { id }, include: appointmentInclude });
+
+  if (!row) {
+    throw AppError.notFound("La cita no existe");
+  }
+
+  if (auth.role === UserRole.PATIENT) {
+    throw AppError.forbidden("No puedes modificar el estado de pago de una cita");
+  }
+
+  if (auth.role === UserRole.PSYCHOLOGIST) {
+    if (row.psicologo_id !== (await requirePsychologistId(auth))) {
+      throw AppError.forbidden("No puedes modificar una cita de otro profesional");
+    }
+  }
+
+  if (row.estado === estado_cita.CANCELADA) {
+    throw AppError.conflict("No se puede cobrar una cita cancelada");
+  }
+
+  // El CHECK `ck_pagos_fecha` exige `pagado_en` cuando el estado es PAGADO.
+  const paidAt = status === PaymentStatus.PAID ? new Date() : null;
+  const schemaStatus = toSchemaPaymentStatus(status);
+  const existing = row.pagos_honorarios;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    if (existing) {
+      await tx.pagos_honorarios.update({
+        where: { cita_id: id },
+        data: { estado: schemaStatus, pagado_en: paidAt },
+      });
+    } else {
+      await tx.pagos_honorarios.create({
+        data: {
+          id: randomUUID(),
+          cita_id: id,
+          monto: row.precio ?? 0,
+          estado: schemaStatus,
+          pagado_en: paidAt,
+        },
+      });
+    }
+
+    return tx.citas.findUniqueOrThrow({ where: { id }, include: appointmentInclude });
   });
 
   return toAppointment(updated);

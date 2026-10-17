@@ -12,8 +12,10 @@ type RequestSchemas = {
  * Valida body/params/query contra esquemas Zod de `@psicoagenda/shared` y deja
  * los valores ya parseados (y con defaults aplicados) en la request.
  *
- * Nota Express 5: `req.query` es un getter sin setter, por eso el resultado del
- * parseo se mezcla sobre el objeto existente en lugar de reasignarlo.
+ * Nota Express 5: `req.query` es un getter sin setter definido en el prototipo,
+ * así que ni reasignarlo ni mutar el objeto que devuelve persiste (cada acceso
+ * vuelve a parsear la URL). Se define una propiedad propia que ensombrece ese
+ * getter con el resultado del parseo.
  */
 export const validate =
   (schemas: RequestSchemas): RequestHandler =>
@@ -24,7 +26,12 @@ export const validate =
 
     if (schemas.query) {
       const parsed = schemas.query.parse(req.query) as Record<string, unknown>;
-      Object.assign(req.query as Record<string, unknown>, parsed);
+      Object.defineProperty(req, "query", {
+        value: parsed,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
     }
 
       next();

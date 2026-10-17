@@ -42,6 +42,21 @@ function revivePatient(raw: SerializedPatient): Patient {
   }
 }
 
+export interface PatientListParams {
+  limit?: number
+  offset?: number
+  page?: number
+}
+
+function buildQuery(params: PatientListParams = {}): string {
+  const search = new URLSearchParams()
+  if (params.limit !== undefined) search.set("limit", String(params.limit))
+  if (params.offset !== undefined) search.set("offset", String(params.offset))
+  if (params.page !== undefined) search.set("page", String(params.page))
+  const q = search.toString()
+  return q ? `?${q}` : ""
+}
+
 interface SerializedPatientProfile extends SerializedPatient {
   timeZone: string
   photoUrl?: string
@@ -72,8 +87,12 @@ export interface UpdatePatientProfilePayload {
 }
 
 export const patientService = {
-  list: async (token?: string): Promise<Patient[]> => {
-    const rows = await apiFetch<SerializedPatient[]>("/patients", { token })
+  list: async (params: PatientListParams | string = {}, token?: string): Promise<Patient[]> => {
+    if (typeof params === "string") {
+      const rows = await apiFetch<SerializedPatient[]>("/patients", { token })
+      return rows.map(revivePatient)
+    }
+    const rows = await apiFetch<SerializedPatient[]>(`/patients${buildQuery(params)}`, { token })
     return rows.map(revivePatient)
   },
 

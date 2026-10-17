@@ -22,10 +22,13 @@ import {
   Check,
   Loader2,
   Stethoscope,
+  DollarSign,
+  Wallet,
 } from "lucide-react"
 import {
   AppointmentStatus,
   AppointmentModality,
+  PaymentStatus,
   UserRole,
   type Appointment,
   type Patient,
@@ -107,6 +110,24 @@ const STATUS_CONFIG: Record<AppointmentStatus, StatusConfig> = {
     badgeClass: "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300",
     bgSoftClass: "bg-gray-50/60 dark:bg-gray-900/30",
     icon: HelpCircle,
+  },
+}
+
+/** Estado de cobro de la cita; espeja `PaymentStatus` de la API. */
+const PAYMENT_CONFIG: Record<PaymentStatus, { label: string; badgeClass: string }> = {
+  [PaymentStatus.PENDING]: {
+    label: "Pago pendiente",
+    badgeClass:
+      "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800",
+  },
+  [PaymentStatus.PAID]: {
+    label: "Pagado",
+    badgeClass:
+      "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
+  },
+  [PaymentStatus.WAIVED]: {
+    label: "Condonado",
+    badgeClass: "bg-muted text-muted-foreground border-border",
   },
 }
 
@@ -238,6 +259,22 @@ export function AgendaClient() {
 
   const patientById = React.useCallback((id: string) => patientsById[id], [patientsById])
 
+  // Marca el honorario como cobrado o condonado. El panel refresca la cita en la
+  // tabla y en el diálogo con la respuesta de la API.
+  const handleUpdatePayment = React.useCallback(async (appointment: Appointment, status: PaymentStatus) => {
+    setPaymentUpdating(true)
+    setPaymentError(null)
+    try {
+      const updated = await appointmentService.updatePayment(appointment.id, status)
+      setAppointments((prev) => prev.map((apt) => (apt.id === updated.id ? updated : apt)))
+      setSelectedAppointment(updated)
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : "No se pudo actualizar el pago")
+    } finally {
+      setPaymentUpdating(false)
+    }
+  }, [])
+
   const baseAppointments = appointments
 
   const [currentDate, setCurrentDate] = React.useState<Date>(new Date())
@@ -245,6 +282,8 @@ export function AgendaClient() {
   const [selectedStatus, setSelectedStatus] = React.useState<string>("ALL")
   const [searchQuery, setSearchQuery] = React.useState<string>("")
   const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(null)
+  const [paymentUpdating, setPaymentUpdating] = React.useState(false)
+  const [paymentError, setPaymentError] = React.useState<string | null>(null)
   const [datePickerOpen, setDatePickerOpen] = React.useState(false)
 
   const greetingName = user?.name ?? "Bienvenido"
@@ -959,6 +998,7 @@ export function AgendaClient() {
       <Dialog
         open={Boolean(selectedAppointment)}
         onOpenChange={(open) => {
+          setPaymentError(null)
           if (!open) setSelectedAppointment(null)
         }}
       >
@@ -1080,6 +1120,78 @@ export function AgendaClient() {
                     </div>
                   </div>
 
+                  {/* Costo de la sesión */}
+                  {selectedAppointment.price != null && (
+                    <div className="p-3 rounded-xl border border-primary/30 bg-primary/[0.03] flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                        <DollarSign className="size-3.5 text-primary" />
+                        <span>Costo de la sesión</span>
+                      </div>
+                      <span className="text-sm font-bold text-primary font-heading">
+                        ${selectedAppointment.price.toLocaleString("es-MX")}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Estado de cobro del honorario (`pagos_honorarios`) */}
+                  {selectedAppointment.payment && (
+                    <div className="p-3 rounded-xl border border-border/60 bg-card space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                          <Wallet className="size-3.5 text-muted-foreground" />
+                          <span>Estado de pago</span>
+                        </div>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${PAYMENT_CONFIG[selectedAppointment.payment.status].badgeClass}`}
+                        >
+                          {PAYMENT_CONFIG[selectedAppointment.payment.status].label}
+                        </span>
+                      </div>
+
+                      {selectedAppointment.payment.status === PaymentStatus.PAID &&
+                        selectedAppointment.payment.paidAt && (
+                          <p className="text-[11px] text-muted-foreground">
+                            Cobrado el {formatShortDate(selectedAppointment.payment.paidAt)}
+                          </p>
+                        )}
+
+                      {!isPatient && selectedAppointment.status !== AppointmentStatus.CANCELLED && (
+                        <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                          {selectedAppointment.payment.status !== PaymentStatus.PAID && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={paymentUpdating}
+                              onClick={() => void handleUpdatePayment(selectedAppointment, PaymentStatus.PAID)}
+                              className="h-8 w-full rounded-lg text-xs"
+                            >
+                              {paymentUpdating ? (
+                                <Loader2 className="size-3.5 mr-1 animate-spin" />
+                              ) : (
+                                <Check className="size-3.5 mr-1" />
+                              )}
+                              Marcar como pagado
+                            </Button>
+                          )}
+                          {selectedAppointment.payment.status !== PaymentStatus.WAIVED && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={paymentUpdating}
+                              onClick={() => void handleUpdatePayment(selectedAppointment, PaymentStatus.WAIVED)}
+                              className="h-8 w-full rounded-lg text-xs border-border/80"
+                            >
+                              Condonar
+                            </Button>
+                          )}
+                        </div>
+                      )}
+
+                      {paymentError && <p className="text-[11px] text-destructive">{paymentError}</p>}
+                    </div>
+                  )}
+
                   {/* Motivo de Consulta */}
                   <div className="p-3 rounded-xl border border-border/60 bg-card space-y-1">
                     <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -1151,6 +1263,7 @@ export function AgendaClient() {
                   <TableHead className="font-semibold text-xs">Fecha</TableHead>
                   <TableHead className="font-semibold text-xs">Hora</TableHead>
                   <TableHead className="font-semibold text-xs">Modalidad</TableHead>
+                  <TableHead className="font-semibold text-xs">Costo</TableHead>
                   <TableHead className="font-semibold text-xs">Estado</TableHead>
                   <TableHead className="font-semibold text-xs text-right">Acciones</TableHead>
                 </TableRow>
@@ -1192,6 +1305,18 @@ export function AgendaClient() {
                             </span>
                           )}
                         </TableCell>
+                        <TableCell className="text-xs font-semibold text-foreground">
+                          <div className="flex flex-col items-start gap-1">
+                            <span>{apt.price != null ? `$${apt.price.toLocaleString("es-MX")}` : "—"}</span>
+                            {apt.payment && (
+                              <span
+                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${PAYMENT_CONFIG[apt.payment.status].badgeClass}`}
+                              >
+                                {PAYMENT_CONFIG[apt.payment.status].label}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-xs font-medium text-foreground/80">
                             <span className={`size-1.5 rounded-full ${status.dotClass}`} aria-hidden="true" />
@@ -1213,7 +1338,7 @@ export function AgendaClient() {
                   })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-32 text-center text-muted-foreground text-sm">
+                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground text-sm">
                       {searchQuery || selectedStatus !== "ALL"
                         ? "Ninguna cita próxima coincide con los filtros o la búsqueda."
                         : "No hay citas próximas."}

@@ -11,16 +11,21 @@ import { randomUUID } from "node:crypto";
 import type { AuthenticatedUser } from "@/utils/jwt";
 import { AppError } from "@/utils/app-error";
 
+const patientListInclude = {
+  usuarios: true,
+} as Prisma.pacientesInclude;
+
 const patientInclude = {
   usuarios: true,
-  tutores_legales: true,
-  // El contacto marcado como principal primero: la interfaz solo muestra uno.
-  contactos_emergencia: { orderBy: [{ es_principal: "desc" }, { creado_en: "asc" }] },
-} satisfies Prisma.pacientesInclude;
+  tutores: true,
+  // Relación to-one: cada paciente tiene una sola ficha de contacto de emergencia.
+  contactos_emergencia: true,
+} as Prisma.pacientesInclude;
 
 type PatientRow = Prisma.pacientesGetPayload<{ include: typeof patientInclude }>;
-type EmergencyContactRow = PatientRow["contactos_emergencia"][number];
-type LegalGuardianRow = NonNullable<PatientRow["tutores_legales"]>;
+type PatientListRow = Prisma.pacientesGetPayload<{ include: typeof patientListInclude }>;
+type EmergencyContactRow = NonNullable<PatientRow["contactos_emergencia"]>;
+type LegalGuardianRow = NonNullable<PatientRow["tutores"]>;
 
 /**
  * Un paciente es menor de edad mientras no haya cumplido los 18 años. La fecha
@@ -59,7 +64,8 @@ function toLegalGuardian(row: LegalGuardianRow): LegalGuardian {
 }
 
 function toPatient(row: PatientRow): Patient {
-  const primaryContact = row.contactos_emergencia.find((contact) => contact.es_principal);
+  // Relación to-one: `contactos_emergencia` es un objeto o `null`.
+  const primaryContact = row.contactos_emergencia;
 
   return {
     id: row.id,
@@ -73,7 +79,7 @@ function toPatient(row: PatientRow): Patient {
     isMinor: computeIsMinor(row.fecha_nacimiento),
     psychologistId: row.psicologo_id ?? undefined,
     emergencyContact: primaryContact ? toEmergencyContact(primaryContact) : undefined,
-    legalGuardian: row.tutores_legales ? toLegalGuardian(row.tutores_legales) : undefined,
+    legalGuardian: row.tutores ? toLegalGuardian(row.tutores) : undefined,
     createdAt: row.usuarios.creado_en,
     updatedAt: row.usuarios.actualizado_en,
   };
@@ -192,20 +198,49 @@ export async function updateMyPatientProfile(
  * Lista de pacientes. Un paciente solo puede verse a sí mismo; el psicólogo y el
  * administrador ven el directorio completo de cuentas activas.
  */
-export async function listPatients(auth: AuthenticatedUser): Promise<Patient[]> {
+export interface ListPatientsFilter {
+  limit?: number;
+  offset?: number;
+  page?: number;
+}
+
+export async function listPatients(auth: AuthenticatedUser, filter: ListPatientsFilter = {}): Promise<Patient[]> {
   const where: Prisma.pacientesWhereInput = { usuarios: { activo: true } };
 
   if (auth.role === UserRole.PATIENT) {
     where.usuario_id = auth.id;
   }
 
+  const limit = filter.limit ?? 100;
+  const offset =
+    filter.offset ?? (filter.page && filter.page >= 1 ? (filter.page - 1) * limit : 0);
+
   const rows = await prisma.pacientes.findMany({
     where,
-    include: patientInclude,
+    include: patientListInclude,
     orderBy: { usuarios: { nombre_completo: "asc" } },
+    take: limit,
+    skip: offset,
   });
 
-  return rows.map(toPatient);
+  return rows.map((row: PatientListRow): Patient => {
+    return {
+      id: row.id,
+      email: row.usuarios.correo,
+      name: row.usuarios.nombre_completo,
+      phone: row.usuarios.telefono ?? undefined,
+      role: UserRole.PATIENT,
+      birthDate: row.fecha_nacimiento ?? undefined,
+      gender: row.sexo ?? undefined,
+      address: row.direccion ?? undefined,
+      isMinor: computeIsMinor(row.fecha_nacimiento),
+      psychologistId: row.psicologo_id ?? undefined,
+      emergencyContact: undefined,
+      legalGuardian: undefined,
+      createdAt: row.usuarios.creado_en,
+      updatedAt: row.usuarios.actualizado_en,
+    };
+  });
 }
 
 export async function getPatientById(id: string, auth: AuthenticatedUser): Promise<Patient> {

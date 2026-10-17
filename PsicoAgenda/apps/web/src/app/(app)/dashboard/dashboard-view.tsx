@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
+import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
 import {
   Bell,
@@ -314,30 +315,29 @@ const FILTER_EMPTY_COPY: Record<AgendaFilter, string> = {
 type SessionUser = ReturnType<typeof useSession>["user"]
 
 function PsychologistDashboardView({ user }: { user: SessionUser }) {
-  const [appointments, setAppointments] = useState<Appointment[]>([])
-  const [patients, setPatients] = useState<Patient[]>([])
   const [agendaFilter, setAgendaFilter] = useState<AgendaFilter>("all")
   const [activeSessionAppointment, setActiveSessionAppointment] = useState<Appointment | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const listRef = useRef<HTMLElement>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  const today = useMemo(() => new Date(), [])
+  const fromToday = useMemo(() => startOfDay(today), [today])
+  const toNextDays = useMemo(() => new Date(today.getTime() + 30 * DAY), [today])
 
-    Promise.all([appointmentService.list(), patientService.list()])
-      .then(([appointmentRows, patientRows]) => {
-        if (cancelled) return
-        setAppointments(appointmentRows)
-        setPatients(patientRows)
-      })
-      .catch(() => {
-        if (!cancelled) setAppointments([])
-      })
+  const { data: appointments = [], refetch: refetchAppointments } = useQuery({
+    queryKey: ["appointments", "dashboard", fromToday.toISOString(), toNextDays.toISOString()],
+    queryFn: () =>
+      appointmentService.list({ from: fromToday, to: toNextDays, limit: 200 }),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  })
 
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const { data: patients = [] } = useQuery({
+    queryKey: ["patients", "list", 100],
+    queryFn: () => patientService.list({ limit: 100 }),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  })
 
   const patientById = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient])),
@@ -348,7 +348,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date())
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date>(new Date())
 
-  const today = useMemo(() => new Date(), [])
   const now = useNow()
   const clock = now ?? today
   const hydrated = useHydrated()
@@ -494,7 +493,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const handleRegisterAttendance = async (aptId: string) => {
     try {
       const updated = await appointmentService.changeStatus(aptId, AppointmentStatus.COMPLETED)
-      setAppointments((prev) => prev.map((apt) => (apt.id === aptId ? updated : apt)))
+      await refetchAppointments()
       setActiveSessionAppointment(null)
       showNotice("Asistencia registrada. La sesión quedó como completada.")
     } catch {
@@ -505,7 +504,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const handleConfirmAppointment = async (aptId: string) => {
     try {
       const updated = await appointmentService.changeStatus(aptId, AppointmentStatus.CONFIRMED)
-      setAppointments((prev) => prev.map((apt) => (apt.id === aptId ? updated : apt)))
+      await refetchAppointments()
       setActiveSessionAppointment(null)
       const name = patientById.get(appointments.find((a) => a.id === aptId)?.patientId ?? "")?.name
       showNotice(name ? `Cita con ${name} confirmada.` : "Cita confirmada.")

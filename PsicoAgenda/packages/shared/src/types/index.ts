@@ -166,6 +166,8 @@ export interface Appointment {
   attendanceStatus?: AttendanceStatus;
   reason?: string;
   notes?: string;
+  price?: number;
+  payment?: HonorariumPayment;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -240,4 +242,17 @@ export interface HonorariumPayment {
   paidAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+}
+
+
+export interface PsychologistScheduleSlot {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+}
+
+export interface PsychologistSchedule {
+  psychologistId: string;
+  slots: PsychologistScheduleSlot[];
+  seeded: boolean;
 }

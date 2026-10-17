@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   createLogEntrySchema,
   idParamSchema,
+  patientListQuerySchema,
   updatePatientProfileSchema,
 } from "@psicoagenda/shared";
 import {
@@ -30,8 +31,9 @@ router.patch(
 );
 
 // Lista y detalle son legibles por cualquier sesión válida; el servicio acota lo
-// que ve un paciente (solo su propio registro).
-router.get("/", requireAuth, listPatientsController);
+// que ve un paciente (solo su propio registro). La query se valida para que
+// `limit`/`offset`/`page` lleguen como números y no reventen Prisma.
+router.get("/", requireAuth, validate({ query: patientListQuerySchema }), listPatientsController);
 router.get("/:id", requireAuth, validate({ params: idParamSchema }), getPatientController);
 
 // Expediente clínico y bitácora: exclusivos del profesional dueño del paciente.

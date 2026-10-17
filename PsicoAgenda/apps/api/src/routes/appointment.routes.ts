@@ -4,6 +4,7 @@ import {
   cancelAppointmentSchema,
   createAppointmentSchema,
   idParamSchema,
+  updateAppointmentPaymentSchema,
   updateAppointmentSchema,
   updateAppointmentStatusSchema,
 } from "@psicoagenda/shared";
@@ -14,6 +15,7 @@ import {
   getAppointmentController,
   listAppointmentsController,
   updateAppointmentController,
+  updateAppointmentPaymentController,
 } from "@/controllers/appointment.controller";
 import { requireAuth } from "@/middleware/auth.middleware";
 import { validate } from "@/middleware/validate.middleware";
@@ -40,6 +42,12 @@ router.post(
   requireAuth,
   validate({ params: idParamSchema, body: cancelAppointmentSchema }),
   cancelAppointmentController,
+);
+router.patch(
+  "/:id/payment",
+  requireAuth,
+  validate({ params: idParamSchema, body: updateAppointmentPaymentSchema }),
+  updateAppointmentPaymentController,
 );
 
 export default router;

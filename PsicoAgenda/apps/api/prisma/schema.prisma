@@ -25,6 +25,7 @@ model citas {
   motivo             String?
   notas_internas     String?
   motivo_cancelacion String?
+  precio             Int?
   cancelada_por_id   String?             @db.Uuid
   cancelada_en       DateTime?           @db.Timestamptz(3)
   creado_en          DateTime            @default(now()) @db.Timestamptz(3)
@@ -44,17 +45,17 @@ model citas {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model consentimientos_informados {
-  id              String                @id @db.Uuid
-  paciente_id     String                @db.Uuid
-  firmado_en      DateTime              @default(now()) @db.Timestamptz(3)
-  documento       String
-  documento_url   String?
-  tutor_legal_id  String?               @db.Uuid
-  estado          estado_consentimiento @default(FIRMADO)
-  retirado_en     DateTime?             @db.Timestamptz(3)
-  creado_en       DateTime              @default(now()) @db.Timestamptz(3)
-  pacientes       pacientes             @relation(fields: [paciente_id], references: [id])
-  tutores_legales tutores_legales?      @relation(fields: [tutor_legal_id], references: [id])
+  id             String                @id @db.Uuid
+  paciente_id    String                @db.Uuid
+  firmado_en     DateTime              @default(now()) @db.Timestamptz(3)
+  documento      String
+  documento_url  String?
+  tutor_legal_id String?               @db.Uuid
+  estado         estado_consentimiento @default(FIRMADO)
+  retirado_en    DateTime?             @db.Timestamptz(3)
+  creado_en      DateTime              @default(now()) @db.Timestamptz(3)
+  pacientes      pacientes             @relation(fields: [paciente_id], references: [id])
+  tutores        tutores?              @relation(fields: [tutor_legal_id], references: [id])
 
   @@index([paciente_id, firmado_en])
   @@index([tutor_legal_id])
@@ -62,7 +63,7 @@ model consentimientos_informados {
 
 model contactos_emergencia {
   id              String    @id @db.Uuid
-  paciente_id     String    @db.Uuid
+  paciente_id     String    @unique(map: "ux_contacto_principal", where: raw("es_principal")) @db.Uuid
   nombre_completo String
   telefono        String
   parentesco      String?
@@ -162,10 +163,10 @@ model pacientes {
   psicologo_id               String?                      @db.Uuid
   citas                      citas[]
   consentimientos_informados consentimientos_informados[]
-  contactos_emergencia       contactos_emergencia[]
+  contactos_emergencia       contactos_emergencia?
   expedientes_clinicos       expedientes_clinicos?
   psicologos                 psicologos?                  @relation(fields: [psicologo_id], references: [id], onDelete: Restrict)
-  tutores_legales            tutores_legales?             @relation(fields: [tutor_legal_id], references: [id], onDelete: Restrict)
+  tutores                    tutores?                     @relation(fields: [tutor_legal_id], references: [id], onDelete: Restrict)
   usuarios                   usuarios                     @relation(fields: [usuario_id], references: [id])
   solicitudes_cita           solicitudes_cita[]
 
@@ -274,7 +275,7 @@ model solicitudes_cita {
   @@index([psicologo_id, estado])
 }
 
-model tutores_legales {
+model tutores {
   id                         String                       @id @db.Uuid
   nombre_completo            String
   correo                     String?

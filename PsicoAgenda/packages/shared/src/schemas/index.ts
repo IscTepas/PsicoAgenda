@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AppointmentStatus } from "../types";
+import { AppointmentStatus, PaymentStatus } from "../types";
 
 export const emailSchema = z.string().email("Correo electrónico inválido");
 
@@ -56,12 +56,38 @@ export const cancelAppointmentSchema = z.object({
   reason: z.string().min(1, "El motivo de cancelación es obligatorio"),
 });
 
+/**
+ * Estado de cobro de una cita. Solo se puede marcar como cobrada o condonada:
+ * el estado `pending` es el inicial y no se vuelve a él por API.
+ */
+export const updateAppointmentPaymentSchema = z.object({
+  status: z
+    .nativeEnum(PaymentStatus)
+    .refine((status) => status !== PaymentStatus.PENDING, {
+      message: "El estado de pago debe ser paid o waived",
+    }),
+});
+
 export const appointmentListQuerySchema = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
   patientId: z.string().uuid().optional(),
   psychologistId: z.string().uuid().optional(),
   status: z.nativeEnum(AppointmentStatus).optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional().default(50),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+  page: z.coerce.number().int().min(1).optional(),
+});
+
+/**
+ * Listado de pacientes. Express entrega la query como strings, así que todo va
+ * con `z.coerce.number()` (sin defaults: el servicio aplica `limit=100` y
+ * deriva `offset` de `page` cuando `offset` no viene).
+ */
+export const patientListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  page: z.coerce.number().int().min(1).optional(),
 });
 
 export const emergencyContactSchema = z.object({

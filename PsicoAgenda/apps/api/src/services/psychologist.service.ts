@@ -31,6 +31,20 @@ function toProfile(row: PsychologistRow): PsychologistProfile {
   };
 }
 
+/** Resuelve el id de perfil de psicólogo a partir del id de usuario. */
+export async function requirePsychologistIdByUser(userId: string): Promise<string> {
+  const psychologist = await prisma.psicologos.findUnique({
+    where: { usuario_id: userId },
+    select: { id: true },
+  });
+
+  if (!psychologist) {
+    throw AppError.forbidden("La cuenta no tiene perfil de psicólogo");
+  }
+
+  return psychologist.id;
+}
+
 const emptyToNull = (value: string | undefined): string | null | undefined =>
   value === undefined ? undefined : value.trim() === "" ? null : value;
 

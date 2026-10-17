@@ -40,7 +40,7 @@ BEGIN
          AND nullif(u.meta -> 'guardian' ->> 'name', '') IS NOT NULL THEN
         v_guardian_id := gen_random_uuid();
 
-        INSERT INTO public.tutores_legales (
+        INSERT INTO public.tutores (
           id, nombre_completo, correo, telefono, parentesco, documento_identidad
         )
         VALUES (

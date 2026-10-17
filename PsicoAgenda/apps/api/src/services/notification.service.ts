@@ -48,10 +48,11 @@ const toNotification = (row: NotificationRow): Notification => ({
 });
 
 /** Notificaciones de la cuenta autenticada, más recientes primero. */
-export async function listNotifications(auth: AuthenticatedUser): Promise<Notification[]> {
+export async function listNotifications(auth: AuthenticatedUser, limit = 50): Promise<Notification[]> {
   const rows = await prisma.notificaciones.findMany({
     where: { usuario_id: auth.id },
     orderBy: [{ programada_para: "desc" }, { creado_en: "desc" }],
+    take: limit,
   });
 
   return rows.map(toNotification);

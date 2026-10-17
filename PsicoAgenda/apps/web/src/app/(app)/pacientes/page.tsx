@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -67,31 +68,27 @@ export default function PantallaBusquedaPaciente() {
   const [activeChip, setActiveChip] = useState<FilterChip>("todos")
   const [sortBy, setSortBy] = useState<SortOption>("alfabetico")
 
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [appointments, setAppointments] = useState<Appointment[]>([])
-  const [isDataLoading, setIsDataLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const { data: patientsRaw = [], isLoading: loadingP, error: errP } = useQuery({
+    queryKey: ["patients", "directory", 100],
+    queryFn: () => patientService.list({ limit: 100 }),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  })
 
-  useEffect(() => {
-    let cancelled = false
+  const { data: appointmentsAll = [], isLoading: loadingA } = useQuery({
+    queryKey: ["appointments", "patients-enrich", "90d"],
+    queryFn: () => {
+      const from = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+      return appointmentService.list({ from, limit: 500 })
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  })
 
-    Promise.all([patientService.list(), appointmentService.list()])
-      .then(([patientRows, appointmentRows]) => {
-        if (cancelled) return
-        setPatients(patientRows)
-        setAppointments(appointmentRows)
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError("No se pudo cargar el directorio de pacientes.")
-      })
-      .finally(() => {
-        if (!cancelled) setIsDataLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const patients = patientsRaw
+  const appointments = appointmentsAll
+  const isDataLoading = loadingP || loadingA
+  const loadError = errP ? "No se pudo cargar el directorio de pacientes." : null
 
   // Enriquecer pacientes con datos de citas calculados
   const enrichedPatients = useMemo(() => {

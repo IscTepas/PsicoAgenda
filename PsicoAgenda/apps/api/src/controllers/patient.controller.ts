@@ -28,7 +28,7 @@ export const updateMyPatientController: RequestHandler = async (req: AuthedReque
 export const listPatientsController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     // `requireAuth` ya garantizó que `auth` existe.
-    res.json(await listPatients(req.auth!));
+    res.json(await listPatients(req.auth!, req.query as any));
   } catch (error) {
     next(error);
   }
