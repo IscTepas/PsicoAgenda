@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AppointmentStatus, PaymentStatus } from "../types";
+import { AppointmentRequestStatus, AppointmentStatus, PaymentStatus } from "../types";
 
 export const emailSchema = z.string().email("Correo electrónico inválido");
 
@@ -66,6 +66,18 @@ export const updateAppointmentPaymentSchema = z.object({
     .refine((status) => status !== PaymentStatus.PENDING, {
       message: "El estado de pago debe ser paid o waived",
     }),
+});
+
+/** Solicitud del paciente: el paciente y el psicólogo salen de la sesión, no del cuerpo. */
+export const createAppointmentRequestSchema = z.object({
+  startTime: z.coerce.date(),
+  durationMinutes: z.number().int().min(45).max(60),
+  modality: z.enum(["in_person", "virtual"]),
+  reason: z.string().optional(),
+});
+
+export const appointmentRequestListQuerySchema = z.object({
+  status: z.nativeEnum(AppointmentRequestStatus).optional(),
 });
 
 export const appointmentListQuerySchema = z.object({

@@ -1,15 +1,17 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { UserRole } from "@psicoagenda/shared"
 import {
   Bell,
   CheckCircle2,
   MessageSquare,
   Mail,
-  Clock,
   Save,
   Smartphone,
 } from "lucide-react"
+import { useSession } from "@/lib/use-session"
+import { patientService, psychologistService } from "@/services"
 import {
   Card,
   CardContent,
@@ -21,49 +23,67 @@ import {
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Switch } from "@/components/ui/switch"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-
-type ReminderTiming = "12h" | "24h" | "48h"
 
 interface ReminderConfigState {
   whatsappEnabled: boolean
   emailEnabled: boolean
-  timing: ReminderTiming
-}
-
-const DEFAULT_CONFIG: ReminderConfigState = {
-  whatsappEnabled: true,
-  emailEnabled: true,
-  timing: "24h",
 }
 
 export function ReminderConfigForm() {
-  const [config, setConfig] = useState<ReminderConfigState>(DEFAULT_CONFIG)
+  const { user } = useSession()
+  const isPatient = user?.role === UserRole.PATIENT
+  const [config, setConfig] = useState<ReminderConfigState | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleSave = () => {
+  // Las preferencias viven en el perfil del usuario (usuarios.notificar_*).
+  useEffect(() => {
+    if (!user?.role) return
+    let cancelled = false
+    const load = isPatient ? patientService.getMe() : psychologistService.getMe()
+    load
+      .then((profile) => {
+        if (!cancelled) {
+          setConfig({
+            whatsappEnabled: profile.notifyWhatsapp ?? false,
+            emailEnabled: profile.notifyEmail ?? true,
+          })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError("No se pudieron cargar tus preferencias.")
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user?.role, isPatient])
+
+  const handleSave = async () => {
+    if (!config) return
     setIsSaving(true)
     setSaveSuccessMessage(null)
+    setError(null)
 
-    setTimeout(() => {
-      setIsSaving(false)
+    const payload = { notifyWhatsapp: config.whatsappEnabled, notifyEmail: config.emailEnabled }
+    try {
+      await (isPatient ? patientService.updateProfile(payload) : psychologistService.updateMe(payload))
       setSaveSuccessMessage("Tus preferencias de notificaciones se han guardado exitosamente.")
-
-      setTimeout(() => {
-        setSaveSuccessMessage(null)
-      }, 4000)
-    }, 600)
+      setTimeout(() => setSaveSuccessMessage(null), 4000)
+    } catch {
+      setError("No se pudieron guardar tus preferencias. Inténtalo de nuevo.")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
     <div className="space-y-6">
+      {error && (
+        <Alert variant="destructive" className="rounded-2xl py-3">
+          <AlertDescription className="text-xs">{error}</AlertDescription>
+        </Alert>
+      )}
       {saveSuccessMessage && (
         <Alert className="border-primary/20 bg-primary/10 text-foreground rounded-2xl py-3 animate-in fade-in-50">
           <CheckCircle2 className="size-4 text-primary" />
@@ -80,10 +100,10 @@ export function ReminderConfigForm() {
             </div>
             <div>
               <CardTitle className="text-lg sm:text-xl font-bold tracking-tight">
-                Canales y anticipación
+                Canales de aviso
               </CardTitle>
               <CardDescription className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-                Define por dónde y con cuánta anticipación recibes los recordatorios de tus citas.
+                Define por dónde recibes los recordatorios de tus citas.
               </CardDescription>
             </div>
           </div>
@@ -113,9 +133,10 @@ export function ReminderConfigForm() {
                   </p>
                 </div>
                 <Switch
-                  checked={config.whatsappEnabled}
+                  checked={config?.whatsappEnabled ?? false}
+                  disabled={!config}
                   onCheckedChange={(checked) =>
-                    setConfig((prev) => ({ ...prev, whatsappEnabled: checked }))
+                    setConfig((prev) => prev && { ...prev, whatsappEnabled: checked })
                   }
                   aria-label="Recibir notificaciones por WhatsApp"
                 />
@@ -134,9 +155,10 @@ export function ReminderConfigForm() {
                   </p>
                 </div>
                 <Switch
-                  checked={config.emailEnabled}
+                  checked={config?.emailEnabled ?? false}
+                  disabled={!config}
                   onCheckedChange={(checked) =>
-                    setConfig((prev) => ({ ...prev, emailEnabled: checked }))
+                    setConfig((prev) => prev && { ...prev, emailEnabled: checked })
                   }
                   aria-label="Recibir notificaciones por Correo Electrónico"
                 />
@@ -144,42 +166,12 @@ export function ReminderConfigForm() {
             </div>
           </div>
 
-          {/* Anticipación de avisos */}
-          <div className="space-y-4 pt-2 border-t border-border/40">
-            <div className="space-y-1">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                <Clock className="size-3.5" />
-                Anticipación de avisos
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Tiempo de recordatorio previo a la cita.
-              </p>
-            </div>
-
-            <div className="max-w-md">
-              <Select
-                value={config.timing}
-                onValueChange={(val) =>
-                  setConfig((prev) => ({ ...prev, timing: val as ReminderTiming }))
-                }
-              >
-                <SelectTrigger className="h-11 rounded-xl border-border/80 bg-background text-sm">
-                  <SelectValue placeholder="Selecciona el tiempo de anticipación" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="24h">24 horas antes</SelectItem>
-                  <SelectItem value="12h">12 horas antes</SelectItem>
-                  <SelectItem value="48h">48 horas antes</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
         </CardContent>
 
         <CardFooter className="flex justify-end p-6 border-t border-border/40 bg-muted/15">
           <Button
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || !config}
             className="w-full sm:w-auto rounded-xl text-sm font-semibold h-11 px-6 bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs"
           >
             {isSaving ? (

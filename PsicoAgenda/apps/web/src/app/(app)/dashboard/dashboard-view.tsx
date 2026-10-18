@@ -15,11 +15,13 @@ import {
   Video,
 } from "lucide-react"
 import {
+  AppointmentRequestStatus,
   AppointmentStatus,
   AppointmentModality,
   AttendanceStatus,
   UserRole,
   type Appointment,
+  type AppointmentRequest,
   type Patient,
   type PatientProfile,
   type PsychologistProfile,
@@ -37,7 +39,7 @@ import { useSession } from "@/lib/use-session"
 import { useHydrated } from "@/lib/use-hydrated"
 import { cn } from "@/lib/utils"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
-import { appointmentService, patientService, psychologistService } from "@/services"
+import { appointmentRequestService, appointmentService, patientService, psychologistService } from "@/services"
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
@@ -318,6 +320,8 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const [agendaFilter, setAgendaFilter] = useState<AgendaFilter>("all")
   const [activeSessionAppointment, setActiveSessionAppointment] = useState<Appointment | null>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
+  // Una respuesta a la vez: evita aceptar dos veces con doble clic.
+  const [answeringRequestId, setAnsweringRequestId] = useState<string | null>(null)
   const listRef = useRef<HTMLElement>(null)
 
   const today = useMemo(() => new Date(), [])
@@ -343,6 +347,13 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
     () => new Map(patients.map((patient) => [patient.id, patient])),
     [patients],
   )
+
+  const { data: pendingRequests = [], refetch: refetchRequests } = useQuery({
+    queryKey: ["appointment-requests", AppointmentRequestStatus.PENDING],
+    queryFn: () => appointmentRequestService.list(AppointmentRequestStatus.PENDING),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  })
 
   // Mini-calendario state
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date())
@@ -510,6 +521,29 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
       showNotice(name ? `Cita con ${name} confirmada.` : "Cita confirmada.")
     } catch {
       showNotice("No se pudo confirmar la cita. Intenta de nuevo.")
+    }
+  }
+
+  const handleAnswerRequest = async (requestId: string, accept: boolean) => {
+    if (answeringRequestId) return
+    setAnsweringRequestId(requestId)
+    const name = patientById.get(pendingRequests.find((r) => r.id === requestId)?.patientId ?? "")?.name
+    try {
+      if (accept) {
+        await appointmentRequestService.accept(requestId)
+        await refetchAppointments()
+      } else {
+        await appointmentRequestService.reject(requestId)
+      }
+      await refetchRequests()
+      const verb = accept ? "con" : "de"
+      const who = name ? ` ${verb} ${name}` : ""
+      showNotice(accept ? `Cita${who} agendada y confirmada.` : `Solicitud${who} rechazada.`)
+    } catch (error) {
+      await refetchRequests()
+      showNotice(error instanceof Error ? error.message : "No se pudo responder la solicitud.")
+    } finally {
+      setAnsweringRequestId(null)
     }
   }
 
@@ -968,15 +1002,49 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
           <aside className="space-y-3 rounded-2xl border border-border bg-card p-5">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold tracking-tight text-foreground">Por confirmar</h2>
-              {pendingQueue.length > 0 && (
+              {pendingRequests.length + pendingQueue.length > 0 && (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">
-                  {pendingQueue.length}
+                  {pendingRequests.length + pendingQueue.length}
                 </span>
               )}
             </div>
 
-            {pendingQueue.length > 0 ? (
+            {pendingRequests.length + pendingQueue.length > 0 ? (
               <ul className="space-y-1">
+                {pendingRequests.map((request) => {
+                  const start = new Date(request.startTime)
+                  const patientName = patientById.get(request.patientId)?.name ?? "Paciente"
+                  return (
+                    <li
+                      key={request.id}
+                      className="-mx-2 flex items-center gap-2 rounded-xl px-2 py-2 animate-in fade-in duration-200"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-foreground">{patientName}</p>
+                        <p className="text-xs tabular-nums text-muted-foreground">
+                          Solicitud · {isSameDay(start, today) ? "Hoy" : capitalize(formatShortDate(start))} ·{" "}
+                          {formatAppointmentTime(start)}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={answeringRequestId !== null}
+                        onClick={() => handleAnswerRequest(request.id, false)}
+                      >
+                        Rechazar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={answeringRequestId !== null}
+                        onClick={() => handleAnswerRequest(request.id, true)}
+                      >
+                        Aceptar
+                      </Button>
+                    </li>
+                  )
+                })}
                 {pendingQueue.map((apt) => {
                   const start = new Date(apt.startTime)
           const patientName = patientById.get(apt.patientId)?.name ?? "Paciente"
@@ -1102,6 +1170,7 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
   const [profile, setProfile] = useState<PatientProfile | null>(null)
   const [psychologist, setPsychologist] = useState<PsychologistProfile | null>(null)
   const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [requests, setRequests] = useState<AppointmentRequest[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null)
@@ -1123,13 +1192,15 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
       setLoadError(null)
       try {
         // La API acota las citas al paciente autenticado (por su rol).
-        const [patientProfile, appointmentRows] = await Promise.all([
+        const [patientProfile, appointmentRows, requestRows] = await Promise.all([
           patientService.getMe(),
           appointmentService.list(),
+          appointmentRequestService.list(),
         ])
         if (cancelled) return
         setProfile(patientProfile)
         setAppointments(appointmentRows)
+        setRequests(requestRows)
 
         if (patientProfile.psychologistId) {
           const therapist = await psychologistService.getById(patientProfile.psychologistId)
@@ -1182,6 +1253,28 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
       .filter((a) => a.id !== nextAppointment?.id)
       .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
   }, [patientAppointments, today, nextAppointment])
+
+  // Solicitudes que aún importan: las que esperan respuesta y los rechazos de fechas por venir.
+  const openRequests = useMemo(() => {
+    if (!clock) return []
+    return requests.filter(
+      (r) =>
+        r.status === AppointmentRequestStatus.PENDING ||
+        (r.status === AppointmentRequestStatus.REJECTED && new Date(r.startTime) > clock),
+    )
+  }, [requests, clock])
+
+  const handleCancelRequest = async (requestId: string) => {
+    try {
+      const updated = await appointmentRequestService.cancel(requestId)
+      setRequests((prev) => prev.map((r) => (r.id === requestId ? updated : r)))
+      setFeedbackNotice("Retiraste tu solicitud.")
+    } catch (error) {
+      setFeedbackNotice(error instanceof Error ? error.message : "No se pudo retirar la solicitud.")
+    } finally {
+      setTimeout(() => setFeedbackNotice(null), 4000)
+    }
+  }
 
   const handleCancelAppointment = async (aptId: string) => {
     const finalReason = cancellationReason === "Otro" ? (otherReason || "Sin especificar") : cancellationReason
@@ -1272,6 +1365,44 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
 
       {feedbackNotice && (
         <ActionNotice message={feedbackNotice} onClose={() => setFeedbackNotice(null)} />
+      )}
+
+      {/* Solicitudes: lo que pediste y todavía no es cita */}
+      {openRequests.length > 0 && (
+        <section className="space-y-3 rounded-2xl border border-border bg-card p-5">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">Tus solicitudes</h2>
+          <ul className="divide-y divide-border">
+            {openRequests.map((request) => {
+              const start = new Date(request.startTime)
+              const isPending = request.status === AppointmentRequestStatus.PENDING
+              return (
+                <li key={request.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {formatHeroDate(start)} · <span className="tabular-nums">{formatAppointmentTime(start)}</span>
+                    </p>
+                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <span
+                        className={cn("size-1.5 rounded-full", isPending ? "bg-amber-500" : "bg-destructive")}
+                        aria-hidden="true"
+                      />
+                      {isPending ? "Esperando confirmación" : "No fue aceptada · elige otro horario"}
+                    </p>
+                  </div>
+                  {isPending ? (
+                    <Button size="sm" variant="ghost" onClick={() => handleCancelRequest(request.id)}>
+                      Retirar
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" asChild>
+                      <Link href="/agenda/nueva">Otro horario</Link>
+                    </Button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </section>
       )}
 
       {/* Próxima cita */}

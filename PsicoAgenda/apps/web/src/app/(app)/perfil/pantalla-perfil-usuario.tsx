@@ -41,6 +41,11 @@ const TIMEZONE_OPTIONS = [
   { value: "America/Hermosillo", label: "Hermosillo" },
 ] as const
 
+// La BD guarda "UTC" por defecto y no está en la lista: el Select quedaría vacío y la API lo rechaza.
+function toKnownTimezone(value: string | null | undefined): string {
+  return TIMEZONE_OPTIONS.find((tz) => tz.value === value)?.value ?? "America/Mexico_City"
+}
+
 const THEME_OPTIONS = [
   { value: "light", label: "Claro" },
   { value: "dark", label: "Oscuro" },
@@ -119,7 +124,7 @@ export function PantallaPerfilUsuario() {
           setName(profile.name)
           setPhone(profile.phone ?? "")
           setEmail(profile.email)
-          setTimezone(profile.timeZone || "America/Mexico_City")
+          setTimezone(toKnownTimezone(profile.timeZone))
           setAvatarImage(profile.photoUrl ?? null)
           setEmergencyName(profile.emergencyContact?.name ?? "")
           setEmergencyPhone(profile.emergencyContact?.phone ?? "")
@@ -127,7 +132,7 @@ export function PantallaPerfilUsuario() {
             name: profile.name,
             phone: profile.phone ?? "",
             email: profile.email,
-            timezone: profile.timeZone || "America/Mexico_City",
+            timezone: toKnownTimezone(profile.timeZone),
             licenseNumber: "",
             specialty: "",
             emergencyName: profile.emergencyContact?.name ?? "",
@@ -140,7 +145,7 @@ export function PantallaPerfilUsuario() {
           setName(profile.name)
           setPhone(profile.phone ?? "")
           setEmail(profile.email)
-          setTimezone(profile.timeZone || "America/Mexico_City")
+          setTimezone(toKnownTimezone(profile.timeZone))
           setAvatarImage(profile.photoUrl ?? null)
           setLicenseNumber(profile.licenseNumber ?? "")
           setSpecialty(profile.specialty ?? "")
@@ -148,7 +153,7 @@ export function PantallaPerfilUsuario() {
             name: profile.name,
             phone: profile.phone ?? "",
             email: profile.email,
-            timezone: profile.timeZone || "America/Mexico_City",
+            timezone: toKnownTimezone(profile.timeZone),
             licenseNumber: profile.licenseNumber ?? "",
             specialty: profile.specialty ?? "",
             emergencyName: "",
@@ -584,6 +589,7 @@ export function PantallaPerfilUsuario() {
                 <Select
                   value={timezone}
                   onValueChange={(val) => {
+                    if (!val) return
                     setTimezone(val)
                     setSaveSuccess(false)
                   }}

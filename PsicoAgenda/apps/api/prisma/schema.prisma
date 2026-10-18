@@ -263,6 +263,8 @@ model solicitudes_cita {
   psicologo_id      String           @db.Uuid
   inicio_solicitado DateTime         @db.Timestamptz(3)
   tipo_sesion       tipo_sesion
+  modalidad         modalidad_cita   @default(PRESENCIAL)
+  duracion_minutos  Int              @default(50)
   motivo            String?
   estado            estado_solicitud @default(PENDIENTE)
   creado_en         DateTime         @default(now()) @db.Timestamptz(3)

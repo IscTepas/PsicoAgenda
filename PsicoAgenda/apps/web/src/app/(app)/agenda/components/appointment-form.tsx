@@ -55,7 +55,7 @@ import {
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
 import { useHydrated } from "@/lib/use-hydrated"
-import { appointmentService, patientService, psychologistService } from "@/services"
+import { appointmentRequestService, appointmentService, patientService, psychologistService } from "@/services"
 
 // Horarios de respaldo mientras carga el horario real desde la BD (Lun–Vie 09:00–19:00).
 const FALLBACK_HOURS = [
@@ -467,6 +467,15 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         }
 
         setSuccessMessage("¡Cita actualizada exitosamente!")
+      } else if (isPatient) {
+        // El paciente no agenda: solicita. La cita existe cuando el psicólogo acepta.
+        await appointmentRequestService.create({
+          startTime,
+          durationMinutes,
+          modality,
+          reason: reason || undefined,
+        })
+        setSuccessMessage("Solicitud enviada. Te avisaremos cuando tu psicólogo la confirme.")
       } else {
         await appointmentService.create({
           patientId: lockedPatientId,
@@ -479,7 +488,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       }
 
       setTimeout(() => {
-        router.push("/agenda")
+        router.push(isPatient && !isEdit ? "/dashboard" : "/agenda")
       }, 900)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo guardar la cita")
@@ -556,12 +565,14 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground font-heading">
-              {isEdit ? "Detalles y Modificación de Cita" : "Agendar Nueva Cita"}
+              {isEdit ? "Detalles y Modificación de Cita" : isPatient ? "Solicitar Cita" : "Agendar Nueva Cita"}
             </h1>
             <p className="text-sm text-muted-foreground">
               {isEdit
                 ? `Gestión integral de la sesión con el paciente.`
-                : "Programa una nueva consulta clínica definiendo paciente, fecha, hora y modalidad."}
+                : isPatient
+                  ? "Elige fecha, hora y modalidad. Tu psicólogo confirmará la solicitud."
+                  : "Programa una nueva consulta clínica definiendo paciente, fecha, hora y modalidad."}
             </p>
           </div>
 

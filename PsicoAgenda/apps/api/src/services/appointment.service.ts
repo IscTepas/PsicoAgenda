@@ -84,7 +84,7 @@ const toSchemaStatus = (status: SharedStatus): estado_cita => {
   }
 };
 
-const toSharedModality = (modality: modalidad_cita): SharedModality => {
+export const toSharedModality = (modality: modalidad_cita): SharedModality => {
   switch (modality) {
     case modalidad_cita.PRESENCIAL:
       return SharedModality.IN_PERSON;
@@ -93,7 +93,7 @@ const toSharedModality = (modality: modalidad_cita): SharedModality => {
   }
 };
 
-const toSchemaModality = (modality: SharedModality): modalidad_cita => {
+export const toSchemaModality = (modality: SharedModality): modalidad_cita => {
   switch (modality) {
     case SharedModality.IN_PERSON:
       return modalidad_cita.PRESENCIAL;
@@ -149,7 +149,7 @@ const ACTIVE_STATUSES: estado_cita[] = [
 const durationOf = (start: Date, end: Date): number =>
   Math.round((end.getTime() - start.getTime()) / 60_000);
 
-const toAppointment = (row: AppointmentRow): Appointment => {
+export const toAppointment = (row: AppointmentRow): Appointment => {
   const payment = row.pagos_honorarios;
 
   return {
@@ -194,7 +194,7 @@ function isPatientMinor(birthDate: Date | null): boolean {
  * El perfil de psicólogo cuelga del usuario y su identificador no viaja en la
  * sesión, así que se resuelve en cada petición.
  */
-async function requirePsychologistId(auth: AuthenticatedUser): Promise<string> {
+export async function requirePsychologistId(auth: AuthenticatedUser): Promise<string> {
   const psychologist = await prisma.psicologos.findUnique({
     where: { usuario_id: auth.id },
     select: { id: true },
@@ -207,7 +207,7 @@ async function requirePsychologistId(auth: AuthenticatedUser): Promise<string> {
   return psychologist.id;
 }
 
-async function requirePatientId(auth: AuthenticatedUser): Promise<string> {
+export async function requirePatientId(auth: AuthenticatedUser): Promise<string> {
   const patient = await prisma.pacientes.findUnique({
     where: { usuario_id: auth.id },
     select: { id: true },
@@ -252,7 +252,7 @@ async function resolvePsychologistId(
  * `EXCLUDE` de la base (dos transacciones concurrentes pueden pasar aquí a la vez),
  * sino que da el mensaje en español antes de que el motor lance el 23P01.
  */
-async function assertNoOverlap(
+export async function assertNoOverlap(
   tx: Prisma.TransactionClient,
   params: { psychologistId: string; patientId: string; start: Date; end: Date; excludeId?: string },
 ): Promise<void> {
@@ -290,7 +290,7 @@ async function assertNoOverlap(
  * previa no cubre la carrera entre dos peticiones simultáneas; esta es la red que
  * atrapa a la que pierde.
  */
-function normalizeOverlapError(error: unknown): never {
+export function normalizeOverlapError(error: unknown): never {
   const message = error instanceof Error ? error.message : "";
 
   if (message.includes("excl_citas_psicologo_sin_empalme")) {
@@ -386,63 +386,95 @@ export async function createAppointment(
 
   const psychologistId = await resolvePsychologistId(auth, input, patient.psicologo_id);
 
-  // La primera cita del paciente es una consulta inicial; a partir de ahí, sesión
-  // individual. No viaja como campo del formulario porque es una consecuencia, no
-  // una elección.
-  const previousAppointments = await prisma.citas.count({
-    where: { paciente_id: patient.id, estado: { not: estado_cita.CANCELADA } },
-  });
-  const sessionType =
-    previousAppointments === 0 ? tipo_sesion.CONSULTA_INICIAL : tipo_sesion.INDIVIDUAL;
-
-  const start = input.startTime;
-
-  // Reglas de precio: menores de edad solo 30 minutos y tarifa $1000; adultos
-  // $800; +30% si la cita es el mismo día; −$100 por modalidad virtual.
-  const isMinor = isPatientMinor(patient.fecha_nacimiento);
-  const effectiveDuration = getEffectiveDurationMinutes(isMinor, input.durationMinutes);
-  const end = new Date(start.getTime() + effectiveDuration * 60_000);
-  const price = calculateAppointmentPrice({
-    isMinor,
-    startTime: start,
-    modality: input.modality,
-    durationMinutes: effectiveDuration,
-  });
-
   try {
-    const created = await prisma.$transaction(async (tx) => {
-      await assertNoOverlap(tx, { psychologistId, patientId: patient.id, start, end });
-
-      return tx.citas.create({
-        data: {
-          id: randomUUID(),
-          psicologo_id: psychologistId,
-          paciente_id: patient.id,
-          inicio: start,
-          fin: end,
-          // La cita nace PENDIENTE: el profesional debe confirmarla manualmente.
-          estado: estado_cita.PENDIENTE,
-          modalidad: toSchemaModality(input.modality),
-          tipo_sesion: sessionType,
-          motivo: input.reason ?? null,
-          precio: price,
-          // El honorario nace con la cita, pendiente de cobro, por el precio calculado.
-          pagos_honorarios: {
-            create: {
-              id: randomUUID(),
-              monto: price,
-              estado: estado_pago.PENDIENTE,
-            },
-          },
-        },
-        include: appointmentInclude,
-      });
-    });
+    const created = await prisma.$transaction((tx) =>
+      insertAppointment(tx, {
+        psychologistId,
+        patient,
+        start: input.startTime,
+        durationMinutes: input.durationMinutes,
+        modality: input.modality,
+        reason: input.reason,
+        // La cita nace PENDIENTE: el profesional debe confirmarla manualmente.
+        status: estado_cita.PENDIENTE,
+      }),
+    );
 
     return toAppointment(created);
   } catch (error) {
     normalizeOverlapError(error);
   }
+}
+
+/** La primera cita del paciente es una consulta inicial; a partir de ahí, sesión individual. */
+export async function resolveSessionType(
+  tx: Prisma.TransactionClient,
+  patientId: string,
+): Promise<tipo_sesion> {
+  const previousAppointments = await tx.citas.count({
+    where: { paciente_id: patientId, estado: { not: estado_cita.CANCELADA } },
+  });
+  return previousAppointments === 0 ? tipo_sesion.CONSULTA_INICIAL : tipo_sesion.INDIVIDUAL;
+}
+
+/**
+ * Escritura común de una cita (alta directa o solicitud aceptada): precio,
+ * tipo de sesión, solape y honorario en la misma transacción.
+ */
+export async function insertAppointment(
+  tx: Prisma.TransactionClient,
+  params: {
+    psychologistId: string;
+    patient: { id: string; fecha_nacimiento: Date | null };
+    start: Date;
+    durationMinutes: number;
+    modality: SharedModality;
+    reason?: string | null;
+    status: estado_cita;
+    requestId?: string;
+  },
+): Promise<AppointmentRow> {
+  const { psychologistId, patient, start } = params;
+  const sessionType = await resolveSessionType(tx, patient.id);
+
+  // Reglas de precio: menores de edad solo 30 minutos y tarifa $1000; adultos
+  // $800; +30% si la cita es el mismo día; −$100 por modalidad virtual.
+  const isMinor = isPatientMinor(patient.fecha_nacimiento);
+  const effectiveDuration = getEffectiveDurationMinutes(isMinor, params.durationMinutes);
+  const end = new Date(start.getTime() + effectiveDuration * 60_000);
+  const price = calculateAppointmentPrice({
+    isMinor,
+    startTime: start,
+    modality: params.modality,
+    durationMinutes: effectiveDuration,
+  });
+
+  await assertNoOverlap(tx, { psychologistId, patientId: patient.id, start, end });
+
+  return tx.citas.create({
+    data: {
+      id: randomUUID(),
+      psicologo_id: psychologistId,
+      paciente_id: patient.id,
+      solicitud_id: params.requestId ?? null,
+      inicio: start,
+      fin: end,
+      estado: params.status,
+      modalidad: toSchemaModality(params.modality),
+      tipo_sesion: sessionType,
+      motivo: params.reason ?? null,
+      precio: price,
+      // El honorario nace con la cita, pendiente de cobro, por el precio calculado.
+      pagos_honorarios: {
+        create: {
+          id: randomUUID(),
+          monto: price,
+          estado: estado_pago.PENDIENTE,
+        },
+      },
+    },
+    include: appointmentInclude,
+  });
 }
 
 export async function updateAppointment(

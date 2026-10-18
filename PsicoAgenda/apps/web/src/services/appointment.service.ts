@@ -1,6 +1,8 @@
 import type {
   Appointment,
   AppointmentModality,
+  AppointmentRequest,
+  AppointmentRequestStatus,
   AppointmentStatus,
   HonorariumPayment,
   PaymentStatus,
@@ -142,5 +144,62 @@ export const appointmentService = {
         method: "PATCH",
         body: { status },
       }),
+    ),
+}
+
+interface SerializedAppointmentRequest
+  extends Omit<AppointmentRequest, "startTime" | "createdAt" | "handledAt"> {
+  startTime: string
+  createdAt: string
+  handledAt?: string
+}
+
+function reviveAppointmentRequest(raw: SerializedAppointmentRequest): AppointmentRequest {
+  return {
+    ...raw,
+    startTime: new Date(raw.startTime),
+    createdAt: new Date(raw.createdAt),
+    handledAt: raw.handledAt ? new Date(raw.handledAt) : undefined,
+  }
+}
+
+export interface CreateAppointmentRequestPayload {
+  startTime: Date
+  durationMinutes: number
+  modality: AppointmentModality
+  reason?: string
+}
+
+/** Solicitudes del paciente: no ocupan agenda hasta que el psicólogo las acepta. */
+export const appointmentRequestService = {
+  list: async (status?: AppointmentRequestStatus): Promise<AppointmentRequest[]> => {
+    const rows = await apiFetch<SerializedAppointmentRequest[]>(
+      `/appointment-requests${status ? `?status=${status}` : ""}`,
+    )
+    return rows.map(reviveAppointmentRequest)
+  },
+
+  create: async (payload: CreateAppointmentRequestPayload): Promise<AppointmentRequest> =>
+    reviveAppointmentRequest(
+      await apiFetch<SerializedAppointmentRequest>("/appointment-requests", {
+        method: "POST",
+        body: { ...payload, startTime: payload.startTime.toISOString() },
+      }),
+    ),
+
+  /** Devuelve la cita creada (ya confirmada). */
+  accept: async (id: string): Promise<Appointment> =>
+    reviveAppointment(
+      await apiFetch<SerializedAppointment>(`/appointment-requests/${id}/accept`, { method: "POST" }),
+    ),
+
+  reject: async (id: string): Promise<AppointmentRequest> =>
+    reviveAppointmentRequest(
+      await apiFetch<SerializedAppointmentRequest>(`/appointment-requests/${id}/reject`, { method: "POST" }),
+    ),
+
+  cancel: async (id: string): Promise<AppointmentRequest> =>
+    reviveAppointmentRequest(
+      await apiFetch<SerializedAppointmentRequest>(`/appointment-requests/${id}/cancel`, { method: "POST" }),
     ),
 }

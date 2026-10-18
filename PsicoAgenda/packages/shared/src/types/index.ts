@@ -172,6 +172,31 @@ export interface Appointment {
   updatedAt: Date;
 }
 
+export enum AppointmentRequestStatus {
+  PENDING = "pending",
+  ACCEPTED = "accepted",
+  REJECTED = "rejected",
+  CANCELLED = "cancelled",
+}
+
+/**
+ * Lo que el paciente pide. No ocupa agenda: la cita (`Appointment`) solo existe
+ * cuando el psicólogo la acepta, y entonces `appointmentId` apunta a ella.
+ */
+export interface AppointmentRequest {
+  id: string;
+  patientId: string;
+  psychologistId: string;
+  startTime: Date;
+  durationMinutes: number;
+  modality: AppointmentModality;
+  reason?: string;
+  status: AppointmentRequestStatus;
+  appointmentId?: string;
+  createdAt: Date;
+  handledAt?: Date;
+}
+
 export interface ClinicalRecord {
   id: string;
   patientId: string;
