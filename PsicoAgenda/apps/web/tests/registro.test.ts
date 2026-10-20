@@ -28,9 +28,12 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 
 import {
+  DIGITOS_TELEFONO,
   RUTA_TRAS_REGISTRO,
   completarRegistro,
   construirPayloadRegistro,
+  formatearTelefono,
+  formatearTelefonoPegado,
   leerCodigoDelPortapapeles,
   mensajeDeRegistro,
   normalizarCodigo,
@@ -329,5 +332,37 @@ describe("leerCodigoDelPortapapeles", () => {
     });
 
     await expect(leerCodigoDelPortapapeles()).rejects.toThrow(/No encontré un código de 6 dígitos/);
+  });
+});
+
+describe("formatearTelefono", () => {
+  it("agrupa 3-3-4 mientras se escribe", () => {
+    expect(formatearTelefono("5")).toBe("5");
+    expect(formatearTelefono("5551")).toBe("555-1");
+    expect(formatearTelefono("555123")).toBe("555-123");
+    expect(formatearTelefono("5551234")).toBe("555-123-4");
+    expect(formatearTelefono("5551234567")).toBe("555-123-4567");
+  });
+
+  it("descarta todo lo que no sea dígito", () => {
+    expect(formatearTelefono("(555) 123-4567")).toBe("555-123-4567");
+  });
+
+  it(`no pasa de ${DIGITOS_TELEFONO} dígitos`, () => {
+    expect(formatearTelefono("555123456789")).toBe("555-123-4567");
+  });
+
+  it("devuelve vacío si no hay dígitos", () => {
+    expect(formatearTelefono("abc")).toBe("");
+  });
+});
+
+describe("formatearTelefonoPegado", () => {
+  it("se queda con los últimos 10 dígitos al pegar con lada", () => {
+    expect(formatearTelefonoPegado("+52 55 1234 5678")).toBe("551-234-5678");
+  });
+
+  it("formatea un pegado de 10 dígitos", () => {
+    expect(formatearTelefonoPegado("5551234567")).toBe("555-123-4567");
   });
 });

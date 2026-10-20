@@ -3,13 +3,14 @@
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, type ComponentProps } from "react"
 import { z } from "zod"
 import {
   emailSchema,
   passwordSchema,
   APP_NAME,
   MAX_INTENTOS_CODIGO,
+  esMenorDeEdad,
 } from "@psicoagenda/shared"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm, useWatch } from "react-hook-form"
@@ -35,7 +36,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import {
-  ShieldAlert,
   MailCheck,
   RefreshCw,
   ArrowLeft,
@@ -48,11 +48,15 @@ import { isSupabaseConfigured } from "@/lib/supabase/client"
 import {
   construirPayloadRegistro,
   completarRegistro,
+  DIGITOS_TELEFONO,
+  formatearTelefono,
+  formatearTelefonoPegado,
   leerCodigoDelPortapapeles,
   mensajeDeRegistro,
   normalizarCodigo,
   registroService,
   segundosDeEspera,
+  type DatosRegistro,
 } from "@/services/registro.service"
 
 /**
@@ -63,10 +67,7 @@ const registerSchema = z
     role: z.literal("patient"),
     name: z.string().min(2, "El nombre completo debe tener al menos 2 caracteres"),
     email: emailSchema,
-    phone: z
-      .string()
-      .min(10, "El teléfono debe contener al menos 10 dígitos")
-      .regex(/^[+0-9\s-()]+$/, "Formato de teléfono no válido"),
+    phone: z.string().optional(),
     password: passwordSchema,
     confirmPassword: z.string().min(1, "Confirma tu contraseña"),
     termsAccepted: z.literal(true, {
@@ -80,7 +81,8 @@ const registerSchema = z
     emergencyContactName: z.string().optional(),
     emergencyContactPhone: z.string().optional(),
     emergencyContactRelationship: z.string().optional(),
-    isMinor: z.boolean().optional(),
+    /** Declaración de la persona: "si" registra a un menor, "no" es su cuenta. */
+    paraMenor: z.enum(["si", "no"]).optional(),
     guardianName: z.string().optional(),
     guardianPhone: z.string().optional(),
     guardianRelationship: z.string().optional(),
@@ -104,6 +106,25 @@ const registerSchema = z
       });
     }
 
+    const tieneDiezDigitos = (telefono: string | undefined): boolean =>
+      (telefono ?? "").replace(/\D/g, "").length === 10;
+
+    // La fecha es la fuente de verdad (el servidor también la usa); el selector
+    // "¿Para quién es la cuenta?" solo sirve para mostrar el tutor desde el
+    // principio. Si se contradicen, se avisa aquí en vez de esperar al alta.
+    const fechaEsMenor = data.birthDate ? esMenorDeEdad(data.birthDate) : null;
+    const esMenor = fechaEsMenor ?? data.paraMenor === "si";
+
+    // Para menores, el teléfono de contacto es el del tutor: el campo de
+    // "Datos de acceso" queda deshabilitado y no se valida aquí.
+    if (!esMenor && !tieneDiezDigitos(data.phone)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "El teléfono debe tener 10 dígitos",
+        path: ["phone"],
+      });
+    }
+
     if (!data.emergencyContactName || data.emergencyContactName.trim().length < 2) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -112,16 +133,33 @@ const registerSchema = z
       });
     }
 
-    if (!data.emergencyContactPhone || data.emergencyContactPhone.trim().length < 10) {
+    if (!tieneDiezDigitos(data.emergencyContactPhone)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Ingresa un teléfono de emergencia válido (mínimo 10 dígitos)",
+        message: "Ingresa un teléfono de emergencia de 10 dígitos",
         path: ["emergencyContactPhone"],
       });
     }
 
+    // Si la elección del selector contradice la fecha, se avisa en la fecha en
+    // lugar de dejar que el alta falle al final.
+    if (data.paraMenor === "no" && fechaEsMenor === true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "La fecha indica que es menor de 18 años. Elige «Para un menor a mi cargo».",
+        path: ["birthDate"],
+      });
+    }
+    if (data.paraMenor === "si" && fechaEsMenor === false) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "La fecha indica que es mayor de 18 años. Corrige la fecha o elige «Para mí».",
+        path: ["birthDate"],
+      });
+    }
+
     // Requisitos si es menor de edad
-    if (data.isMinor) {
+    if (esMenor) {
       if (!data.guardianName || data.guardianName.trim().length < 2) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -129,10 +167,10 @@ const registerSchema = z
           path: ["guardianName"],
         });
       }
-      if (!data.guardianPhone || data.guardianPhone.trim().length < 10) {
+      if (!tieneDiezDigitos(data.guardianPhone)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "El teléfono del tutor/a legal es obligatorio",
+          message: "El teléfono del tutor/a legal es obligatorio (10 dígitos)",
           path: ["guardianPhone"],
         });
       }
@@ -169,6 +207,39 @@ const minutosYSegundos = (segundos: number): string => {
   return `${minutos}:${String(segundos % 60).padStart(2, "0")}`;
 };
 
+/**
+ * Campo de teléfono con máscara `555-123-4567`: solo dígitos, máximo 10 y
+ * agrupados mientras se escribe. Al pegar un número con lada se queda con los
+ * últimos 10 (`+52 55 1234 5678` → `551-234-5678`).
+ */
+function TelefonoInput({
+  value,
+  onChange,
+  ...props
+}: Omit<ComponentProps<"input">, "value" | "onChange"> & {
+  value?: string;
+  onChange: (valor: string) => void;
+}) {
+  return (
+    <Input
+      {...props}
+      type="tel"
+      inputMode="tel"
+      autoComplete="tel"
+      maxLength={12}
+      value={value ?? ""}
+      onChange={(evento) => onChange(formatearTelefono(evento.target.value))}
+      onPaste={(evento) => {
+        const texto = evento.clipboardData.getData("text");
+        if (texto.replace(/\D/g, "").length > DIGITOS_TELEFONO) {
+          evento.preventDefault();
+          onChange(formatearTelefonoPegado(texto));
+        }
+      }}
+    />
+  );
+}
+
 export function RegisterForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -180,7 +251,7 @@ export function RegisterForm() {
   // datos quedan guardados (y en el store de react-hook-form, que sigue
   // montado) para que un código mal escrito no obligue a repetirlos.
   const [paso, setPaso] = useState<"formulario" | "codigo">("formulario");
-  const [datos, setDatos] = useState<RegisterValues | null>(null);
+  const [datos, setDatos] = useState<DatosRegistro | null>(null);
   const [codigo, setCodigo] = useState("");
   const [codigoError, setCodigoError] = useState<string | null>(null);
   const [intentosFallidos, setIntentosFallidos] = useState(0);
@@ -204,7 +275,6 @@ export function RegisterForm() {
       emergencyContactName: "",
       emergencyContactPhone: "",
       emergencyContactRelationship: "",
-      isMinor: false,
       guardianName: "",
       guardianPhone: "",
       guardianRelationship: "",
@@ -214,24 +284,16 @@ export function RegisterForm() {
   });
 
   const watchBirthDate = useWatch({ control: form.control, name: "birthDate" });
+  const watchParaMenor = useWatch({ control: form.control, name: "paraMenor" });
+  const watchGuardianPhone = useWatch({ control: form.control, name: "guardianPhone" });
 
-  // Detección automática y reactiva de minoría de edad (< 18 años)
-  const isMinor = useMemo(() => {
-    if (!watchBirthDate) return false;
-    const birth = new Date(watchBirthDate);
-    if (isNaN(birth.getTime())) return false;
-    const today = new Date();
-    let age = today.getFullYear() - birth.getFullYear();
-    const monthDiff = today.getMonth() - birth.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-      age--;
-    }
-    return age >= 0 && age < 18;
-  }, [watchBirthDate]);
-
-  useEffect(() => {
-    form.setValue("isMinor", isMinor);
-  }, [isMinor, form]);
+  // La fecha es la fuente de verdad (el servidor también la usa). Mientras no
+  // haya fecha manda el selector "¿Para quién es la cuenta?", de modo que el
+  // bloque del tutor aparezca desde el principio si se registra a un menor.
+  const esMenor = useMemo(() => {
+    if (watchBirthDate) return esMenorDeEdad(watchBirthDate);
+    return watchParaMenor === "si";
+  }, [watchBirthDate, watchParaMenor]);
 
   // Un tick por segundo mientras se espera el código: alimenta la cuenta
   // regresiva del vencimiento y la del reenvío.
@@ -253,9 +315,16 @@ export function RegisterForm() {
     setIsPending(true);
 
     try {
-      const respuesta = await registroService.solicitarCodigo(construirPayloadRegistro(values));
+      // Para menores, el teléfono de contacto es el del tutor: el campo de
+      // "Datos de acceso" está deshabilitado y aquí se sustituye antes de
+      // guardar los datos (que también usan el reenvío y la verificación).
+      const normalizados = {
+        ...values,
+        phone: esMenor ? (values.guardianPhone ?? "") : (values.phone ?? ""),
+      };
+      const respuesta = await registroService.solicitarCodigo(construirPayloadRegistro(normalizados));
       const marcaTiempo = ahoraMs();
-      setDatos(values);
+      setDatos(normalizados);
       setCodigo("");
       setCodigoError(null);
       setIntentosFallidos(0);
@@ -532,6 +601,104 @@ export function RegisterForm() {
             {/* El alta pública solo crea cuentas de paciente; el rol de
                 psicólogo/a se asigna desde el panel administrativo. */}
 
+            {/* Selector de flujo: avisa desde el principio si harán falta los
+                datos del tutor. La fecha de nacimiento sigue siendo la que
+                decide (el servidor también la deriva de ahí). */}
+            <FormField
+              control={form.control}
+              name="paraMenor"
+              render={({ field }) => (
+                <FormItem className="rounded-2xl border border-border/70 bg-muted/30 p-3.5">
+                  <FormLabel className="text-sm">¿Para quién es la cuenta?</FormLabel>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {[
+                      { valor: "no" as const, etiqueta: "Para mí" },
+                      { valor: "si" as const, etiqueta: "Para un menor a mi cargo" },
+                    ].map((opcion) => (
+                      <Button
+                        key={opcion.valor}
+                        type="button"
+                        variant={field.value === opcion.valor ? "default" : "outline"}
+                        aria-pressed={field.value === opcion.valor}
+                        onClick={() => field.onChange(opcion.valor)}
+                        className="h-10 rounded-xl"
+                      >
+                        {opcion.etiqueta}
+                      </Button>
+                    ))}
+                  </div>
+                  <FormDescription className="text-[11px] leading-snug">
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Datos del tutor: va antes de las credenciales para que quien
+                registra a un menor sepa desde el principio qué necesita. Es
+                una sección más del formulario, sin caja destacada. */}
+            {esMenor ? (
+              <div className="space-y-4">
+                <h2 className="text-sm font-semibold text-foreground">Datos del tutor legal</h2>
+                <p className="text-xs text-muted-foreground leading-snug">
+                </p>
+
+                <FormField
+                  control={form.control}
+                  name="guardianName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Nombre completo del tutor/a</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Nombre de madre, padre o tutor" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="guardianRelationship"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Parentesco / Representación</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="Parentesco" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="Madre">Madre</SelectItem>
+                            <SelectItem value="Padre">Padre</SelectItem>
+                            <SelectItem value="Tutor legal">Tutor/a legal</SelectItem>
+                            <SelectItem value="Familiar responsable">Familiar responsable</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="guardianPhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Teléfono del tutor/a</FormLabel>
+                        <FormControl>
+                          <TelefonoInput placeholder="311-123-4567" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            ) : null}
+
               {/* SECCIÓN 1: Credenciales y datos básicos */}
               <div className="space-y-4">
                 <h2 className="text-sm font-semibold text-foreground">
@@ -583,13 +750,18 @@ export function RegisterForm() {
                       <FormItem>
                         <FormLabel>Teléfono móvil</FormLabel>
                         <FormControl>
-                          <Input
-                            type="tel"
-                            placeholder="+52 55 1234 5678"
-                            autoComplete="tel"
+                          <TelefonoInput
+                            placeholder="311-123-4567"
                             {...field}
+                            value={esMenor ? (watchGuardianPhone ?? "") : field.value}
+                            disabled={esMenor}
                           />
                         </FormControl>
+                        <FormDescription className="text-[11px] leading-tight text-muted-foreground">
+                          {esMenor
+                            ? "Se usará el teléfono del tutor/a legal."
+                            : "10 dígitos, con guiones automáticos"}
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -659,7 +831,7 @@ export function RegisterForm() {
                 </div>
               </div>
 
-              {/* SECCIÓN 2: Ficha personal, tutor y contacto de emergencia */}
+              {/* SECCIÓN 2: Ficha personal y contacto de emergencia */}
               <div className="space-y-4 pt-2">
                   <h2 className="text-sm font-semibold text-foreground">
                     Información personal
@@ -730,103 +902,6 @@ export function RegisterForm() {
                     )}
                   />
 
-                  {/* BLOQUE REACTIVO: Tutor legal si es menor de edad */}
-                  {isMinor ? (
-                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                      <div className="flex items-start gap-2">
-                        <ShieldAlert className="size-4 text-primary shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-xs font-semibold text-primary">
-                            Paciente menor de edad (Consentimiento y Tutor Legal)
-                          </p>
-                          <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                            Conforme a la normativa clínica y el RD-11, el registro de
-                            menores de 18 años requiere los datos de contacto y
-                            consentimiento de la madre, padre o tutor/a legal.
-                          </p>
-                        </div>
-                      </div>
-
-                      <FormField
-                        control={form.control}
-                        name="guardianName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel className="text-xs">Nombre completo del tutor/a</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Nombre de madre, padre o tutor" {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <div className="grid sm:grid-cols-2 gap-3">
-                        <FormField
-                          control={form.control}
-                          name="guardianRelationship"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Parentesco / Representación</FormLabel>
-                              <Select
-                                onValueChange={field.onChange}
-                                defaultValue={field.value}
-                              >
-                                <FormControl>
-                                  <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Parentesco" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="Madre">Madre</SelectItem>
-                                  <SelectItem value="Padre">Padre</SelectItem>
-                                  <SelectItem value="Tutor legal">Tutor/a legal</SelectItem>
-                                  <SelectItem value="Familiar responsable">Familiar responsable</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
-                          name="guardianPhone"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className="text-xs">Teléfono del tutor/a</FormLabel>
-                              <FormControl>
-                                <Input type="tel" placeholder="+52 55 1234 5678" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <FormField
-                        control={form.control}
-                        name="guardianConsent"
-                        render={({ field }) => (
-                          <FormItem className="flex flex-row items-start space-x-2 space-y-0 pt-1">
-                            <FormControl>
-                              <Checkbox
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                            <div className="space-y-0.5 leading-none">
-                              <FormLabel className="text-xs font-normal text-foreground cursor-pointer">
-                                Como tutor/a legal, autorizo el registro y la atención psicológica del menor.
-                              </FormLabel>
-                              <FormMessage />
-                            </div>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  ) : null}
-
                   {/* BLOQUE: Contacto de emergencia (RD-12) */}
                   <div className="space-y-3 pt-3">
                     <h2 className="text-sm font-semibold text-foreground">
@@ -855,7 +930,7 @@ export function RegisterForm() {
                           <FormItem>
                             <FormLabel>Teléfono de emergencia</FormLabel>
                             <FormControl>
-                              <Input type="tel" placeholder="+52 55 9876 5432" {...field} />
+                              <TelefonoInput placeholder="311-123-4567" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -907,6 +982,30 @@ export function RegisterForm() {
                   </FormItem>
                 )}
               />
+
+              {/* Consentimiento del tutor, junto al aviso de privacidad */}
+              {esMenor ? (
+                <FormField
+                  control={form.control}
+                  name="guardianConsent"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-start space-x-2 space-y-0 pt-2">
+                      <FormControl>
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                      <div className="space-y-0.5 leading-none">
+                        <FormLabel className="text-xs font-normal text-foreground cursor-pointer">
+                          Como tutor/a legal, autorizo el registro y la atención psicológica del menor.
+                        </FormLabel>
+                        <FormMessage />
+                      </div>
+                    </FormItem>
+                  )}
+                />
+              ) : null}
 
               {/* BOTONES: enviar el código (principal) y Cancelar / Volver al login (secundario) */}
               <div className="flex flex-col gap-2">

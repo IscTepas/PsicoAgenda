@@ -102,9 +102,23 @@ export const patientListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).optional(),
 });
 
+/**
+ * Teléfono local: exactamente 10 dígitos, con el formato visible `555-123-4567`.
+ *
+ * Se valida por cantidad de dígitos y no por longitud del texto: el valor que
+ * escribe la persona incluye guiones, y contar caracteres dejaría pasar números
+ * incompletos como `555-123-456` (9 dígitos, 11 caracteres).
+ */
+export const telefonoSchema = z
+  .string()
+  .regex(/^[+0-9\s()-]+$/, "Formato de teléfono no válido")
+  .refine((valor) => valor.replace(/\D/g, "").length === 10, {
+    message: "El teléfono debe tener 10 dígitos",
+  });
+
 export const emergencyContactSchema = z.object({
   name: z.string().min(2, "El nombre es obligatorio"),
-  phone: z.string().min(10, "Teléfono inválido"),
+  phone: telefonoSchema,
   relationship: z.string().optional(),
 });
 
@@ -131,10 +145,7 @@ const registroPacienteBaseSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   name: z.string().min(2, "El nombre completo debe tener al menos 2 caracteres"),
-  phone: z
-    .string()
-    .min(10, "El teléfono debe contener al menos 10 dígitos")
-    .regex(/^[+0-9\s-()]+$/, "Formato de teléfono no válido"),
+  phone: telefonoSchema,
   birth_date: z
     .string()
     .min(1, "La fecha de nacimiento es obligatoria")
