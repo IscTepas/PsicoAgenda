@@ -2,9 +2,15 @@
 
 import Link from "next/link"
 import Image from "next/image"
+import { useRouter } from "next/navigation"
 import { useState, useMemo, useEffect } from "react"
 import { z } from "zod"
-import { emailSchema, passwordSchema, APP_NAME } from "@psicoagenda/shared"
+import {
+  emailSchema,
+  passwordSchema,
+  APP_NAME,
+  MAX_INTENTOS_CODIGO,
+} from "@psicoagenda/shared"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm, useWatch } from "react-hook-form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -30,12 +36,24 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import {
   ShieldAlert,
-  CheckCircle2,
+  MailCheck,
+  RefreshCw,
+  ArrowLeft,
+  ClipboardPaste,
   Loader2,
   Eye,
   EyeOff,
 } from "lucide-react"
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/client"
+import { isSupabaseConfigured } from "@/lib/supabase/client"
+import {
+  construirPayloadRegistro,
+  completarRegistro,
+  leerCodigoDelPortapapeles,
+  mensajeDeRegistro,
+  normalizarCodigo,
+  registroService,
+  segundosDeEspera,
+} from "@/services/registro.service"
 
 /**
  * Esquema de validación para registro integral de Pacientes y Profesionales.
@@ -137,12 +155,39 @@ const registerSchema = z
 
 type RegisterValues = z.infer<typeof registerSchema>;
 
+/**
+ * Marca de tiempo actual. Vive en el módulo (y no como `Date.now()` suelto en el
+ * componente) porque la regla de pureza de React Compiler marca las llamadas a
+ * funciones impuras en el camino de render, y `onSubmit` pasa por
+ * `form.handleSubmit`.
+ */
+const ahoraMs = (): number => Date.now();
+
+/** Formatea segundos como `m:ss` para las cuentas regresivas del paso 2. */
+const minutosYSegundos = (segundos: number): string => {
+  const minutos = Math.floor(segundos / 60);
+  return `${minutos}:${String(segundos % 60).padStart(2, "0")}`;
+};
+
 export function RegisterForm() {
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
   const configured = isSupabaseConfigured();
+
+  // Paso 2: el formulario ya se envió y esperamos el código de 6 dígitos. Los
+  // datos quedan guardados (y en el store de react-hook-form, que sigue
+  // montado) para que un código mal escrito no obligue a repetirlos.
+  const [paso, setPaso] = useState<"formulario" | "codigo">("formulario");
+  const [datos, setDatos] = useState<RegisterValues | null>(null);
+  const [codigo, setCodigo] = useState("");
+  const [codigoError, setCodigoError] = useState<string | null>(null);
+  const [intentosFallidos, setIntentosFallidos] = useState(0);
+  const [pegando, setPegando] = useState(false);
+  const [ahora, setAhora] = useState(ahoraMs);
+  const [expiraEn, setExpiraEn] = useState<number | null>(null);
+  const [puedeReenviarEn, setPuedeReenviarEn] = useState(0);
 
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
@@ -188,91 +233,255 @@ export function RegisterForm() {
     form.setValue("isMinor", isMinor);
   }, [isMinor, form]);
 
+  // Un tick por segundo mientras se espera el código: alimenta la cuenta
+  // regresiva del vencimiento y la del reenvío.
+  useEffect(() => {
+    if (paso !== "codigo") return;
+    const id = setInterval(() => setAhora(ahoraMs()), 1000);
+    return () => clearInterval(id);
+  }, [paso]);
+
+  const segundosParaExpirar =
+    expiraEn === null ? 0 : Math.max(0, Math.ceil((expiraEn - ahora) / 1000));
+  const segundosParaReenviar = Math.max(0, Math.ceil((puedeReenviarEn - ahora) / 1000));
+  const codigoVencido = paso === "codigo" && segundosParaExpirar <= 0;
+
+  // Paso 1: pedir el código. Todavía no existe ninguna cuenta: hasta que la
+  // persona no lo escriba, ni Supabase Auth ni la base de datos ven sus datos.
   async function onSubmit(values: RegisterValues) {
     setError(null);
     setIsPending(true);
 
     try {
-      const client = createClient();
-      const metadataPayload: Record<string, unknown> = {
-        name: values.name,
-        phone: values.phone,
-        role: values.role,
-        birth_date: values.birthDate,
-        gender: values.gender,
-        address: values.address,
-        is_minor: values.isMinor,
-        emergency_contact: {
-          name: values.emergencyContactName,
-          phone: values.emergencyContactPhone,
-          relationship: values.emergencyContactRelationship,
-        },
-      };
-
-      if (values.isMinor) {
-        metadataPayload.guardian = {
-          name: values.guardianName,
-          phone: values.guardianPhone,
-          relationship: values.guardianRelationship,
-        };
-      }
-
-      const { error: signUpError } = await client.auth.signUp({
-        email: values.email,
-        password: values.password,
-        options: {
-          data: metadataPayload,
-        },
-      });
-
-      if (signUpError) {
-        if (signUpError.message === "User already registered") {
-          setError("Ya existe una cuenta registrada con este correo electrónico.");
-        } else {
-          setError(signUpError.message || "No se pudo crear la cuenta. Inténtalo nuevamente.");
-        }
-        setIsPending(false);
-        return;
-      }
-
-      setIsPending(false);
-      setSubmittedEmail(values.email);
-    } catch {
-      setError("Ocurrió un error inesperado al conectar con el servicio de autenticación.");
+      const respuesta = await registroService.solicitarCodigo(construirPayloadRegistro(values));
+      const marcaTiempo = ahoraMs();
+      setDatos(values);
+      setCodigo("");
+      setCodigoError(null);
+      setIntentosFallidos(0);
+      setAhora(marcaTiempo);
+      setExpiraEn(marcaTiempo + respuesta.expiresInSeconds * 1000);
+      setPuedeReenviarEn(marcaTiempo + respuesta.resendCooldownSeconds * 1000);
+      setPaso("codigo");
+    } catch (fallo) {
+      setError(mensajeDeRegistro(fallo));
+    } finally {
       setIsPending(false);
     }
   }
 
-  // Estado de confirmación (Email enviado)
-  if (submittedEmail) {
+  // Paso 2: verificar el código. En éxito la API crea la cuenta confirmada,
+  // iniciamos sesión y entramos al panel; en fallo no se pierde nada.
+  async function onVerificar() {
+    if (!datos || isPending) return;
+    setCodigoError(null);
+    setIsPending(true);
+
+    try {
+      await completarRegistro(datos, codigo, (ruta) => {
+        router.push(ruta);
+        router.refresh();
+      });
+    } catch (fallo) {
+      setCodigoError(mensajeDeRegistro(fallo));
+      setIntentosFallidos((intentos) => intentos + 1);
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  async function onReenviar() {
+    if (!datos || isPending) return;
+    setCodigoError(null);
+    setIsPending(true);
+
+    try {
+      const respuesta = await registroService.solicitarCodigo(construirPayloadRegistro(datos));
+      const marcaTiempo = ahoraMs();
+      setAhora(marcaTiempo);
+      setExpiraEn(marcaTiempo + respuesta.expiresInSeconds * 1000);
+      setPuedeReenviarEn(marcaTiempo + respuesta.resendCooldownSeconds * 1000);
+      setCodigo("");
+      setIntentosFallidos(0);
+    } catch (fallo) {
+      // Si la API responde que todavía hay que esperar, el botón se apaga por
+      // los segundos que ella misma indicó.
+      setCodigoError(mensajeDeRegistro(fallo));
+      setPuedeReenviarEn(ahoraMs() + (segundosDeEspera(fallo) ?? 60) * 1000);
+      setAhora(ahoraMs());
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  function volverAlFormulario() {
+    setPaso("formulario");
+    setCodigoError(null);
+    setCodigo("");
+  }
+
+  // Pegar el código copiado del correo. El correo no puede leer el portapapeles
+  // (los clientes eliminan el JavaScript), así que la copia la hace la persona
+  // — con el botón nativo de "Copiar código" de Gmail — y aquí se pega.
+  async function onPegarCodigo() {
+    if (pegando) return;
+    setPegando(true);
+    setCodigoError(null);
+
+    try {
+      setCodigo(await leerCodigoDelPortapapeles());
+    } catch (fallo) {
+      setCodigoError(
+        fallo instanceof Error
+          ? fallo.message
+          : "No se pudo leer el portapapeles. Copia el código del correo y pégalo con Ctrl+V.",
+      );
+    } finally {
+      setPegando(false);
+    }
+  }
+
+  // Paso 2 (código de verificación)
+  if (paso === "codigo" && datos) {
     return (
-      <div className="w-full max-w-md rounded-4xl bg-card p-8 border border-border shadow-sm text-center flex flex-col items-center gap-4">
-        <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-1">
-          <CheckCircle2 className="size-8" />
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          ¡Revisa tu correo!
-        </h1>
-        <div>
-          <Badge variant="secondary" className="rounded-full px-3 py-1 font-normal text-xs bg-muted text-foreground">
+      <div className="w-full max-w-md rounded-4xl bg-card p-7 sm:p-8 border border-border shadow-sm flex flex-col gap-6">
+        <div className="text-center flex flex-col items-center gap-2">
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-1">
+            <MailCheck className="size-7" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            Confirma tu correo
+          </h1>
+          <Badge
+            variant="secondary"
+            className="rounded-full px-3 py-1 font-normal text-xs bg-muted text-foreground"
+          >
             Cuenta de Paciente
           </Badge>
+          <p className="text-sm text-muted-foreground">Escribimos un código de 6 dígitos a:</p>
+          <p className="max-w-full truncate font-semibold text-foreground text-sm bg-muted/60 px-4 py-2 rounded-xl">
+            {datos.email}
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Enviamos un enlace seguro de activación a:
-        </p>
-        <p className="font-semibold text-foreground text-sm bg-muted/60 px-4 py-2 rounded-xl">
-          {submittedEmail}
-        </p>
-        <p className="text-xs text-muted-foreground leading-relaxed max-w-sm">
-          Por motivos de seguridad y confidencialidad clínica, confirma tu cuenta haciendo clic en el enlace recibido antes de iniciar sesión.
-        </p>
-        <div className="w-full flex flex-col gap-2 pt-3">
-          <Button asChild size="lg" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl">
-            <Link href="/login">Ir a iniciar sesión</Link>
-          </Button>
-          <Button variant="ghost" size="sm" asChild className="rounded-xl text-muted-foreground hover:text-foreground">
-            <Link href="/">Regresar al inicio</Link>
+
+        {codigoError ? (
+          <Alert
+            variant="destructive"
+            className="rounded-xl animate-in fade-in slide-in-from-top-1 duration-200"
+          >
+            <AlertDescription>{codigoError}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        <div className="space-y-2.5">
+          <label htmlFor="codigo-verificacion" className="text-sm font-medium text-foreground">
+            Código de verificación
+          </label>
+          <div className="flex gap-2">
+            <Input
+              id="codigo-verificacion"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="000000"
+              autoFocus
+              value={codigo}
+              onChange={(evento) => setCodigo(normalizarCodigo(evento.target.value))}
+              onKeyDown={(evento) => {
+                if (evento.key === "Enter") {
+                  evento.preventDefault();
+                  void onVerificar();
+                }
+              }}
+              className="h-14 min-w-0 flex-1 text-center text-2xl tracking-[0.4em] tabular-nums"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void onPegarCodigo()}
+              disabled={pegando}
+              title="Pegar el código copiado del correo"
+              className="h-14 shrink-0 px-4"
+            >
+              {pegando ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <ClipboardPaste className="size-4" />
+              )}
+              Pegar
+              <span className="sr-only"> el código del portapapeles</span>
+            </Button>
+          </div>
+          <p
+            aria-live="polite"
+            className="text-center text-xs leading-relaxed text-muted-foreground"
+          >
+            {codigoVencido ? (
+              <span className="font-medium text-destructive">
+                El código ya venció. Solicita uno nuevo.
+              </span>
+            ) : (
+              <>
+                El código vence en{" "}
+                <span className="font-medium tabular-nums text-foreground">
+                  {minutosYSegundos(segundosParaExpirar)}
+                </span>
+                {intentosFallidos > 0 ? (
+                  <>
+                    {" · "}Intento {Math.min(intentosFallidos + 1, MAX_INTENTOS_CODIGO)} de{" "}
+                    {MAX_INTENTOS_CODIGO}
+                  </>
+                ) : null}
+              </>
+            )}
+          </p>
+        </div>
+
+        <Button
+          type="button"
+          size="lg"
+          onClick={() => void onVerificar()}
+          disabled={isPending || codigo.length !== 6 || codigoVencido}
+          className="w-full h-11 rounded-xl text-sm font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-[0.98] transition-all"
+        >
+          {isPending ? (
+            <>
+              <Loader2 className="mr-2 size-4 animate-spin" />
+              Verificando...
+            </>
+          ) : (
+            "Verificar y crear mi cuenta"
+          )}
+        </Button>
+
+        <div className="flex flex-col gap-2 border-t border-border">
+          {segundosParaReenviar > 0 ? (
+            <p className="pt-4 text-center text-xs tabular-nums text-muted-foreground">
+              ¿No te llegó? Podrás pedir otro código en {segundosParaReenviar} s
+            </p>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={() => void onReenviar()}
+              disabled={isPending}
+              className="mt-4 w-full h-11 rounded-xl text-sm font-semibold"
+            >
+              <RefreshCw className="mr-2 size-4" />
+              Enviar un código nuevo
+            </Button>
+          )}
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={volverAlFormulario}
+            className="w-full rounded-xl text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="mr-2 size-4" />
+            Volver al formulario
           </Button>
         </div>
       </div>
@@ -699,7 +908,7 @@ export function RegisterForm() {
                 )}
               />
 
-              {/* BOTONES: Registrarse (principal) y Cancelar / Volver al login (secundario) */}
+              {/* BOTONES: enviar el código (principal) y Cancelar / Volver al login (secundario) */}
               <div className="flex flex-col gap-2">
                 <Button
                   type="submit"
@@ -710,10 +919,10 @@ export function RegisterForm() {
                   {isPending ? (
                     <>
                       <Loader2 className="mr-2 size-4 animate-spin" />
-                      Procesando registro...
+                      Enviando código...
                     </>
                   ) : (
-                    "Registrarse"
+                    "Enviar código de verificación"
                   )}
                 </Button>
 

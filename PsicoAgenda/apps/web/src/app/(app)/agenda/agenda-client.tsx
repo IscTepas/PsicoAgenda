@@ -259,6 +259,12 @@ export function AgendaClient() {
 
   const patientById = React.useCallback((id: string) => patientsById[id], [patientsById])
 
+  // Estados del cobro y de la cita seleccionada: se declaran antes del callback
+  // que los usa (regla react-hooks/immutability).
+  const [paymentUpdating, setPaymentUpdating] = React.useState(false)
+  const [paymentError, setPaymentError] = React.useState<string | null>(null)
+  const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(null)
+
   // Marca el honorario como cobrado o condonado. El panel refresca la cita en la
   // tabla y en el diálogo con la respuesta de la API.
   const handleUpdatePayment = React.useCallback(async (appointment: Appointment, status: PaymentStatus) => {
@@ -281,9 +287,6 @@ export function AgendaClient() {
   const [view, setView] = React.useState<CalendarView>("semana")
   const [selectedStatus, setSelectedStatus] = React.useState<string>("ALL")
   const [searchQuery, setSearchQuery] = React.useState<string>("")
-  const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(null)
-  const [paymentUpdating, setPaymentUpdating] = React.useState(false)
-  const [paymentError, setPaymentError] = React.useState<string | null>(null)
   const [datePickerOpen, setDatePickerOpen] = React.useState(false)
 
   const greetingName = user?.name ?? "Bienvenido"
@@ -1224,7 +1227,7 @@ export function AgendaClient() {
                       <span>Modificar Cita</span>
                     </Link>
                   </Button>
-                  {patient?.id && (
+                  {!isPatient && patient?.id && (
                     <Button asChild className="w-full sm:w-auto h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs">
                       <Link href={`/pacientes/${patient.id}`} className="flex items-center gap-1.5">
                         <span>Ver Expediente</span>

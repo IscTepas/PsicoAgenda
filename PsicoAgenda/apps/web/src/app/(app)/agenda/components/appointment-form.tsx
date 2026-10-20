@@ -302,6 +302,15 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     return Array.from(new Set(hours)).sort()
   }, [schedule, selectedDate])
 
+  // Hora realmente elegida: si la que guarda el estado no existe en el día
+  // seleccionado (p. ej. al cambiar de fecha), se usa la primera disponible.
+  // Se deriva en el render en lugar de sincronizarla con un efecto
+  // (react-hooks/set-state-in-effect): el efecto provocaba renders en cascada.
+  const selectedHourEfectivo = React.useMemo(() => {
+    if (availableHours.includes(selectedHour)) return selectedHour
+    return availableHours[0] ?? selectedHour
+  }, [availableHours, selectedHour])
+
   // Primer día futuro con franjas en el horario del profesional: se sugiere
   // cuando la fecha elegida no tiene disponibilidad (p. ej. un sábado).
   const nextAvailableDate = React.useMemo(() => {
@@ -326,35 +335,24 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     return birthDate > cutoff
   }, [selectedPatient])
 
-  // Si la hora elegida no existe en el día seleccionado, se toma la primera libre.
-  React.useEffect(() => {
-    if (availableHours.length === 0) return
-    if (!availableHours.includes(selectedHour)) {
-      setSelectedHour(availableHours[0])
-    }
-  }, [availableHours, selectedHour])
-
-  // Menores de edad: duración fija de 30 minutos.
-  React.useEffect(() => {
-    if (isMinorPatient && durationMinutes !== 30) {
-      setDurationMinutes(30)
-    }
-  }, [isMinorPatient, durationMinutes])
+  // Duración efectiva: 30 minutos para menores. También se deriva (en vez de
+  // sincronizar el estado con un efecto) para que el selector, la vista previa
+  // y el payload coincidan siempre.
+  const durationMinutesEfectivos = getEffectiveDurationMinutes(isMinorPatient, durationMinutes)
 
   // Costo de la sesión calculado en vivo con las mismas reglas del backend.
   const previewPrice = React.useMemo(() => {
     if (!hydrated) return null
-    const [hour, minute] = (selectedHour || "10:00").split(":").map(Number)
+    const [hour, minute] = (selectedHourEfectivo || "10:00").split(":").map(Number)
     const start = new Date(selectedDate)
     start.setHours(hour, minute, 0, 0)
-    const effectiveDuration = getEffectiveDurationMinutes(isMinorPatient, durationMinutes)
     return calculateAppointmentPrice({
       isMinor: isMinorPatient,
       startTime: start,
       modality,
-      durationMinutes: effectiveDuration,
+      durationMinutes: durationMinutesEfectivos,
     })
-  }, [hydrated, selectedDate, selectedHour, isMinorPatient, durationMinutes, modality])
+  }, [hydrated, selectedDate, selectedHourEfectivo, isMinorPatient, durationMinutesEfectivos, modality])
 
   // Autocomplete patient filter
   const filteredPatients = React.useMemo(() => {
@@ -429,24 +427,24 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       return
     }
 
-    if (!selectedHour) {
+    if (!selectedHourEfectivo) {
       setErrorMessage("Por favor selecciona una hora para la sesión.")
       return
     }
 
-    if (!availableHours.includes(selectedHour)) {
+    if (!availableHours.includes(selectedHourEfectivo)) {
       setErrorMessage("El día seleccionado no tiene franjas horarias disponibles. Elige otra fecha.")
       return
     }
 
     // Check slot availability
-    const slot = slotAvailability[selectedHour]
+    const slot = slotAvailability[selectedHourEfectivo]
     if (slot && !slot.available) {
-      setErrorMessage(`El horario de las ${selectedHour} ya se encuentra ocupado por ${slot.conflictWith}.`)
+      setErrorMessage(`El horario de las ${selectedHourEfectivo} ya se encuentra ocupado por ${slot.conflictWith}.`)
       return
     }
 
-    const [hour, minute] = selectedHour.split(":").map(Number)
+    const [hour, minute] = selectedHourEfectivo.split(":").map(Number)
     const startTime = new Date(selectedDate)
     startTime.setHours(hour, minute, 0, 0)
 
@@ -455,7 +453,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       if (isEdit && initialAppointment) {
         await appointmentService.update(initialAppointment.id, {
           startTime,
-          durationMinutes,
+          durationMinutes: durationMinutesEfectivos,
           modality,
           reason: reason || undefined,
         })
@@ -471,7 +469,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         // El paciente no agenda: solicita. La cita existe cuando el psicólogo acepta.
         await appointmentRequestService.create({
           startTime,
-          durationMinutes,
+          durationMinutes: durationMinutesEfectivos,
           modality,
           reason: reason || undefined,
         })
@@ -480,7 +478,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         await appointmentService.create({
           patientId: lockedPatientId,
           startTime,
-          durationMinutes,
+          durationMinutes: durationMinutesEfectivos,
           modality,
           reason: reason || undefined,
         })
@@ -908,7 +906,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
                 {availableHours.map((hourStr) => {
                   const slot = slotAvailability[hourStr]
-                  const isSelected = selectedHour === hourStr
+                  const isSelected = selectedHourEfectivo === hourStr
                   const isAvailable = slot?.available ?? true
 
                   return (
@@ -1308,7 +1306,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
             </div>
 
             <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-xs border border-amber-200">
-              Esta acción liberará la franja horaria ({selectedHour}) en la agenda digital.
+              Esta acción liberará la franja horaria ({selectedHourEfectivo}) en la agenda digital.
             </div>
           </div>
 

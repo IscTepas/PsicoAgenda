@@ -108,6 +108,74 @@ export const emergencyContactSchema = z.object({
   relationship: z.string().optional(),
 });
 
+/** Edad a partir de una fecha `YYYY-MM-DD`; `true` si la persona es menor de 18. */
+export function esMenorDeEdad(fecha: string): boolean {
+  const nacimiento = new Date(fecha);
+  if (Number.isNaN(nacimiento.getTime())) return false;
+  const hoy = new Date();
+  let edad = hoy.getFullYear() - nacimiento.getFullYear();
+  const mes = hoy.getMonth() - nacimiento.getMonth();
+  if (mes < 0 || (mes === 0 && hoy.getDate() < nacimiento.getDate())) edad--;
+  return edad >= 0 && edad < 18;
+}
+
+/**
+ * Payload del registro de paciente en dos pasos. La API lo revalida en
+ * `pre-registro` y otra vez en `verificar-codigo` antes de crear la cuenta
+ * (el cliente nunca es fuente de verdad) y viaja como `user_metadata` para que
+ * `handle_new_user` arme el expediente. El tutor es obligatorio cuando la
+ * fecha de nacimiento resulta en menor de edad: la minoría se deriva en el
+ * servidor, no se confía en el campo del cliente.
+ */
+const registroPacienteBaseSchema = z.object({
+  email: emailSchema,
+  password: passwordSchema,
+  name: z.string().min(2, "El nombre completo debe tener al menos 2 caracteres"),
+  phone: z
+    .string()
+    .min(10, "El teléfono debe contener al menos 10 dígitos")
+    .regex(/^[+0-9\s-()]+$/, "Formato de teléfono no válido"),
+  birth_date: z
+    .string()
+    .min(1, "La fecha de nacimiento es obligatoria")
+    .refine((valor) => !Number.isNaN(Date.parse(valor)), "Fecha de nacimiento inválida"),
+  gender: z.string().optional(),
+  address: z.string().optional(),
+  emergency_contact: emergencyContactSchema,
+  guardian: emergencyContactSchema.optional(),
+});
+
+interface DatosRegistro {
+  birth_date: string;
+  guardian?: { name: string; phone: string; relationship?: string };
+}
+
+/** El tutor es obligatorio cuando la fecha resulta en menor de 18: se deriva
+ * en el servidor, no se confía en el campo del cliente. */
+const exigirTutorSiMenor = (data: DatosRegistro, ctx: z.RefinementCtx): void => {
+  if (esMenorDeEdad(data.birth_date) && !data.guardian) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Los datos del tutor legal son obligatorios para menores de edad",
+      path: ["guardian"],
+    });
+  }
+};
+
+export const registroPacienteSchema = registroPacienteBaseSchema.superRefine(exigirTutorSiMenor);
+
+/**
+ * Payload de `verificar-codigo`: el mismo del pre-registro más el código de 6
+ * dígitos. La API vuelve a validar TODO entero antes de crear la cuenta, así
+ * que un payload alterado entre pasos no pasa.
+ */
+export const verificarCodigoRegistroSchema = registroPacienteBaseSchema
+  .extend({ codigo: z.string().regex(/^\d{6}$/, "El código debe tener 6 dígitos") })
+  .superRefine(exigirTutorSiMenor);
+
+export type RegistroPaciente = z.infer<typeof registroPacienteSchema>;
+export type VerificarCodigoRegistro = z.infer<typeof verificarCodigoRegistroSchema>;
+
 export const logEntrySchema = z.object({
   clinicalRecordId: z.string().uuid(),
   appointmentId: z.string().uuid().optional(),

@@ -68,7 +68,7 @@ openspec --version
 
 ## Datos y autenticación: Supabase
 
-El sistema persiste en el PostgreSQL gestionado de Supabase y delega credenciales, verificación de correo y segundo factor en Supabase Auth. El backend **no emite tokens** ni almacena contraseñas.
+El sistema persiste en el PostgreSQL gestionado de Supabase y delega las credenciales y el segundo factor en Supabase Auth. El backend **no emite tokens** ni almacena contraseñas. La verificación del correo de registro la orquesta la API con un código de un solo uso (ver [Registro con código de verificación](#registro-con-código-de-verificación)).
 
 - **La API es la única vía de acceso a los datos.** Las tablas de `public` no tienen RLS y el rol `prisma` es su único propietario, así que `anon`, `authenticated` y `service_role` no tienen **ningún** privilegio sobre ellas. Aun así la Data API está **desactivada** (el proyecto no expone `public`), de modo que PostgREST tampoco publica el esquema OpenAPI con los nombres de tabla y columna. El orden y la comprobación están en el paso 3.
 - **El rol de negocio viaja en `app_metadata.role`**, que el cliente no puede editar. El claim `role` de nivel superior del JWT vale `authenticated` y es el rol de PostgreSQL, no el de negocio. Ojo al casing: el claim llega en **MAYÚSCULAS** (`PSYCHOLOGIST`) porque lo escribe el enum de la base, mientras que `UserRole` de `@psicoagenda/shared` usa minúsculas; el backend lo cruza en `toBusinessRole` (`apps/api/src/utils/jwt.ts`).
@@ -124,6 +124,16 @@ El JWT y la Auth API no se ven afectados: viven en `/auth/v1/`, que es un servic
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
 ```
+
+El flujo de registro (código de verificación por correo) usa tres variables más de `apps/api/.env`, documentadas en el propio `.env.example`:
+
+| Variable | Uso |
+|----------|-----|
+| `SUPABASE_SERVICE_ROLE_KEY` | Crea la cuenta recién verificada desde la API. Solo servidor; jamás en `apps/web` ni en `NEXT_PUBLIC_*`. |
+| `GMAIL_USER` | Remitente del SMTP de Gmail que envía el código de registro. |
+| `GMAIL_APP_PASSWORD` | Contraseña de aplicación de esa cuenta (requiere verificación en dos pasos). |
+
+En producción, si falta alguna la API **no arranca** (error explícito al cargar la configuración). En desarrollo, si falta alguna de las de correo: aviso en consola y modo degradado — el código se escribe en la consola de la API en lugar de enviarse.
 
 `DATABASE_URL` usa **Supavisor en modo sesión**:
 
@@ -196,7 +206,7 @@ Si `claim` sale `NULL` y `perfil` sale `PACIENTE`, la API responderá `401` a un
 
 **7. Verificar la conexión:** `GET /api/health` ejecuta una consulta real y responde `200` con `database: "up"`, o `503` con `database: "down"` si falla.
 
-**8. Recorrido manual:** alta de usuario → verificación de correo → inicio de sesión → `GET /api/auth/me` → petición con token manipulado (debe responder `401`).
+**8. Recorrido manual:** formulario de `/registro` → código de 6 dígitos por correo → inicio de sesión → `GET /api/auth/me` → petición con token manipulado (debe responder `401`).
 
 ## Notas sobre los triggers de `auth.users`
 
@@ -220,17 +230,45 @@ Dos decisiones de diseño detrás del arreglo:
 - **El sembrado va antes del `AFTER INSERT`, no dentro de `handle_new_user`.** Escribir `auth.users` exige ser `supabase_auth_admin`; `handle_new_user` es `SECURITY DEFINER` con dueño `prisma`, así que un `UPDATE` dentro de ella fallaría con `permission denied`. Y llamar a una función auxiliar sin `SECURITY DEFINER` desde dentro tampoco serviría: se ejecutaría con el usuario efectivo, que ya es `prisma`. Un `BEFORE INSERT` corre como el rol que inserta y puede reescribir `NEW`. De paso deja el perfil y el claim coincidiendo por construcción, en vez de por dos reglas que puedan divergir.
 - **Solo rellena el hueco.** Si el claim ya declara un rol válido, no se toca. Un alta pública no puede obtener `PSYCHOLOGIST` ni `ADMIN` porque `app_metadata` no es escribible por el cliente, y la promoción sigue siendo la operación administrativa del apartado anterior.
 
+## Registro con código de verificación
+
+`/registro` **no** crea la cuenta con `auth.signUp`. La crea la API, y solo después de comprobar un código de 6 dígitos que envía por correo: la base de datos nunca ve datos de un formulario que nadie confirmó — ni identidad, ni perfil espejado, ni expediente.
+
+1. **Paso 1 — `POST /api/auth/pre-registro`.** El navegador revalida el formulario (`registroPacienteSchema` de `packages/shared`) y lo manda a la API, que lo revalida otra vez y responde `{ ok: true, expiresInSeconds: 600, resendCooldownSeconds: 60 }`. Todavía no existe ninguna cuenta.
+2. **Paso 2 — `POST /api/auth/verificar-codigo`.** Con el código correcto la API llama a `auth.admin.createUser({ email_confirm: true })` con la *service role*, y recién entonces los triggers de `auth.users` crean el perfil, la ficha del paciente y su contacto de emergencia (y el tutor, si es menor). El expediente clínico no lo crea el trigger: se crea bajo demanda la primera vez que se abre (`clinical-record.service.ts`). El código se consume **después** del alta: si Supabase falla, la persona reintenta con el mismo código.
+3. **Sesión.** La web hace `signInWithPassword` con las credenciales que ya tenía y entra a `/dashboard`.
+
+Cada decisión tiene su motivo:
+
+- **El código lo genera la API** (`crypto.randomInt`), no Supabase, y se guarda en la cache como hash SHA-256: si la cache se filtrara, el código de 6 dígitos no es recuperable.
+- **La cache es la memoria del proceso** (`codigo.service.ts`), sin servicio externo. No hay tabla de códigos ni `pg_cron`: cada entrada lleva su vencimiento de 600 s y se purga sola al leerse y en cada escritura, así que no queda residuo que limpiar y la base de datos nunca se toca durante el pre-registro. Dos consecuencias del diseño que conviene tener presentes: la API asume **una sola instancia** (con varias, una verificación puede caer en un proceso que no conoce el código) y un **reinicio pierde los códigos pendientes** — basta con que la persona pida otro. Si algún día hacen falta varias instancias, `obtenerCache()` en ese servicio es el único punto a cambiar por un Redis externo.
+- **Límites:** 5 intentos por código (`MAX_INTENTOS_CODIGO`), 60 s de cooldown para reenviar y 5 solicitudes por IP cada 10 minutos. Los errores son explícitos (`CODIGO_INVALIDO`, `CODIGO_EXPIRADO`, `CODIGO_AGOTADO`, `COOLDOWN`, `RATE_LIMIT`) y la pantalla del código muestra la cuenta regresiva de los 10 minutos.
+- **El código se pega con un botón.** El correo no puede incluir un botón que copie (los clientes de correo eliminan el JavaScript), así que el paso 2 ofrece **Pegar**: lee el portapapeles, tolera espacios entre dígitos y el texto completo del correo, y avisa si el navegador no da acceso o si no hay un código en él. Gmail, además, suele mostrar su propio "Copiar código" al detectar el código en el mensaje.
+- **`is_minor` lo deriva el servidor** de `birth_date` (con `esMenorDeEdad`, la misma función en ambos lados) y exige tutor cuando corresponde: el cliente no puede declarar que no es menor para saltarse el requisito.
+- **La *service role* solo vive en la API** (`src/config` → `lib/supabase-admin.ts`). La web no la ve ni puede leer tablas de `public`; el acceso a datos sigue pasando por la API con el token de sesión.
+
+### Correo saliente y límites del mailer
+
+El código sale por **SMTP de Gmail** (Nodemailer + contraseña de aplicación) desde `mailer.service.ts`, aislado del resto: para cambiar de proveedor basta con reemplazar ese módulo y las variables de entorno.
+
+- La cuenta remitente necesita **verificación en dos pasos** para emitir una contraseña de aplicación; sin ella, `GMAIL_APP_PASSWORD` no existe.
+- Gmail aplica **cuotas diarias por cuenta remitente** (cientos de destinatarios en cuentas personales, más en Workspace) y puede bloquear temporalmente el envío. Es un límite operativo, no un contrato: si el envío falla, `pre-registro` responde `503 MAILER_ERROR` y **no** crea nada, así que la persona puede reintentar sin residuos.
+- Para volumen real o dominio propio conviene un proveedor transaccional (Resend, SendGrid): el flujo funciona igual porque el código y la verificación no dependen del transporte.
+- Sin credenciales en desarrollo, el modo degradado escribe el código en la consola de la API y `pre-registro` sigue respondiendo `201`.
+
 ## Límite de correos en el entorno de pruebas
 
-El proyecto usa el SMTP por defecto de Supabase, que permite **2 correos por hora** (`rate_limit_email_sent`) y **no admite confirmaciones automáticas** por defecto. Consecuencias al ejercitar el alta en un entorno recién creado:
+Esta nota aplica a los correos que envía **Supabase Auth** (sobre todo la recuperación de contraseña). El registro con código de verificación **ya no pasa por ahí**: usa el SMTP de Gmail propio, así que `rate_limit_email_sent` no lo afecta.
 
-- El segundo alta por hora falla con `429`, y **Supabase no crea la identidad**: el registro público devuelve error y no queda nada en `auth.users`.
+El proyecto usa el SMTP por defecto de Supabase, que permite **2 correos por hora** (`rate_limit_email_sent`) y **no admite confirmaciones automáticas** por defecto. Consecuencias al ejercitar la recuperación de contraseña en un entorno recién creado:
+
+- El segundo correo por hora falla con `429` y **no se envía nada**; en la recuperación de contraseña la API de Supabase responde con error y la persona no recibe el enlace.
 - `rate_limit_email_sent` solo se puede subir por la Management API si además hay un SMTP propio configurado; la Management API rechaza el cambio con `Custom SMTP required to configure ... RATE_LIMIT_EMAIL_SENT`.
 
 Para pruebas automatizadas hay dos salidas, y ambas tocan configuración del proyecto, así que conviene reversirlas al terminar:
 
-- `PATCH /v1/projects/<ref>/config/auth` con `{"mailer_autoconfirm": true}`: el alta entrega sesión y no envía correo, así que no choca con el límite. Es lo que permite recorrer el alta y el login seguidos.
-- Esperar a que se libere la hora, o configurar SMTP propio (Authentication → Email), que además es lo que corresponde en producción para no depender del servicio de Supabase.
+- `PATCH /v1/projects/<ref>/config/auth` con `{"mailer_autoconfirm": true}`: las altas entregan sesión sin enviar correo, así que no chocan con el límite.
+- Esperar a que se libere la hora, o configurar SMTP propio (Authentication → Email), que además es lo que corresponde en producción para no depender del servicio de Supabase. Es el mismo camino que ya sigue el código de registro con el SMTP de Gmail; migrar la recuperación de contraseña a ese mailer es el follow-up pendiente.
 
 ## Promover una cuenta a psicólogo o administrador
 
@@ -350,7 +388,7 @@ Debe devolver: `7 passed, 0 failed`, una capacidad por cada fila de la tabla de 
 | `npm run dev:web` | Levanta solo el frontend |
 | `npm run typecheck` | Typecheck de todo el monorepo |
 | `npm run lint` | Lint de API y web |
-| `npm test` | Tests del backend |
+| `npm test` | Tests de la API y de la web (`apps/api` y `apps/web`) |
 | `npm run build` | Build completo (shared → api → web + service worker) |
 | `npm run prisma:generate` | Genera el cliente de Prisma 7 |
 | `npm run prisma:migrate` | Ejecuta `migrate dev` (solo para migraciones nuevas; con la baseline escrita a mano reporta drift) |

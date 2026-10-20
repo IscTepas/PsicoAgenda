@@ -4,6 +4,7 @@ import {
   getPatientById,
   listPatients,
   updateMyPatientProfile,
+  type ListPatientsFilter,
   type UpdatePatientProfileInput,
 } from "@/services/patient.service";
 import type { AuthedRequest } from "@/types/express";
@@ -28,7 +29,8 @@ export const updateMyPatientController: RequestHandler = async (req: AuthedReque
 export const listPatientsController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     // `requireAuth` ya garantizó que `auth` existe.
-    res.json(await listPatients(req.auth!, req.query as any));
+    const filter = req.query as ListPatientsFilter;
+    res.json(await listPatients(req.auth!, filter));
   } catch (error) {
     next(error);
   }
