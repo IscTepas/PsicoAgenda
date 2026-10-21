@@ -83,6 +83,8 @@ export interface SessionUser {
   email: string;
   name: string;
   role: UserRole;
+  /** Foto de perfil (data URL comprimida o URL http). */
+  photoUrl?: string;
 }
 
 export interface Psychologist extends User {

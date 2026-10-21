@@ -33,6 +33,7 @@ import { useSession } from "@/lib/use-session"
 import { useThemePreference } from "@/lib/use-theme"
 import { TelefonoInput } from "@/components/telefono-input"
 import { contarDigitosTelefono, formatearTelefonoPegado } from "@/lib/telefono"
+import { comprimirAvatar } from "@/lib/imagen"
 import { ThemePicker } from "@/components/theme-picker"
 import { patientService, psychologistService } from "@/services"
 
@@ -59,7 +60,7 @@ function getInitials(name: string): string {
 }
 
 export function PantallaPerfilUsuario() {
-  const { user } = useSession()
+  const { user, updatePhoto } = useSession()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const effectiveRole =
@@ -124,6 +125,7 @@ export function PantallaPerfilUsuario() {
           setEmail(profile.email)
           setTimezone(toKnownTimezone(profile.timeZone))
           setAvatarImage(profile.photoUrl ?? null)
+          updatePhoto(profile.photoUrl)
           setEmergencyName(profile.emergencyContact?.name ?? "")
           setEmergencyPhone(formatearTelefonoPegado(profile.emergencyContact?.phone ?? ""))
           savedSnapshotRef.current = {
@@ -145,6 +147,7 @@ export function PantallaPerfilUsuario() {
           setEmail(profile.email)
           setTimezone(toKnownTimezone(profile.timeZone))
           setAvatarImage(profile.photoUrl ?? null)
+          updatePhoto(profile.photoUrl)
           setLicenseNumber(profile.licenseNumber ?? "")
           setSpecialty(profile.specialty ?? "")
           savedSnapshotRef.current = {
@@ -174,10 +177,10 @@ export function PantallaPerfilUsuario() {
     return () => {
       cancelled = true
     }
-  }, [user?.id, isPatient])
+  }, [user?.id, isPatient, updatePhoto])
 
-  // Manejo de carga de foto de perfil
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Manejo de carga de foto de perfil: se guarda un avatar comprimido (máx. 512 px).
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -192,12 +195,14 @@ export function PantallaPerfilUsuario() {
     }
 
     setValidationError(null)
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      setAvatarImage(event.target?.result as string)
+
+    try {
+      // El base64 original podía pesar varios MB y ahora viaja en /auth/me.
+      setAvatarImage(await comprimirAvatar(file))
       setSaveSuccess(false)
+    } catch {
+      setValidationError("No se pudo procesar la imagen. Prueba con otra.")
     }
-    reader.readAsDataURL(file)
   }
 
   const handleCancel = () => {
@@ -262,7 +267,7 @@ export function PantallaPerfilUsuario() {
 
     try {
       if (isPatient) {
-        await patientService.updateProfile({
+        const guardado = await patientService.updateProfile({
           name,
           phone: phone || undefined,
           timeZone: timezone,
@@ -270,8 +275,9 @@ export function PantallaPerfilUsuario() {
           emergencyContactName: emergencyName.trim() || undefined,
           emergencyContactPhone: emergencyPhone || undefined,
         })
+        updatePhoto(guardado.photoUrl)
       } else {
-        await psychologistService.updateMe({
+        const guardado = await psychologistService.updateMe({
           name,
           phone: phone || undefined,
           timeZone: timezone,
@@ -279,6 +285,7 @@ export function PantallaPerfilUsuario() {
           licenseNumber: licenseNumber.trim() || undefined,
           specialty: specialty.trim() || undefined,
         })
+        updatePhoto(guardado.photoUrl)
       }
 
       savedSnapshotRef.current = {
@@ -474,7 +481,6 @@ export function PantallaPerfilUsuario() {
                   }}
                   placeholder="311-123-4567"
                   className="rounded-xl h-11 text-sm bg-background border-border/80 font-mono"
-                  required
                 />
                 <p className="text-[11px] text-muted-foreground">
                   Se utilizará para los recordatorios por WhatsApp.
@@ -495,7 +501,6 @@ export function PantallaPerfilUsuario() {
                   className="rounded-xl h-11 text-sm bg-muted/40 border-border/80 cursor-not-allowed"
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  El correo no se cambia desde aquí: es la cuenta con la que inicias sesión.
                 </p>
               </div>
 
@@ -638,10 +643,6 @@ export function PantallaPerfilUsuario() {
 
         {/* SECCIÓN 3: BOTONES "GUARDAR CAMBIOS" Y "CANCELAR" */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-          <p className="text-xs text-muted-foreground">
-            Los cambios se aplicarán inmediatamente a tus próximas citas programadas.
-          </p>
-
           <div className="flex items-center gap-2.5 w-full sm:w-auto">
             <Button
               type="button"

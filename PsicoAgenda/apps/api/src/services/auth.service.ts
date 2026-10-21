@@ -30,7 +30,14 @@ const toSessionRole = (role: rol_usuario): UserRole => {
 export async function getProfileById(userId: string): Promise<SessionUser> {
   const user = await prisma.usuarios.findUnique({
     where: { id: userId },
-    select: { id: true, correo: true, nombre_completo: true, rol: true, activo: true },
+    select: {
+      id: true,
+      correo: true,
+      nombre_completo: true,
+      rol: true,
+      activo: true,
+      foto_perfil_url: true,
+    },
   });
 
   if (!user) {
@@ -46,5 +53,6 @@ export async function getProfileById(userId: string): Promise<SessionUser> {
     email: user.correo,
     name: user.nombre_completo,
     role: toSessionRole(user.rol),
+    photoUrl: user.foto_perfil_url ?? undefined,
   };
 }

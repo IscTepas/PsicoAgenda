@@ -291,9 +291,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
             title={collapsed ? displayName : undefined}
           >
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-              {getInitials(displayName)}
-            </div>
+            {user?.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- la foto llega como data URL del perfil
+              <img
+                src={user.photoUrl}
+                alt=""
+                className="size-8 shrink-0 rounded-full border border-border/60 object-cover"
+              />
+            ) : (
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                {getInitials(displayName)}
+              </div>
+            )}
             <div className={cn("min-w-0 flex-1", collapsed && "lg:hidden")}>
               <p className="truncate text-xs font-semibold text-foreground">
                 {isLoading ? "Cargando…" : displayName}
