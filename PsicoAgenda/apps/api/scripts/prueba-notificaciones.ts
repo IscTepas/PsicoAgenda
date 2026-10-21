@@ -3,7 +3,12 @@
 //   GMAIL_USER= GMAIL_APP_PASSWORD= npx tsx scripts/prueba-notificaciones.ts
 // Para recibir los correos de verdad: PRUEBA_CORREO=tu@gmail.com (usa alias +paciente / +psicologa).
 // Deja la base como estaba: borra lo que crea y restaura correos y preferencias.
-import { AppointmentModality, AppointmentStatus, UserRole } from "@psicoagenda/shared";
+import {
+  AppointmentModality,
+  AppointmentStatus,
+  NotificationChannel,
+  UserRole,
+} from "@psicoagenda/shared";
 import { disconnectPrisma, prisma } from "@/lib/prisma";
 import {
   acceptAppointmentRequest,
@@ -173,7 +178,7 @@ try {
   const bandeja = await listNotifications(psicologa.auth);
   const nuevas = bandeja.filter((n) => n.createdAt >= inicioPrueba);
   check(
-    nuevas.length === 3 && nuevas.every((n) => n.channel === "system" && !n.readAt),
+    nuevas.length === 3 && nuevas.every((n) => n.channel === NotificationChannel.SYSTEM && !n.readAt),
     `Campana de la psicóloga: ${nuevas.length} avisos del sistema sin leer`,
   );
   await markAllNotificationsRead(psicologa.auth);
