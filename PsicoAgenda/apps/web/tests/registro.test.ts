@@ -114,6 +114,17 @@ describe("paso 1: pedir el código", () => {
     });
   });
 
+  it("omite el género cuando no se eligió (la columna queda NULL)", () => {
+    const payload = construirPayloadRegistro({ ...DATOS, gender: "" });
+
+    expect(payload.gender).toBeUndefined();
+    expect(JSON.stringify(payload)).not.toContain('"gender"');
+  });
+
+  it("conserva el género cuando se eligió", () => {
+    expect(construirPayloadRegistro({ ...DATOS, gender: "Femenino" }).gender).toBe("Femenino");
+  });
+
   it("propaga el error de la API cuando no se pudo enviar el correo", async () => {
     apiFetch.mockRejectedValueOnce(
       new ApiError(503, "MAILER_ERROR", "No pudimos enviar el correo con el codigo."),

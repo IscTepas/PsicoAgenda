@@ -23,3 +23,14 @@ export const ACCESS_TOKEN_LIFETIME_SECONDS = 3600;
 
 export const DEFAULT_API_PORT = 4000;
 export const DEFAULT_WEB_PORT = 3000;
+
+/**
+ * Zonas horarias que admite el perfil. La API valida contra esta lista (el
+ * formulario solo ofrece estas opciones) para no guardar valores arbitrarios.
+ */
+export const TIMEZONES = [
+  "America/Mexico_City",
+  "America/Tijuana",
+  "America/Cancun",
+  "America/Hermosillo",
+] as const;

@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { patientListQuerySchema, UserRole } from "@psicoagenda/shared";
 
 const { prismaMock } = vi.hoisted(() => ({
-  prismaMock: { pacientes: { findMany: vi.fn(), findUnique: vi.fn() } },
+  prismaMock: {
+    pacientes: { findMany: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn() },
+    usuarios: { update: vi.fn() },
+    contactos_emergencia: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
+    $transaction: vi.fn(),
+  },
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -10,7 +15,11 @@ vi.mock("@/lib/prisma", () => ({
   disconnectPrisma: vi.fn(),
 }));
 
-const { getPatientById, listPatients } = await import("@/services/patient.service");
+prismaMock.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(prismaMock));
+
+const { getPatientById, listPatients, updateMyPatientProfile } = await import(
+  "@/services/patient.service"
+);
 
 const PATIENT_USER_ID = "33333333-3333-4333-8333-333333333333";
 const PATIENT_ID = "44444444-4444-4444-8444-444444444444";
@@ -128,5 +137,54 @@ describe("getPatientById", () => {
     prismaMock.pacientes.findUnique.mockResolvedValue(patientRow({ usuario_id: "otro-usuario" }));
 
     await expect(getPatientById(PATIENT_ID, patient)).rejects.toMatchObject({ statusCode: 403 });
+  });
+});
+
+describe("updateMyPatientProfile", () => {
+  it("rechaza un contacto incompleto cuando todavía no existe", async () => {
+    prismaMock.pacientes.findUnique.mockResolvedValue({ id: PATIENT_ID });
+    prismaMock.contactos_emergencia.findFirst.mockResolvedValue(null);
+
+    await expect(
+      updateMyPatientProfile(patient, { emergencyContactPhone: "5512345678" }),
+    ).rejects.toMatchObject({ statusCode: 400, code: "CONTACTO_INCOMPLETO" });
+
+    expect(prismaMock.contactos_emergencia.create).not.toHaveBeenCalled();
+  });
+
+  it("crea el contacto cuando llegan nombre y teléfono", async () => {
+    prismaMock.pacientes.findUnique.mockResolvedValue({ id: PATIENT_ID });
+    prismaMock.contactos_emergencia.findFirst.mockResolvedValue(null);
+    prismaMock.contactos_emergencia.create.mockResolvedValue({});
+    prismaMock.pacientes.findUniqueOrThrow.mockResolvedValue(patientRow());
+
+    await updateMyPatientProfile(patient, {
+      emergencyContactName: "  Luis Perez ",
+      emergencyContactPhone: " 5512345678 ",
+    });
+
+    expect(prismaMock.contactos_emergencia.create).toHaveBeenCalledTimes(1);
+    const llamada = prismaMock.contactos_emergencia.create.mock.calls[0] as [
+      { data: Record<string, unknown> },
+    ];
+    expect(llamada[0].data).toMatchObject({
+      paciente_id: PATIENT_ID,
+      nombre_completo: "Luis Perez",
+      telefono: "5512345678",
+      es_principal: true,
+    });
+  });
+
+  it("no pisa con cadenas vacías un contacto existente", async () => {
+    prismaMock.pacientes.findUnique.mockResolvedValue({ id: PATIENT_ID });
+    prismaMock.contactos_emergencia.findFirst.mockResolvedValue({ id: "c1" });
+    prismaMock.pacientes.findUniqueOrThrow.mockResolvedValue(patientRow());
+
+    await updateMyPatientProfile(patient, { emergencyContactName: "" });
+
+    expect(prismaMock.contactos_emergencia.update).toHaveBeenCalledWith({
+      where: { id: "c1" },
+      data: { nombre_completo: undefined, telefono: undefined, parentesco: undefined },
+    });
   });
 });

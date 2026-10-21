@@ -524,7 +524,7 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
                     </span>
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Doc: <span className="font-mono">{patient.legalGuardian.documentId}</span> · Tel: {patient.legalGuardian.phone}
+                    Tel: {patient.legalGuardian.phone || "—"}
                   </p>
                 </div>
               </div>

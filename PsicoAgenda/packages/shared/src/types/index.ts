@@ -37,6 +37,8 @@ export enum NotificationStatus {
 export enum NotificationChannel {
   WHATSAPP = "whatsapp",
   EMAIL = "email",
+  /** Aviso dentro de la aplicación (campana). */
+  SYSTEM = "system",
 }
 
 export enum ConsentStatus {
@@ -83,6 +85,8 @@ export interface SessionUser {
   email: string;
   name: string;
   role: UserRole;
+  /** Foto de perfil (data URL comprimida o URL http). */
+  photoUrl?: string;
 }
 
 export interface Psychologist extends User {
@@ -148,9 +152,7 @@ export interface EmergencyContact {
 export interface LegalGuardian {
   id: string;
   name: string;
-  email?: string;
   phone?: string;
-  documentId?: string;
   relationship?: string;
   createdAt: Date;
 }
@@ -232,6 +234,7 @@ export interface Notification {
   sentAt?: Date;
   error?: string;
   attempts: number;
+  readAt?: Date;
   createdAt: Date;
 }
 

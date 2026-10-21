@@ -2,7 +2,8 @@ import dotenv from "dotenv";
 
 // `import.meta.dirname` funciona porque apps/api es ESM ("type": "module").
 // dist/ replica la profundidad de src/, así que la ruta relativa es estable en dev y en build.
-dotenv.config({ path: new URL("../../.env", import.meta.url) });
+// `quiet` evita el aviso "injected env (…) from .env" en cada arranque.
+dotenv.config({ path: new URL("../../.env", import.meta.url), quiet: true });
 
 const requiredInProduction = (name: string, value: string | undefined): string => {
   if (value) return value;
@@ -68,4 +69,13 @@ export const config = {
     "SUPABASE_SERVICE_ROLE_KEY",
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   ),
+
+  /**
+   * Webhook de n8n que entrega los avisos de WhatsApp. Vacío = WhatsApp
+   * desconectado: los avisos se quedan PENDIENTES en `notificaciones` y salen
+   * solos en cuanto se configure.
+   */
+  n8nWhatsappWebhookUrl: process.env.N8N_WHATSAPP_WEBHOOK_URL ?? "",
+  /** Se envía en la cabecera `X-PsicoAgenda-Secret` para que n8n valide el origen. */
+  n8nWebhookSecret: process.env.N8N_WEBHOOK_SECRET ?? "",
 } as const;

@@ -4,6 +4,7 @@ import * as React from "react";
 import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, createClient } from "@/lib/supabase/client";
 import { readIdentity } from "@/lib/session";
+import { apiFetch } from "@/lib/api-client";
 import { withTimeout, TimeoutError, STALE_SUPABASE_AUTH_COOKIE, AUTH_CHECK_TIMEOUT_MS } from "@/lib/with-timeout";
 
 /**
@@ -27,6 +28,8 @@ interface SessionContextValue {
   /** `false` cuando faltan `NEXT_PUBLIC_SUPABASE_*`: permite avisar en vez de fallar en silencio. */
   isConfigured: boolean;
   logout: () => Promise<void>;
+  /** Actualiza la foto del menú sin recargar (tras guardar el perfil). */
+  updatePhoto: (photoUrl?: string) => void;
 }
 
 const SessionContext = React.createContext<SessionContextValue | null>(null);
@@ -41,6 +44,9 @@ export function SessionProvider({
   const isConfigured = isSupabaseConfigured();
   const [user, setUser] = React.useState<User | null>(initialUser);
   const [isLoading, setIsLoading] = React.useState(!initialUser && isConfigured);
+  // La foto se asocia al usuario al que pertenece: al cambiar de sesión no se
+  // reutiliza la imagen anterior mientras llega la nueva.
+  const [foto, setFoto] = React.useState<{ userId: string; photoUrl?: string } | null>(null);
 
   React.useEffect(() => {
     // `isConfigured` no cambia en tiempo de ejecución: si falta configuración,
@@ -95,10 +101,47 @@ export function SessionProvider({
     setUser(null);
   }, [isConfigured]);
 
-  const value = React.useMemo<SessionContextValue>(
-    () => ({ user: readIdentity(user), isLoading, isConfigured, logout }),
-    [user, isLoading, isConfigured, logout],
+  // La foto no viaja en la sesión del proveedor: se pide al perfil de la API.
+  React.useEffect(() => {
+    if (!isConfigured || !user?.id) return;
+
+    const userId = user.id;
+    let cancelled = false;
+
+    apiFetch<{ photoUrl?: string }>("/auth/me")
+      .then((perfil) => {
+        if (!cancelled) setFoto({ userId, photoUrl: perfil.photoUrl });
+      })
+      .catch(() => {
+        // Sin perfil accesible se cae a las iniciales; no se rompe la sesión.
+        if (!cancelled) setFoto({ userId });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isConfigured, user?.id]);
+
+  const photoUrl = foto && foto.userId === user?.id ? foto.photoUrl : undefined;
+
+  const updatePhoto = React.useCallback(
+    (next?: string) => {
+      if (user?.id) setFoto({ userId: user.id, photoUrl: next });
+    },
+    [user],
   );
+
+  const value = React.useMemo<SessionContextValue>(() => {
+    const identity = readIdentity(user);
+
+    return {
+      user: identity ? { ...identity, photoUrl } : null,
+      isLoading,
+      isConfigured,
+      logout,
+      updatePhoto,
+    };
+  }, [user, photoUrl, isLoading, isConfigured, logout, updatePhoto]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

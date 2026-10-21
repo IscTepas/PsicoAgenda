@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { BellOff, CheckCheck, Settings2 } from "lucide-react"
-import { NotificationStatus, type Notification } from "@psicoagenda/shared"
+import type { Notification } from "@psicoagenda/shared"
 import {
   Card,
   CardContent,
@@ -16,21 +16,11 @@ import { PageHeader } from "../components/page-header"
 import { formatShortDate } from "@/lib/format"
 import { notificationService } from "@/services"
 
-// Mismo estilo de estado que el resto de la app: pastilla gris + punto de color.
-const STATUS_PILL: Record<NotificationStatus, { label: string; dot: string }> = {
-  [NotificationStatus.PENDING]: { label: "Pendiente", dot: "bg-amber-500" },
-  [NotificationStatus.SENT]: { label: "Enviada", dot: "bg-primary" },
-  [NotificationStatus.FAILED]: { label: "Fallida", dot: "bg-destructive" },
-  [NotificationStatus.CANCELLED]: { label: "Cancelada", dot: "bg-muted-foreground/50" },
-}
-
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  // El estado de lectura es local a la sesión; el backend aún no persiste "leído".
-  const [unreadIds, setUnreadIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     let cancelled = false
@@ -40,7 +30,6 @@ export default function NotificationsPage() {
       .then((rows) => {
         if (cancelled) return
         setNotifications(rows)
-        setUnreadIds(new Set(rows.map((n) => n.id)))
       })
       .catch(() => {
         if (!cancelled) setLoadError("No se pudieron cargar las notificaciones.")
@@ -54,22 +43,30 @@ export default function NotificationsPage() {
     }
   }, [])
 
-  const unreadCount = unreadIds.size
+  const unreadCount = notifications.filter((n) => !n.readAt).length
 
-  const markAllAsRead = () => setUnreadIds(new Set())
-  const markAsRead = (id: string) =>
-    setUnreadIds((prev) => {
-      if (!prev.has(id)) return prev
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
+  // Optimista: se marca en pantalla y se persiste; si falla, se recarga del servidor.
+  const markAllAsRead = () => {
+    const now = new Date()
+    setNotifications((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: now })))
+    notificationService
+      .markAllRead()
+      .catch(() => notificationService.list().then(setNotifications).catch(() => undefined))
+  }
+  const markAsRead = (id: string) => {
+    const target = notifications.find((n) => n.id === id)
+    if (!target || target.readAt) return
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, readAt: new Date() } : n)))
+    notificationService
+      .markRead(id)
+      .catch(() => notificationService.list().then(setNotifications).catch(() => undefined))
+  }
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <PageHeader
         title="Centro de Notificaciones y Alertas"
-        description="Confirmaciones de citas, cambios de horario y recordatorios automáticos enviados por el sistema."
+        description="Solicitudes, confirmaciones, cambios de horario y recordatorios de tus citas."
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -115,8 +112,7 @@ export default function NotificationsPage() {
       ) : (
         <div className="space-y-3">
           {notifications.map((notification) => {
-            const status = STATUS_PILL[notification.status]
-            const isUnread = unreadIds.has(notification.id)
+            const isUnread = !notification.readAt
             return (
               <Card
                 key={notification.id}
@@ -143,17 +139,16 @@ export default function NotificationsPage() {
                           {notification.subject}
                         </CardTitle>
                         <CardDescription className="text-xs mt-0.5">
-                          {notification.channel === "whatsapp" ? "WhatsApp" : "Correo electrónico"} ·{" "}
-                          {notification.scheduledFor
-                            ? formatShortDate(notification.scheduledFor)
-                            : "Sin programar"}
+                          {formatShortDate(notification.sentAt ?? notification.createdAt)}
                         </CardDescription>
                       </div>
                     </div>
-                    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-[11px] font-medium text-foreground/80">
-                      <span className={`size-1.5 rounded-full ${status.dot}`} aria-hidden="true" />
-                      {status.label}
-                    </span>
+                    {isUnread && (
+                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-[11px] font-medium text-foreground/80">
+                        <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+                        Nuevo
+                      </span>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="pb-4 pt-0 pl-9">
