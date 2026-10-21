@@ -1,5 +1,9 @@
 import type { RequestHandler } from "express";
-import { listNotifications } from "@/services/notification.service";
+import {
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from "@/services/notification.service";
 import type { AuthedRequest } from "@/types/express";
 
 export const listNotificationsController: RequestHandler = async (req: AuthedRequest, res, next) => {
@@ -11,6 +15,27 @@ export const listNotificationsController: RequestHandler = async (req: AuthedReq
         limit && limit > 0 && limit <= 100 ? limit : 50,
       ),
     );
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const markNotificationReadController: RequestHandler = async (req: AuthedRequest, res, next) => {
+  try {
+    const { id } = req.params as { id: string };
+    res.json(await markNotificationRead(req.auth!, id));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const markAllNotificationsReadController: RequestHandler = async (
+  req: AuthedRequest,
+  res,
+  next,
+) => {
+  try {
+    res.json(await markAllNotificationsRead(req.auth!));
   } catch (error) {
     next(error);
   }

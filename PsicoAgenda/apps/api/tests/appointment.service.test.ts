@@ -28,6 +28,10 @@ vi.mock("@/lib/prisma", () => ({
   disconnectPrisma: vi.fn(),
 }));
 
+// Los avisos tienen su propia suite; aquí solo importa que no toquen la base.
+const { notificar } = vi.hoisted(() => ({ notificar: vi.fn() }));
+vi.mock("@/services/notification.service", () => ({ notificar }));
+
 const {
   cancelAppointment,
   changeAppointmentStatus,

@@ -11,8 +11,10 @@ import { estado_cita, estado_solicitud } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/app-error";
 import type { AuthenticatedUser } from "@/utils/jwt";
+import { notificar, type CitaAviso } from "@/services/notification.service";
 import {
   assertNoOverlap,
+  avisoDeCita,
   insertAppointment,
   normalizeOverlapError,
   requirePatientId,
@@ -60,6 +62,16 @@ const toSchemaRequestStatus = (status: AppointmentRequestStatus): estado_solicit
       return estado_solicitud.CANCELADA;
   }
 };
+
+const avisoDeSolicitud = (
+  row: Pick<RequestRow, "paciente_id" | "psicologo_id" | "inicio_solicitado" | "duracion_minutos" | "modalidad">,
+): CitaAviso => ({
+  pacienteId: row.paciente_id,
+  psicologoId: row.psicologo_id,
+  inicio: row.inicio_solicitado,
+  duracionMinutos: row.duracion_minutos,
+  modalidad: row.modalidad,
+});
 
 const toAppointmentRequest = (row: RequestRow): AppointmentRequest => ({
   id: row.id,
@@ -153,6 +165,8 @@ export async function createAppointmentRequest(
     });
   });
 
+  await notificar("SOLICITUD_CREADA", avisoDeSolicitud(created));
+
   return toAppointmentRequest(created);
 }
 
@@ -224,6 +238,8 @@ export async function acceptAppointmentRequest(
       });
     });
 
+    await notificar("SOLICITUD_ACEPTADA", avisoDeCita(created));
+
     return toAppointment(created);
   } catch (error) {
     normalizeOverlapError(error);
@@ -242,6 +258,8 @@ export async function rejectAppointmentRequest(
       include: requestInclude,
     });
   });
+
+  await notificar("SOLICITUD_RECHAZADA", avisoDeSolicitud(updated));
 
   return toAppointmentRequest(updated);
 }
@@ -270,6 +288,8 @@ export async function cancelAppointmentRequest(
     data: { estado: estado_solicitud.CANCELADA, atendida_en: new Date() },
     include: requestInclude,
   });
+
+  await notificar("SOLICITUD_CANCELADA", avisoDeSolicitud(updated));
 
   return toAppointmentRequest(updated);
 }

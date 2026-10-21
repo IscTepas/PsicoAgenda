@@ -37,6 +37,8 @@ export enum NotificationStatus {
 export enum NotificationChannel {
   WHATSAPP = "whatsapp",
   EMAIL = "email",
+  /** Aviso dentro de la aplicación (campana). */
+  SYSTEM = "system",
 }
 
 export enum ConsentStatus {
@@ -232,6 +234,7 @@ export interface Notification {
   sentAt?: Date;
   error?: string;
   attempts: number;
+  readAt?: Date;
   createdAt: Date;
 }
 

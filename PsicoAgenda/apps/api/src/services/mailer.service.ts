@@ -62,6 +62,31 @@ const plantilla = (codigo: string): { html: string; text: string } => ({
 });
 
 /**
+ * Correo de una notificación de cita. Sin credenciales en desarrollo se
+ * escribe en la consola; en producción lanza para que el despachador marque
+ * la notificación como fallida y la reintente.
+ */
+export async function enviarCorreoNotificacion(params: {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}): Promise<void> {
+  if (!config.gmailUser || !config.gmailAppPassword) {
+    if (!config.isProduction) {
+      console.info(`[mailer][desarrollo] Correo para ${params.to}: ${params.subject}\n${params.text}`);
+      return;
+    }
+    throw new Error("El servicio de correo no está configurado");
+  }
+
+  await obtenerTransporte().sendMail({
+    from: `"${APP_NAME}" <${config.gmailUser}>`,
+    ...params,
+  });
+}
+
+/**
  * Envía el código de 6 dígitos a la persona que se registró.
  *
  * Lanza `AppError(503)` si el correo no pudo salir; quien llama decide si

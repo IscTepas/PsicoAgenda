@@ -39,7 +39,7 @@ import { useSession } from "@/lib/use-session"
 import { useHydrated } from "@/lib/use-hydrated"
 import { cn } from "@/lib/utils"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
-import { appointmentRequestService, appointmentService, patientService, psychologistService } from "@/services"
+import { appointmentRequestService, appointmentService, patientService, psychologistService, notificationService } from "@/services"
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
@@ -140,7 +140,23 @@ function ModalityLabel({ modality }: { modality: AppointmentModality }) {
   )
 }
 
-function NotificationsButton({ count, className }: { count: number; className?: string }) {
+function NotificationsButton({ className }: { className?: string }) {
+  const [count, setCount] = useState(0)
+
+  // La campana muestra los avisos del sistema que aún no se leen.
+  useEffect(() => {
+    let cancelled = false
+    notificationService
+      .list()
+      .then((rows) => {
+        if (!cancelled) setCount(rows.filter((n) => !n.readAt).length)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   return (
     <Link
       href="/notificaciones"
@@ -588,7 +604,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
 
         {/* En móvil, notificaciones y reportes ya viven en la barra inferior */}
         <div className="flex items-center gap-2">
-          <NotificationsButton count={3} className="hidden sm:inline-flex" />
+          <NotificationsButton className="hidden sm:inline-flex" />
           <Button asChild variant="ghost" className="hidden text-muted-foreground sm:inline-flex">
             <Link href="/reportes">
               <FileText />
@@ -1353,7 +1369,7 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
         </div>
 
         <div className="hidden items-center gap-2 sm:flex">
-          <NotificationsButton count={2} />
+          <NotificationsButton />
           <Button asChild>
             <Link href="/agenda/nueva">
               <Plus />
