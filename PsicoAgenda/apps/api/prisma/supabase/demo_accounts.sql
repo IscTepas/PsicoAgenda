@@ -82,7 +82,14 @@ BEGIN
         'providers', jsonb_build_array('email'),
         'role', 'PATIENT'
       ),
-      jsonb_build_object('name', demo_name)
+      jsonb_build_object(
+        'name', demo_name,
+        'emergency_contact', jsonb_build_object(
+          'name', 'Contacto Demo',
+          'phone', '555-000-0000',
+          'relationship', 'Familiar'
+        )
+      )
     );
 
     INSERT INTO auth.identities (
@@ -173,6 +180,20 @@ BEGIN
    WHERE NOT EXISTS (
      SELECT 1 FROM public.pacientes p WHERE p.usuario_id = v_user_id
    );
+
+  -- Contacto de emergencia de demostración. Idempotente: si el paciente demo ya
+  -- existe (el trigger no vuelve a correr al actualizar la metadata), esto
+  -- asegura la fila que hoy muestra vacía la ficha clínica.
+  INSERT INTO public.contactos_emergencia (
+    id, paciente_id, nombre_completo, telefono, parentesco, es_principal
+  )
+  SELECT gen_random_uuid(), p.id, 'Contacto Demo', '555-000-0000', 'Familiar', true
+    FROM public.pacientes p
+   WHERE p.usuario_id = v_user_id
+     AND NOT EXISTS (
+           SELECT 1 FROM public.contactos_emergencia c
+            WHERE c.paciente_id = p.id AND c.es_principal
+         );
 END
 $$;
 

@@ -1,13 +1,21 @@
 "use client"
 
 import { useCallback, useSyncExternalStore } from "react"
-import { applyTheme, readStoredTheme, storeTheme, type ThemePreference } from "./theme"
+import {
+  applyTheme,
+  readPreferences,
+  writePreferences,
+  THEME_MODE_VALUES,
+  THEME_PALETTE_VALUES,
+  type ThemeMode,
+  type ThemePalette,
+} from "./theme"
 
 const listeners = new Set<() => void>()
 
 function subscribe(listener: () => void) {
   const handleStorage = () => {
-    applyTheme(readStoredTheme())
+    applyTheme(readPreferences())
     listener()
   }
   listeners.add(listener)
@@ -22,24 +30,46 @@ function notify() {
   listeners.forEach((listener) => listener())
 }
 
+// Cada snapshot devuelve un primitivo para que `useSyncExternalStore` no entre
+// en bucles por objetos nuevos en cada lectura.
+const leerModo = () => readPreferences().mode
+const leerPaleta = () => readPreferences().palette
+const modoServidor = () => "system" as ThemeMode
+const paletaServidor = () => "default" as ThemePalette
+
 /**
- * Lee y aplica la preferencia de tema (claro/oscuro/sistema), persistiéndola en localStorage.
- * El primer render es "system" (igual en servidor y cliente) y el valor persistido se
- * sincroniza tras montar vía useSyncExternalStore, evitando el hydration mismatch por leer
- * localStorage en render y sin disparar renders en cascada desde un effect.
+ * Preferencias de tema separadas en dos decisiones independientes: el modo de
+ * luminosidad (claro/oscuro/automático) y la paleta de color. Ambas se
+ * persisten y se aplican al DOM.
  */
 export function useThemePreference() {
-  const theme = useSyncExternalStore(
-    subscribe,
-    readStoredTheme,
-    () => "system" as ThemePreference
-  )
+  const mode = useSyncExternalStore(subscribe, leerModo, modoServidor)
+  const palette = useSyncExternalStore(subscribe, leerPaleta, paletaServidor)
 
-  const setTheme = useCallback((next: ThemePreference) => {
-    storeTheme(next)
-    applyTheme(next)
+  const setMode = useCallback((next: ThemeMode) => {
+    // Se ignoran valores fuera del catálogo (p. ej. un control que emite "").
+    if (!THEME_MODE_VALUES.includes(next)) return
+    const actual = { ...readPreferences(), mode: next }
+    writePreferences(actual)
+    applyTheme(actual)
     notify()
   }, [])
 
-  return { theme, setTheme }
+  const setPalette = useCallback((next: ThemePalette) => {
+    if (!THEME_PALETTE_VALUES.includes(next)) return
+    const actual = { ...readPreferences(), palette: next }
+    writePreferences(actual)
+    applyTheme(actual)
+    notify()
+  }, [])
+
+  /** Vuelve al tema de la marca: automático + paleta por defecto. */
+  const reset = useCallback(() => {
+    const prefs = { mode: "system" as const, palette: "default" as const }
+    writePreferences(prefs)
+    applyTheme(prefs)
+    notify()
+  }, [])
+
+  return { mode, palette, setMode, setPalette, reset }
 }

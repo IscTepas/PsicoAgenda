@@ -16,11 +16,10 @@ import {
   FileCheck,
   HeartPulse,
 } from "lucide-react"
-import { UserRole } from "@psicoagenda/shared"
+import { TIMEZONES, UserRole } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import {
   Select,
   SelectContent,
@@ -32,25 +31,24 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { PageHeader } from "../components/page-header"
 import { useSession } from "@/lib/use-session"
 import { useThemePreference } from "@/lib/use-theme"
+import { TelefonoInput } from "@/components/telefono-input"
+import { contarDigitosTelefono, formatearTelefonoPegado } from "@/lib/telefono"
+import { ThemePicker } from "@/components/theme-picker"
 import { patientService, psychologistService } from "@/services"
 
-const TIMEZONE_OPTIONS = [
-  { value: "America/Mexico_City", label: "Ciudad de México (CDMX)" },
-  { value: "America/Tijuana", label: "Tijuana" },
-  { value: "America/Cancun", label: "Cancún" },
-  { value: "America/Hermosillo", label: "Hermosillo" },
-] as const
+const TIMEZONE_LABELS: Record<(typeof TIMEZONES)[number], string> = {
+  "America/Mexico_City": "Ciudad de México (CDMX)",
+  "America/Tijuana": "Tijuana",
+  "America/Cancun": "Cancún",
+  "America/Hermosillo": "Hermosillo",
+}
+
+const TIMEZONE_OPTIONS = TIMEZONES.map((value) => ({ value, label: TIMEZONE_LABELS[value] }))
 
 // La BD guarda "UTC" por defecto y no está en la lista: el Select quedaría vacío y la API lo rechaza.
 function toKnownTimezone(value: string | null | undefined): string {
   return TIMEZONE_OPTIONS.find((tz) => tz.value === value)?.value ?? "America/Mexico_City"
 }
-
-const THEME_OPTIONS = [
-  { value: "light", label: "Claro" },
-  { value: "dark", label: "Oscuro" },
-  { value: "system", label: "Automático (sistema)" },
-] as const
 
 function getInitials(name: string): string {
   const parts = name.trim().split(" ")
@@ -85,7 +83,7 @@ export function PantallaPerfilUsuario() {
 
   // 3. Preferencias (Zona horaria y tema de interfaz)
   const [timezone, setTimezone] = useState<string>("America/Mexico_City")
-  const { theme, setTheme } = useThemePreference()
+  const { mode, palette, setMode, setPalette, reset } = useThemePreference()
 
   // Estados de retroalimentación
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
@@ -122,28 +120,28 @@ export function PantallaPerfilUsuario() {
           const profile = await patientService.getMe()
           if (cancelled) return
           setName(profile.name)
-          setPhone(profile.phone ?? "")
+          setPhone(formatearTelefonoPegado(profile.phone ?? ""))
           setEmail(profile.email)
           setTimezone(toKnownTimezone(profile.timeZone))
           setAvatarImage(profile.photoUrl ?? null)
           setEmergencyName(profile.emergencyContact?.name ?? "")
-          setEmergencyPhone(profile.emergencyContact?.phone ?? "")
+          setEmergencyPhone(formatearTelefonoPegado(profile.emergencyContact?.phone ?? ""))
           savedSnapshotRef.current = {
             name: profile.name,
-            phone: profile.phone ?? "",
+            phone: formatearTelefonoPegado(profile.phone ?? ""),
             email: profile.email,
             timezone: toKnownTimezone(profile.timeZone),
             licenseNumber: "",
             specialty: "",
             emergencyName: profile.emergencyContact?.name ?? "",
-            emergencyPhone: profile.emergencyContact?.phone ?? "",
+            emergencyPhone: formatearTelefonoPegado(profile.emergencyContact?.phone ?? ""),
             avatarImage: profile.photoUrl ?? null,
           }
         } else {
           const profile = await psychologistService.getMe()
           if (cancelled) return
           setName(profile.name)
-          setPhone(profile.phone ?? "")
+          setPhone(formatearTelefonoPegado(profile.phone ?? ""))
           setEmail(profile.email)
           setTimezone(toKnownTimezone(profile.timeZone))
           setAvatarImage(profile.photoUrl ?? null)
@@ -151,7 +149,7 @@ export function PantallaPerfilUsuario() {
           setSpecialty(profile.specialty ?? "")
           savedSnapshotRef.current = {
             name: profile.name,
-            phone: profile.phone ?? "",
+            phone: formatearTelefonoPegado(profile.phone ?? ""),
             email: profile.email,
             timezone: toKnownTimezone(profile.timeZone),
             licenseNumber: profile.licenseNumber ?? "",
@@ -222,13 +220,41 @@ export function PantallaPerfilUsuario() {
     e.preventDefault()
     setValidationError(null)
 
-    if (!name.trim()) {
-      setValidationError("El nombre completo no puede quedar vacío.")
+    const nombre = name.trim()
+    if (nombre.length < 2) {
+      setValidationError("El nombre completo debe tener al menos 2 caracteres.")
       return
     }
-    if (!email.trim() || !email.includes("@")) {
-      setValidationError("Ingresa un correo electrónico válido.")
+    if (nombre.length > 120) {
+      setValidationError("El nombre completo es demasiado largo (máximo 120 caracteres).")
       return
+    }
+    if (phone && contarDigitosTelefono(phone) !== 10) {
+      setValidationError("El teléfono debe tener 10 dígitos.")
+      return
+    }
+
+    if (isPatient) {
+      const contactoNombre = emergencyName.trim()
+      const contactoTelefono = emergencyPhone.trim()
+      if (Boolean(contactoNombre) !== Boolean(contactoTelefono)) {
+        setValidationError("El contacto de emergencia necesita nombre y teléfono.")
+        return
+      }
+      if (contactoNombre && contarDigitosTelefono(contactoTelefono) !== 10) {
+        setValidationError("El teléfono de emergencia debe tener 10 dígitos.")
+        return
+      }
+    } else {
+      const cedula = licenseNumber.trim()
+      if (cedula && !/^[A-Za-z0-9ÁÉÍÓÚÜáéíóúüÑñ.\s-]{4,30}$/.test(cedula)) {
+        setValidationError("La cédula debe tener entre 4 y 30 caracteres válidos.")
+        return
+      }
+      if (specialty.trim().length > 120) {
+        setValidationError("La especialidad es demasiado larga (máximo 120 caracteres).")
+        return
+      }
     }
 
     setIsSaving(true)
@@ -238,20 +264,20 @@ export function PantallaPerfilUsuario() {
       if (isPatient) {
         await patientService.updateProfile({
           name,
-          phone,
+          phone: phone || undefined,
           timeZone: timezone,
           photoUrl: avatarImage ?? undefined,
-          emergencyContactName: emergencyName || undefined,
+          emergencyContactName: emergencyName.trim() || undefined,
           emergencyContactPhone: emergencyPhone || undefined,
         })
       } else {
         await psychologistService.updateMe({
           name,
-          phone,
+          phone: phone || undefined,
           timeZone: timezone,
           photoUrl: avatarImage ?? undefined,
-          licenseNumber: licenseNumber || undefined,
-          specialty: specialty || undefined,
+          licenseNumber: licenseNumber.trim() || undefined,
+          specialty: specialty.trim() || undefined,
         })
       }
 
@@ -286,14 +312,6 @@ export function PantallaPerfilUsuario() {
       <PageHeader
         title="Perfil de Usuario"
         description="Administra tu información personal, datos de contacto y preferencias de la interfaz."
-        actions={
-          <Badge
-            variant="outline"
-            className="text-xs bg-primary/10 text-primary border-primary/20 px-3 py-1 font-medium"
-          >
-            {isPatient ? "Rol: Paciente" : "Rol: Psicólogo/a"}
-          </Badge>
-        }
       />
 
       {/* Alerta de Éxito al Guardar */}
@@ -377,14 +395,9 @@ export function PantallaPerfilUsuario() {
 
               {/* Botón para cambiar foto e información complementaria */}
               <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <h3 className="font-bold text-base text-foreground truncate">
-                    {name || "Usuario"}
-                  </h3>
-                  <Badge variant="outline" className="text-[10px] w-fit mx-auto sm:mx-0">
-                    {isPatient ? "Expediente Activo" : "Especialista Clínico"}
-                  </Badge>
-                </div>
+                <h3 className="font-bold text-base text-foreground truncate">
+                  {name || "Usuario"}
+                </h3>
 
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Agrega una fotografía nítida para identificarte fácilmente durante las citas y en tu expediente.
@@ -453,14 +466,13 @@ export function PantallaPerfilUsuario() {
                   <Phone className="size-3.5 text-primary" />
                   Teléfono de Contacto
                 </label>
-                <Input
-                  type="tel"
+                <TelefonoInput
                   value={phone}
-                  onChange={(e) => {
-                    setPhone(e.target.value)
+                  onChange={(valor) => {
+                    setPhone(valor)
                     setSaveSuccess(false)
                   }}
-                  placeholder="+52 55 0000 0000"
+                  placeholder="311-123-4567"
                   className="rounded-xl h-11 text-sm bg-background border-border/80 font-mono"
                   required
                 />
@@ -478,16 +490,12 @@ export function PantallaPerfilUsuario() {
                 <Input
                   type="email"
                   value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value)
-                    setSaveSuccess(false)
-                  }}
-                  placeholder="tu@correo.com"
-                  className="rounded-xl h-11 text-sm bg-background border-border/80"
-                  required
+                  readOnly
+                  aria-readonly="true"
+                  className="rounded-xl h-11 text-sm bg-muted/40 border-border/80 cursor-not-allowed"
                 />
                 <p className="text-[11px] text-muted-foreground">
-                  Canal para confirmaciones y enlaces de sesión.
+                  El correo no se cambia desde aquí: es la cuenta con la que inicias sesión.
                 </p>
               </div>
 
@@ -546,11 +554,13 @@ export function PantallaPerfilUsuario() {
                       <Phone className="size-3.5 text-primary" />
                       Teléfono de Emergencia
                     </label>
-                    <Input
-                      type="tel"
+                    <TelefonoInput
                       value={emergencyPhone}
-                      onChange={(e) => setEmergencyPhone(e.target.value)}
-                      placeholder="+52 55 1111 2222"
+                      onChange={(valor) => {
+                        setEmergencyPhone(valor)
+                        setSaveSuccess(false)
+                      }}
+                      placeholder="311-123-4567"
                       className="rounded-xl h-11 text-sm bg-background border-border/80 font-mono"
                     />
                   </div>
@@ -579,59 +589,49 @@ export function PantallaPerfilUsuario() {
           </CardHeader>
 
           <CardContent className="p-5 sm:p-6 space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2">
-              {/* Zona Horaria */}
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                  <Globe className="size-3.5 text-primary" />
-                  Zona Horaria
-                </label>
-                <Select
-                  value={timezone}
-                  onValueChange={(val) => {
-                    if (!val) return
-                    setTimezone(val)
-                    setSaveSuccess(false)
-                  }}
-                >
-                  <SelectTrigger className="w-full rounded-xl h-11 text-sm bg-background border-border/80">
-                    <SelectValue placeholder="Selecciona tu zona horaria" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TIMEZONE_OPTIONS.map((tz) => (
-                      <SelectItem key={tz.value} value={tz.value}>
-                        {tz.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground">
-                  Usada para mostrar la hora correcta de tus citas.
-                </p>
-              </div>
+            {/* Zona Horaria */}
+            <div className="space-y-1.5 max-w-sm">
+              <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                <Globe className="size-3.5 text-primary" />
+                Zona Horaria
+              </label>
+              <Select
+                value={timezone}
+                onValueChange={(val) => {
+                  if (!val) return
+                  setTimezone(val)
+                  setSaveSuccess(false)
+                }}
+              >
+                <SelectTrigger className="w-full rounded-xl h-11 text-sm bg-background border-border/80">
+                  <SelectValue placeholder="Selecciona tu zona horaria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMEZONE_OPTIONS.map((tz) => (
+                    <SelectItem key={tz.value} value={tz.value}>
+                      {tz.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Usada para mostrar la hora correcta de tus citas.
+              </p>
+            </div>
 
-              {/* Diseño de interfaz (tema) */}
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                  <Palette className="size-3.5 text-primary" />
-                  Diseño de Interfaz
-                </label>
-                <Select value={theme} onValueChange={setTheme}>
-                  <SelectTrigger className="w-full rounded-xl h-11 text-sm bg-background border-border/80">
-                    <SelectValue placeholder="Selecciona un tema" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {THEME_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground">
-                  Se aplica de inmediato, sin esperar a &ldquo;Guardar Cambios&rdquo;.
-                </p>
-              </div>
+            {/* Diseño de interfaz (tema) */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                <Palette className="size-3.5 text-primary" />
+                Diseño de Interfaz
+              </label>
+              <ThemePicker
+                mode={mode}
+                palette={palette}
+                onModeChange={setMode}
+                onPaletteChange={setPalette}
+                onReset={reset}
+              />
             </div>
           </CardContent>
         </Card>

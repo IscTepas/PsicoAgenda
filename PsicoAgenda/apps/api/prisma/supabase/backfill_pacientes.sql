@@ -41,15 +41,13 @@ BEGIN
         v_guardian_id := gen_random_uuid();
 
         INSERT INTO public.tutores (
-          id, nombre_completo, correo, telefono, parentesco, documento_identidad
+          id, nombre_completo, telefono, parentesco
         )
         VALUES (
           v_guardian_id,
           u.meta -> 'guardian' ->> 'name',
-          NULL,
           u.meta -> 'guardian' ->> 'phone',
-          u.meta -> 'guardian' ->> 'relationship',
-          NULL
+          u.meta -> 'guardian' ->> 'relationship'
         );
       END IF;
 
