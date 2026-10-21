@@ -15,6 +15,7 @@ import {
   tipo_sesion,
 } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { notificar, type CitaAviso } from "@/services/notification.service";
 import { AppError } from "@/utils/app-error";
 import type { AuthenticatedUser } from "@/utils/jwt";
 import { calculateAppointmentPrice, getEffectiveDurationMinutes } from "@/utils/pricing";
@@ -148,6 +149,20 @@ const ACTIVE_STATUSES: estado_cita[] = [
 
 const durationOf = (start: Date, end: Date): number =>
   Math.round((end.getTime() - start.getTime()) / 60_000);
+
+/** Lo que el aviso necesita saber de una cita ya guardada. */
+export const avisoDeCita = (
+  row: Pick<AppointmentRow, "id" | "paciente_id" | "psicologo_id" | "inicio" | "fin" | "modalidad">,
+  extra: Partial<CitaAviso> = {},
+): CitaAviso => ({
+  citaId: row.id,
+  pacienteId: row.paciente_id,
+  psicologoId: row.psicologo_id,
+  inicio: row.inicio,
+  duracionMinutos: durationOf(row.inicio, row.fin),
+  modalidad: row.modalidad,
+  ...extra,
+});
 
 export const toAppointment = (row: AppointmentRow): Appointment => {
   const payment = row.pagos_honorarios;
@@ -400,6 +415,11 @@ export async function createAppointment(
       }),
     );
 
+    await notificar(
+      auth.role === UserRole.PATIENT ? "CITA_SOLICITADA" : "CITA_AGENDADA",
+      avisoDeCita(created),
+    );
+
     return toAppointment(created);
   } catch (error) {
     normalizeOverlapError(error);
@@ -527,6 +547,14 @@ export async function updateAppointment(
       });
     });
 
+    // Las notas internas no le interesan al paciente: solo se avisa si cambió lo
+    // que él ve de la cita.
+    const cambioHorario =
+      updated.inicio.getTime() !== row.inicio.getTime() || updated.fin.getTime() !== row.fin.getTime();
+    if (ACTIVE_STATUSES.includes(updated.estado) && (cambioHorario || updated.modalidad !== row.modalidad)) {
+      await notificar("CITA_MODIFICADA", avisoDeCita(updated, { cambioHorario }));
+    }
+
     return toAppointment(updated);
   } catch (error) {
     normalizeOverlapError(error);
@@ -557,6 +585,17 @@ export async function changeAppointmentStatus(
     data: { estado: toSchemaStatus(status) },
     include: appointmentInclude,
   });
+
+  if (updated.estado !== row.estado) {
+    if (updated.estado === estado_cita.CONFIRMADA && row.estado === estado_cita.PENDIENTE) {
+      await notificar("CITA_CONFIRMADA", avisoDeCita(updated));
+    } else if (updated.estado === estado_cita.COMPLETADA || updated.estado === estado_cita.NO_ASISTIO) {
+      await notificar(
+        "CITA_ASISTENCIA",
+        avisoDeCita(updated, { asistio: updated.estado === estado_cita.COMPLETADA }),
+      );
+    }
+  }
 
   return toAppointment(updated);
 }
@@ -603,6 +642,11 @@ export async function cancelAppointment(
       include: appointmentInclude,
     });
   });
+
+  await notificar(
+    auth.role === UserRole.PATIENT ? "CITA_CANCELADA_POR_PACIENTE" : "CITA_CANCELADA_POR_PSICOLOGO",
+    avisoDeCita(updated, { motivoCancelacion: reason }),
+  );
 
   return toAppointment(updated);
 }
