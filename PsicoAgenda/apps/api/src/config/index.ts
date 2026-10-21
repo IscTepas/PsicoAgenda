@@ -2,7 +2,8 @@ import dotenv from "dotenv";
 
 // `import.meta.dirname` funciona porque apps/api es ESM ("type": "module").
 // dist/ replica la profundidad de src/, así que la ruta relativa es estable en dev y en build.
-dotenv.config({ path: new URL("../../.env", import.meta.url) });
+// `quiet` evita el aviso "injected env (…) from .env" en cada arranque.
+dotenv.config({ path: new URL("../../.env", import.meta.url), quiet: true });
 
 const requiredInProduction = (name: string, value: string | undefined): string => {
   if (value) return value;
