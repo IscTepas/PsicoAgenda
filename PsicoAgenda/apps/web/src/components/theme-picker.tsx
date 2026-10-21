@@ -159,11 +159,6 @@ export function ThemePicker({
           Restablecer
         </Button>
       </div>
-
-      <p className="text-[11px] text-muted-foreground">
-        Se aplica de inmediato, sin esperar a &ldquo;Guardar Cambios&rdquo;. El modo y la
-        paleta son independientes.
-      </p>
     </div>
   );
 }
