@@ -3,7 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { useState, useMemo, useEffect, type ComponentProps } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { z } from "zod"
 import {
   emailSchema,
@@ -48,9 +48,6 @@ import { isSupabaseConfigured } from "@/lib/supabase/client"
 import {
   construirPayloadRegistro,
   completarRegistro,
-  DIGITOS_TELEFONO,
-  formatearTelefono,
-  formatearTelefonoPegado,
   leerCodigoDelPortapapeles,
   mensajeDeRegistro,
   normalizarCodigo,
@@ -58,6 +55,14 @@ import {
   segundosDeEspera,
   type DatosRegistro,
 } from "@/services/registro.service"
+import { TelefonoInput } from "@/components/telefono-input"
+
+/**
+ * Valor del item "Selecciona una opción" de los desplegables. Es un centinela
+ * y no la etiqueta visible: Radix no acepta `value=""` y usar el texto como
+ * valor acabaría guardándolo en la base de datos.
+ */
+const SIN_SELECCION = "sin-seleccion"
 
 /**
  * Esquema de validación para registro integral de Pacientes y Profesionales.
@@ -76,7 +81,12 @@ const registerSchema = z
 
     // Campos de Paciente
     birthDate: z.string().optional(),
-    gender: z.string().optional(),
+    gender: z
+      .string()
+      .refine((valor) => valor !== SIN_SELECCION, {
+        message: "Selecciona una opción válida",
+      })
+      .optional(),
     address: z.string().optional(),
     emergencyContactName: z.string().optional(),
     emergencyContactPhone: z.string().optional(),
@@ -206,39 +216,6 @@ const minutosYSegundos = (segundos: number): string => {
   const minutos = Math.floor(segundos / 60);
   return `${minutos}:${String(segundos % 60).padStart(2, "0")}`;
 };
-
-/**
- * Campo de teléfono con máscara `555-123-4567`: solo dígitos, máximo 10 y
- * agrupados mientras se escribe. Al pegar un número con lada se queda con los
- * últimos 10 (`+52 55 1234 5678` → `551-234-5678`).
- */
-function TelefonoInput({
-  value,
-  onChange,
-  ...props
-}: Omit<ComponentProps<"input">, "value" | "onChange"> & {
-  value?: string;
-  onChange: (valor: string) => void;
-}) {
-  return (
-    <Input
-      {...props}
-      type="tel"
-      inputMode="tel"
-      autoComplete="tel"
-      maxLength={12}
-      value={value ?? ""}
-      onChange={(evento) => onChange(formatearTelefono(evento.target.value))}
-      onPaste={(evento) => {
-        const texto = evento.clipboardData.getData("text");
-        if (texto.replace(/\D/g, "").length > DIGITOS_TELEFONO) {
-          evento.preventDefault();
-          onChange(formatearTelefonoPegado(texto));
-        }
-      }}
-    />
-  );
-}
 
 export function RegisterForm() {
   const router = useRouter();
@@ -868,6 +845,7 @@ export function RegisterForm() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
+                              <SelectItem value={SIN_SELECCION}>Selecciona una opción</SelectItem>
                               <SelectItem value="Femenino">Femenino</SelectItem>
                               <SelectItem value="Masculino">Masculino</SelectItem>
                               <SelectItem value="No binario">No binario</SelectItem>

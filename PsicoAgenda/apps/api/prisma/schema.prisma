@@ -281,10 +281,8 @@ model solicitudes_cita {
 model tutores {
   id                         String                       @id @db.Uuid
   nombre_completo            String
-  correo                     String?
   telefono                   String?
   parentesco                 String?
-  documento_identidad        String?
   creado_en                  DateTime                     @default(now()) @db.Timestamptz(3)
   consentimientos_informados consentimientos_informados[]
   pacientes                  pacientes[]

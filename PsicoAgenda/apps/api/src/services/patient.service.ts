@@ -55,9 +55,7 @@ function toLegalGuardian(row: LegalGuardianRow): LegalGuardian {
   return {
     id: row.id,
     name: row.nombre_completo,
-    email: row.correo ?? undefined,
     phone: row.telefono ?? undefined,
-    documentId: row.documento_identidad ?? undefined,
     relationship: row.parentesco ?? undefined,
     createdAt: row.creado_en,
   };
@@ -169,19 +167,33 @@ export async function updateMyPatientProfile(
         await tx.contactos_emergencia.update({
           where: { id: primary.id },
           data: {
-            nombre_completo: input.emergencyContactName,
-            telefono: input.emergencyContactPhone,
-            parentesco: input.emergencyContactRelationship,
+            // `undefined` deja el valor actual; una cadena vacía no debe pisar
+            // columnas NOT NULL con "".
+            nombre_completo: input.emergencyContactName?.trim() || undefined,
+            telefono: input.emergencyContactPhone?.trim() || undefined,
+            parentesco: emptyToNull(input.emergencyContactRelationship),
           },
         });
-      } else if (input.emergencyContactName && input.emergencyContactPhone) {
+      } else {
+        // Sin contacto previo el bloque necesita nombre y teléfono: ambos son
+        // NOT NULL. Antes se omitía en silencio y la API respondía 200.
+        const nombre = input.emergencyContactName?.trim();
+        const telefono = input.emergencyContactPhone?.trim();
+        if (!nombre || !telefono) {
+          throw new AppError(
+            400,
+            "Para guardar el contacto de emergencia se necesitan el nombre y el teléfono.",
+            "CONTACTO_INCOMPLETO",
+          );
+        }
+
         await tx.contactos_emergencia.create({
           data: {
             id: randomUUID(),
             paciente_id: existing.id,
-            nombre_completo: input.emergencyContactName,
-            telefono: input.emergencyContactPhone,
-            parentesco: input.emergencyContactRelationship ?? null,
+            nombre_completo: nombre,
+            telefono,
+            parentesco: input.emergencyContactRelationship?.trim() || null,
             es_principal: true,
           },
         });

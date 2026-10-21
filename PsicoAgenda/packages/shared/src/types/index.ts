@@ -150,9 +150,7 @@ export interface EmergencyContact {
 export interface LegalGuardian {
   id: string;
   name: string;
-  email?: string;
   phone?: string;
-  documentId?: string;
   relationship?: string;
   createdAt: Date;
 }

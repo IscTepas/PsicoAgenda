@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TIMEZONES } from "../constants";
 import { AppointmentRequestStatus, AppointmentStatus, PaymentStatus } from "../types";
 
 export const emailSchema = z.string().email("Correo electrónico inválido");
@@ -197,28 +198,68 @@ export const logEntrySchema = z.object({
  * Actualización del perfil del psicólogo. Los campos vacíos se normalizan a `null`
  * en el servicio (una cédula vacía no es una cédula).
  */
+/** Zona horaria admitida por el perfil (la misma lista que ofrece el formulario). */
+export const timezoneSchema = z.enum(TIMEZONES, {
+  errorMap: () => ({ message: "Zona horaria no válida" }),
+});
+
+/**
+ * Foto de perfil: data URL de imagen (lo que produce el selector de archivos) o
+ * una URL https. El tope de ~5 MB cubre el base64 de una imagen de 3 MB.
+ */
+export const photoUrlSchema = z
+  .string()
+  .max(5_000_000, "La imagen es demasiado grande (máximo 3 MB)")
+  .refine(
+    (valor) =>
+      /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(valor) ||
+      /^https?:\/\/\S+$/.test(valor),
+    "La foto debe ser una imagen PNG, JPG o WebP",
+  );
+
+const nombrePerfilSchema = z
+  .string()
+  .trim()
+  .min(2, "El nombre es obligatorio")
+  .max(120, "El nombre es demasiado largo");
+
 export const updatePsychologistProfileSchema = z.object({
-  name: z.string().min(2, "El nombre es obligatorio").optional(),
-  phone: z.string().optional(),
-  timeZone: z.string().min(1, "La zona horaria es obligatoria").optional(),
-  photoUrl: z.string().optional(),
+  name: nombrePerfilSchema.optional(),
+  phone: telefonoSchema.optional(),
+  timeZone: timezoneSchema.optional(),
+  photoUrl: photoUrlSchema.optional(),
   notifyWhatsapp: z.boolean().optional(),
   notifyEmail: z.boolean().optional(),
-  licenseNumber: z.string().min(1, "La cédula es obligatoria").optional(),
-  specialty: z.string().optional(),
-  bio: z.string().optional(),
+  licenseNumber: z
+    .string()
+    .trim()
+    .min(4, "La cédula debe tener al menos 4 caracteres")
+    .max(30, "La cédula es demasiado larga")
+    .regex(/^[A-Za-z0-9ÁÉÍÓÚÜáéíóúüÑñ.\s-]+$/, "La cédula contiene caracteres no válidos")
+    .optional(),
+  specialty: z.string().trim().max(120, "La especialidad es demasiado larga").optional(),
+  bio: z.string().trim().max(2000, "La biografía es demasiado larga").optional(),
 });
 
 export const updatePatientProfileSchema = z.object({
-  name: z.string().min(2, "El nombre es obligatorio").optional(),
-  phone: z.string().optional(),
-  timeZone: z.string().min(1, "La zona horaria es obligatoria").optional(),
-  photoUrl: z.string().optional(),
+  name: nombrePerfilSchema.optional(),
+  phone: telefonoSchema.optional(),
+  timeZone: timezoneSchema.optional(),
+  photoUrl: photoUrlSchema.optional(),
   notifyWhatsapp: z.boolean().optional(),
   notifyEmail: z.boolean().optional(),
-  emergencyContactName: z.string().optional(),
-  emergencyContactPhone: z.string().optional(),
-  emergencyContactRelationship: z.string().optional(),
+  emergencyContactName: z
+    .string()
+    .trim()
+    .min(2, "El nombre del contacto es obligatorio")
+    .max(120, "El nombre del contacto es demasiado largo")
+    .optional(),
+  emergencyContactPhone: telefonoSchema.optional(),
+  emergencyContactRelationship: z
+    .string()
+    .trim()
+    .max(60, "El parentesco es demasiado largo")
+    .optional(),
 });
 
 /**
