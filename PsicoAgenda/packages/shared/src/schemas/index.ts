@@ -77,6 +77,14 @@ export const createAppointmentRequestSchema = z.object({
   reason: z.string().optional(),
 });
 
+/**
+ * Reagendamiento: el paciente cancela su cita actual y pide el nuevo horario en
+ * una sola operación.
+ */
+export const rescheduleAppointmentRequestSchema = createAppointmentRequestSchema.extend({
+  appointmentId: z.string().uuid(),
+});
+
 export const appointmentRequestListQuerySchema = z.object({
   status: z.nativeEnum(AppointmentRequestStatus).optional(),
 });
@@ -91,6 +99,26 @@ export const appointmentListQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).optional().default(0),
   page: z.coerce.number().int().min(1).optional(),
 });
+
+const MAX_OCCUPANCY_RANGE_MS = 1000 * 60 * 60 * 24 * 31 * 6;
+
+/**
+ * Ocupación para el calendario multimes: un rango acotado evita traer meses de
+ * agenda por accidente. `to` es exclusivo en la consulta de la API.
+ */
+export const appointmentOccupancyQuerySchema = z
+  .object({
+    from: z.coerce.date(),
+    to: z.coerce.date(),
+  })
+  .refine((value) => value.to.getTime() > value.from.getTime(), {
+    message: "El rango de fechas no es válido",
+    path: ["to"],
+  })
+  .refine((value) => value.to.getTime() - value.from.getTime() <= MAX_OCCUPANCY_RANGE_MS, {
+    message: "El rango máximo es de 6 meses",
+    path: ["to"],
+  });
 
 /**
  * Listado de pacientes. Express entrega la query como strings, así que todo va

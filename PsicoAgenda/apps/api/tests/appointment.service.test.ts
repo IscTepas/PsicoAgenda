@@ -37,6 +37,7 @@ const {
   changeAppointmentStatus,
   createAppointment,
   getAppointmentById,
+  listAppointmentOccupancy,
   listAppointments,
   updateAppointment,
   updateAppointmentPayment,
@@ -448,5 +449,53 @@ describe("updateAppointmentPayment", () => {
     ).rejects.toMatchObject({ statusCode: 409 });
 
     expect(prismaMock.pagos_honorarios.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("listAppointmentOccupancy", () => {
+  const FROM = new Date("2030-01-01T00:00:00.000Z");
+  const TO = new Date("2030-05-01T00:00:00.000Z");
+  const FIN = new Date(START.getTime() + 50 * 60_000);
+
+  it("devuelve los rangos ocupados del psicólogo asignado al paciente", async () => {
+    prismaMock.pacientes.findUnique.mockResolvedValue({
+      id: PATIENT_ID,
+      psicologo_id: PSYCH_ID,
+    });
+    prismaMock.citas.findMany.mockResolvedValue([{ inicio: START, fin: FIN }]);
+
+    const result = await listAppointmentOccupancy(patient, { from: FROM, to: TO });
+
+    expect(prismaMock.citas.findMany).toHaveBeenCalledTimes(1);
+    const where = lastCallArg(prismaMock.citas.findMany).where as Record<string, unknown>;
+    expect(where).toMatchObject({ psicologo_id: PSYCH_ID });
+    expect(where.inicio).toMatchObject({ lt: TO });
+    expect(where.fin).toMatchObject({ gt: FROM });
+    expect(result).toEqual([{ startTime: START, endTime: FIN }]);
+  });
+
+  it("el psicólogo consulta su propia agenda", async () => {
+    prismaMock.citas.findMany.mockResolvedValue([]);
+
+    await listAppointmentOccupancy(psychologist, { from: FROM, to: TO });
+
+    const where = lastCallArg(prismaMock.citas.findMany).where as Record<string, unknown>;
+    expect(where).toMatchObject({ psicologo_id: PSYCH_ID });
+  });
+
+  it("un paciente sin psicólogo no consulta la agenda", async () => {
+    prismaMock.pacientes.findUnique.mockResolvedValue({ id: PATIENT_ID, psicologo_id: null });
+
+    const result = await listAppointmentOccupancy(patient, { from: FROM, to: TO });
+
+    expect(result).toEqual([]);
+    expect(prismaMock.citas.findMany).not.toHaveBeenCalled();
+  });
+
+  it("un administrador no tiene agenda propia", async () => {
+    const result = await listAppointmentOccupancy(admin, { from: FROM, to: TO });
+
+    expect(result).toEqual([]);
+    expect(prismaMock.citas.findMany).not.toHaveBeenCalled();
   });
 });

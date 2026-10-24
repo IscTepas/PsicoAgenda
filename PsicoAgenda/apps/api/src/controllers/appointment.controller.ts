@@ -4,6 +4,7 @@ import {
   changeAppointmentStatus,
   createAppointment,
   getAppointmentById,
+  listAppointmentOccupancy,
   listAppointments,
   updateAppointment,
   updateAppointmentPayment,
@@ -18,6 +19,15 @@ export const listAppointmentsController: RequestHandler = async (req: AuthedRequ
     // `validate` ya dejó la query parseada (fechas como Date, uuid validados).
     const filter = req.query as ListAppointmentsFilter;
     res.json(await listAppointments(req.auth!, filter));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const listAppointmentOccupancyController: RequestHandler = async (req: AuthedRequest, res, next) => {
+  try {
+    const filter = req.query as unknown as { from: Date; to: Date };
+    res.json(await listAppointmentOccupancy(req.auth!, filter));
   } catch (error) {
     next(error);
   }

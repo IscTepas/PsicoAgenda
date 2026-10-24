@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   appointmentListQuerySchema,
+  appointmentOccupancyQuerySchema,
   cancelAppointmentSchema,
   createAppointmentSchema,
   idParamSchema,
@@ -13,6 +14,7 @@ import {
   changeAppointmentStatusController,
   createAppointmentController,
   getAppointmentController,
+  listAppointmentOccupancyController,
   listAppointmentsController,
   updateAppointmentController,
   updateAppointmentPaymentController,
@@ -23,6 +25,12 @@ import { validate } from "@/middleware/validate.middleware";
 const router = Router();
 
 router.get("/", requireAuth, validate({ query: appointmentListQuerySchema }), listAppointmentsController);
+router.get(
+  "/occupancy",
+  requireAuth,
+  validate({ query: appointmentOccupancyQuerySchema }),
+  listAppointmentOccupancyController,
+);
 router.get("/:id", requireAuth, validate({ params: idParamSchema }), getAppointmentController);
 router.post("/", requireAuth, validate({ body: createAppointmentSchema }), createAppointmentController);
 router.patch(
