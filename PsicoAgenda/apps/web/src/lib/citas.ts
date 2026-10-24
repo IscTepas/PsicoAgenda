@@ -35,26 +35,18 @@ export function startOfDay(date: Date): Date {
   return next;
 }
 
-/** Mañana a las 00:00: el mínimo para que un paciente solicite una cita. */
-export function fechaMinimaSolicitud(ahora: Date): Date {
-  return addDays(startOfDay(ahora), 1);
-}
-
 /**
- * Fecha mínima según el flujo: los pacientes solicitan desde mañana; el
- * psicólogo puede agendar hoy; la edición conserva la fecha de la cita.
+ * Fecha mínima para agendar: hoy. Las horas que ya pasaron se filtran aparte.
+ * La edición no impone mínimo para no romper una cita existente.
  */
 export function fechaMinimaPara({
-  esPaciente,
   esEdicion,
   ahora,
 }: {
-  esPaciente: boolean;
   esEdicion: boolean;
   ahora: Date;
 }): Date | null {
-  if (esEdicion) return null;
-  return esPaciente ? fechaMinimaSolicitud(ahora) : startOfDay(ahora);
+  return esEdicion ? null : startOfDay(ahora);
 }
 
 /**

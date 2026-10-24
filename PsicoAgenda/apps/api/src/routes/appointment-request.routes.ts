@@ -3,6 +3,7 @@ import {
   appointmentRequestListQuerySchema,
   createAppointmentRequestSchema,
   idParamSchema,
+  rescheduleAppointmentRequestSchema,
   UserRole,
 } from "@psicoagenda/shared";
 import {
@@ -11,6 +12,7 @@ import {
   createAppointmentRequestController,
   listAppointmentRequestsController,
   rejectAppointmentRequestController,
+  rescheduleAppointmentRequestController,
 } from "@/controllers/appointment-request.controller";
 import { requireAuth, requireRole } from "@/middleware/auth.middleware";
 import { validate } from "@/middleware/validate.middleware";
@@ -29,6 +31,13 @@ router.post(
   requireRole(UserRole.PATIENT),
   validate({ body: createAppointmentRequestSchema }),
   createAppointmentRequestController,
+);
+router.post(
+  "/reschedule",
+  requireAuth,
+  requireRole(UserRole.PATIENT),
+  validate({ body: rescheduleAppointmentRequestSchema }),
+  rescheduleAppointmentRequestController,
 );
 router.post(
   "/:id/accept",

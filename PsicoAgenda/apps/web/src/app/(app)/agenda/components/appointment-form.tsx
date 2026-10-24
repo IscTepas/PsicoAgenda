@@ -55,6 +55,14 @@ import {
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
 import { useHydrated } from "@/lib/use-hydrated"
+import { MultiMonthCalendar } from "@/components/ui/multi-month-calendar"
+import {
+  addMonths,
+  agruparOcupacionPorDia,
+  calcularEstadoDia,
+  startOfMonth,
+  type EstadoDia,
+} from "@/lib/calendario"
 import {
   addDays,
   calcularEstadoFecha,
@@ -66,7 +74,13 @@ import {
   startOfDay,
   type EstadoFecha,
 } from "@/lib/citas"
-import { appointmentRequestService, appointmentService, patientService, psychologistService } from "@/services"
+import {
+  appointmentRequestService,
+  appointmentService,
+  patientService,
+  psychologistService,
+  type AppointmentOccupancySlot,
+} from "@/services"
 
 // Horarios de respaldo mientras carga el horario real desde la BD (Lun–Vie 09:00–19:00).
 const FALLBACK_HOURS = [
@@ -166,6 +180,18 @@ function etiquetaEstadoFecha(estado: EstadoFecha, horasLibres: number): string {
   }
 }
 
+function formatearDiaHora(fecha: Date): string {
+  return `${DAYS_NAMES[fecha.getDay()]} ${fecha.getDate()} de ${MONTH_NAMES[fecha.getMonth()]} a las ${String(fecha.getHours()).padStart(2, "0")}:${String(fecha.getMinutes()).padStart(2, "0")}`
+}
+
+function formatearDiaCorto(fecha: Date): string {
+  return fecha.toLocaleDateString("es-MX", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  })
+}
+
 interface AppointmentFormProps {
   initialAppointment?: Appointment | null
 }
@@ -240,8 +266,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       : ""
   const [selectedHour, setSelectedHour] = React.useState<string>(initialHour)
   const [durationMinutes, setDurationMinutes] = React.useState<number>(initialAppointment?.durationMinutes || 50)
-  const [modality, setModality] = React.useState<AppointmentModality>(
-    initialAppointment?.modality || AppointmentModality.IN_PERSON
+  const [modality, setModality] = React.useState<AppointmentModality | null>(
+    initialAppointment?.modality ?? null
   )
   const [reason, setReason] = React.useState<string>(initialAppointment?.reason || "")
 
@@ -258,10 +284,19 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const [cancellationReason, setCancellationReason] = React.useState<string>("")
   const [cancelError, setCancelError] = React.useState<string>("")
 
+  // Reagendamiento del paciente: el envío abre una confirmación y, al aceptar,
+  // se cancela la cita actual y se crea la solicitud en una sola llamada.
+  const [isRescheduleModalOpen, setIsRescheduleModalOpen] = React.useState<boolean>(false)
+  const [rescheduleDraft, setRescheduleDraft] = React.useState<{
+    startTime: Date
+    durationMinutes: number
+    modality: AppointmentModality
+    reason?: string
+  } | null>(null)
+
   // Form feedback state
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
-  const [isRebookingMode, setIsRebookingMode] = React.useState<boolean>(false)
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false)
 
   // Today check
@@ -277,21 +312,25 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   // fecha para que las franjas de hoy no se queden viejas mientras se elige.
   const [ahora, setAhora] = React.useState<Date>(() => new Date())
   const minimaFecha = React.useMemo(
-    () => fechaMinimaPara({ esPaciente: isPatient, esEdicion: isEdit, ahora }),
-    [isPatient, isEdit, ahora],
+    () => fechaMinimaPara({ esEdicion: isEdit, ahora }),
+    [isEdit, ahora],
   )
-  // El paciente no puede solicitar para hoy: si llega una fecha anterior al
-  // mínimo (por ?fecha= o por escritura manual) se muestra la mínima.
+  // Ventana de agenda: el tercer mes visible (máximo 90 días desde hoy). La
+  // edición conserva la fecha de la cita aunque quede fuera de esa ventana.
+  const maximaFecha = React.useMemo(() => {
+    if (isEdit) return null
+    return startOfDay(addDays(addMonths(startOfMonth(ahora), 3), -1))
+  }, [isEdit, ahora])
+  // La fecha elegida se ajusta al rango permitido (mínimo hoy, máximo 90 días).
   const selectedDateEfectiva = React.useMemo(() => {
     if (!selectedDate) return null
-    if (!hydrated || !minimaFecha) return selectedDate
-    return startOfDay(selectedDate).getTime() < minimaFecha.getTime() ? minimaFecha : selectedDate
-  }, [selectedDate, minimaFecha, hydrated])
-  const dateInputValue = selectedDateEfectiva ? formatDateToInput(selectedDateEfectiva) : ""
-  // El atributo `min` solo se pinta tras hidratar: el reloj del servidor y el
-  // del navegador pueden caer en días distintos.
-  const minimaFechaInput = hydrated ? minimaFecha : null
+    if (!hydrated) return selectedDate
 
+    const dia = startOfDay(selectedDate).getTime()
+    if (minimaFecha && dia < minimaFecha.getTime()) return minimaFecha
+    if (maximaFecha && dia > maximaFecha.getTime()) return maximaFecha
+    return selectedDate
+  }, [selectedDate, minimaFecha, maximaFecha, hydrated])
   // El paciente autenticado solo puede agendarse a sí mismo: el directorio visible
   // para él contiene únicamente su registro, así que la selección se deriva en vez
   // de sincronizarse por efecto.
@@ -363,6 +402,84 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     }
   }, [isPatient, patients, user])
 
+  // Ocupación de la agenda para los meses visibles del calendario. La API
+  // devuelve solo rangos ocupados del psicólogo (sin datos del paciente).
+  const [ocupacion, setOcupacion] = React.useState<AppointmentOccupancySlot[]>([])
+  const [rangoOcupacion, setRangoOcupacion] = React.useState<{
+    from: string
+    to: string
+  } | null>(null)
+
+  const handleRangoVisible = React.useCallback((from: Date, to: Date) => {
+    setRangoOcupacion({ from: from.toISOString(), to: to.toISOString() })
+  }, [])
+
+  React.useEffect(() => {
+    if (!rangoOcupacion) return
+
+    let cancelled = false
+
+    const load = async () => {
+      try {
+        const data = await appointmentService.getOccupancy({
+          from: new Date(rangoOcupacion.from),
+          to: new Date(rangoOcupacion.to),
+        })
+        if (!cancelled) setOcupacion(data)
+      } catch {
+        if (!cancelled) setOcupacion([])
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [rangoOcupacion])
+
+  // Horas de atención de un día concreto según el horario semanal.
+  const horasDelDiaPara = React.useCallback(
+    (fecha: Date): string[] => {
+      if (schedule === undefined) return []
+      const jsDay = fecha.getDay()
+      const dbDay = jsDay === 0 ? 7 : jsDay
+
+      if (schedule === null) {
+        return dbDay >= 1 && dbDay <= 5 ? FALLBACK_HOURS : []
+      }
+
+      return Array.from(
+        new Set(
+          schedule.slots
+            .filter((slot) => slot.dayOfWeek === dbDay)
+            .map((slot) => slot.startTime),
+        ),
+      ).sort()
+    },
+    [schedule],
+  )
+
+  const ocupadosPorDia = React.useMemo(
+    () => agruparOcupacionPorDia(ocupacion),
+    [ocupacion],
+  )
+
+  const estadoDia = React.useCallback(
+    (fecha: Date): EstadoDia => {
+      if (!hydrated || schedule === undefined) return "disabled"
+      return calcularEstadoDia({
+        fecha,
+        hoy: ahora,
+        minima: minimaFecha,
+        maxima: maximaFecha,
+        horasDelDia: horasDelDiaPara(fecha),
+        horasOcupadas: ocupadosPorDia.get(formatDateToInput(fecha)) ?? new Set<string>(),
+        ahora,
+      })
+    },
+    [hydrated, schedule, ahora, minimaFecha, maximaFecha, horasDelDiaPara, ocupadosPorDia],
+  )
+
   // Franjas del día según el horario de la BD, sin filtrar por hora.
   // JS: 0 = domingo..6 = sábado; BD: 1 = lunes..7 = domingo.
   const horasDelDia = React.useMemo(() => {
@@ -399,17 +516,30 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     availableHours.forEach((hourStr) => {
       const hourNum = parseInt(hourStr.split(":")[0], 10)
       const existing = appointments.find((apt) => {
-        // Exclude current appointment when in edit mode
-        if (isEdit && apt.id === initialAppointment?.id) return false
         const aptDate = toDate(apt.startTime)
-        return aptDate && isSameDay(aptDate, selectedDateEfectiva) && aptDate.getHours() === hourNum && apt.status !== AppointmentStatus.CANCELLED
+        const sameSlot =
+          aptDate &&
+          isSameDay(aptDate, selectedDateEfectiva) &&
+          aptDate.getHours() === hourNum &&
+          apt.status !== AppointmentStatus.CANCELLED
+
+        // El psicólogo conserva la franja de la cita que edita; el paciente que
+        // reagenda no puede volver a elegir la misma.
+        if (apt.id === initialAppointment?.id) {
+          return isEdit && isPatient && Boolean(sameSlot)
+        }
+
+        return Boolean(sameSlot)
       })
 
       if (existing) {
         const patient = patients.find((p) => p.id === existing.patientId)
         map[hourStr] = {
           available: false,
-          conflictWith: patient?.name || "Cita ocupada",
+          conflictWith:
+            existing.id === initialAppointment?.id
+              ? "Tu cita actual"
+              : patient?.name || "Cita ocupada",
         }
       } else {
         map[hourStr] = { available: true }
@@ -417,18 +547,27 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     })
 
     return map
-  }, [appointments, patients, selectedDateEfectiva, isEdit, initialAppointment, availableHours])
+  }, [appointments, patients, selectedDateEfectiva, isEdit, isPatient, initialAppointment, availableHours])
 
-  // Hora realmente elegida: se preselecciona la elegida si sigue libre; si no,
-  // la primera franja libre del día. Si el día está lleno no hay selección, así
-  // no se ve como disponible una hora ocupada. Se deriva en el render en lugar
-  // de sincronizarla con un efecto (react-hooks/set-state-in-effect).
+  // Hora realmente elegida: sin valor por defecto. Solo cuenta la hora que la
+  // persona tocó y que sigue libre en el día seleccionado.
   const selectedHourEfectivo = React.useMemo(() => {
     if (!selectedDateEfectiva) return ""
     const estaLibre = (hora: string) => slotAvailability[hora]?.available ?? false
-    if (availableHours.includes(selectedHour) && estaLibre(selectedHour)) return selectedHour
-    return availableHours.find(estaLibre) ?? ""
+    return availableHours.includes(selectedHour) && estaLibre(selectedHour)
+      ? selectedHour
+      : ""
   }, [selectedDateEfectiva, availableHours, selectedHour, slotAvailability])
+
+  // El formulario está completo cuando hay paciente, fecha y una franja libre.
+  const formularioCompleto =
+    Boolean(lockedPatientId) &&
+    Boolean(selectedDateEfectiva) &&
+    Boolean(selectedHourEfectivo) &&
+    Boolean(modality) &&
+    availableHours.includes(selectedHourEfectivo) &&
+    (slotAvailability[selectedHourEfectivo]?.available ?? false) &&
+    !dayAppointmentsLoading
 
   // Primer día futuro con franjas en el horario del profesional: se sugiere
   // cuando la fecha elegida no tiene disponibilidad (p. ej. un sábado).
@@ -436,12 +575,13 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     if (!schedule || !selectedDateEfectiva || availableHours.length > 0) return null
     for (let i = 1; i <= 30; i++) {
       const candidate = addDays(selectedDateEfectiva, i)
+      if (maximaFecha && startOfDay(candidate).getTime() > maximaFecha.getTime()) return null
       const jsDay = candidate.getDay()
       const dbDay = jsDay === 0 ? 7 : jsDay
       if (schedule.slots.some((slot) => slot.dayOfWeek === dbDay)) return candidate
     }
     return null
-  }, [schedule, selectedDateEfectiva, availableHours])
+  }, [schedule, selectedDateEfectiva, availableHours, maximaFecha])
 
   // El paciente seleccionado es menor de edad: la sesión se fija en 30 min.
   const isMinorPatient = React.useMemo(() => {
@@ -460,7 +600,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
   // Costo de la sesión calculado en vivo con las mismas reglas del backend.
   const previewPrice = React.useMemo(() => {
-    if (!hydrated || !selectedDateEfectiva || !selectedHourEfectivo) return null
+    if (!hydrated || !selectedDateEfectiva || !selectedHourEfectivo || !modality) return null
     const [hour, minute] = selectedHourEfectivo.split(":").map(Number)
     const start = new Date(selectedDateEfectiva)
     start.setHours(hour, minute, 0, 0)
@@ -518,25 +658,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const estadoFechaEstilo = ESTADO_FECHA_ESTILO[estadoDeFecha]
   const estadoFechaEtiqueta = etiquetaEstadoFecha(estadoDeFecha, horasLibres)
 
-  // Handle date change from input
-  const handleDateChange = (val: string) => {
-    setAhora(new Date())
-    if (!val) {
-      setSelectedDate(null)
-      return
-    }
-    setSelectedDate(parseInputToDate(val))
-  }
-
-  // Quick Date Selectors
-  const setQuickDate = (offsetDays: number) => {
-    const d = new Date()
-    d.setDate(d.getDate() + offsetDays)
-    d.setHours(9, 0, 0, 0)
-    setAhora(new Date())
-    setSelectedDate(d)
-  }
-
   // Form Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -554,11 +675,12 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     }
 
     if (minimaFecha && startOfDay(selectedDateEfectiva).getTime() < minimaFecha.getTime()) {
-      setErrorMessage(
-        isPatient
-          ? "Las solicitudes se pueden hacer a partir de mañana."
-          : "Elige una fecha válida.",
-      )
+      setErrorMessage("Elige una fecha válida.")
+      return
+    }
+
+    if (maximaFecha && startOfDay(selectedDateEfectiva).getTime() > maximaFecha.getTime()) {
+      setErrorMessage("Elige una fecha dentro de los próximos 3 meses.")
       return
     }
 
@@ -579,12 +701,35 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       return
     }
 
+    if (!modality) {
+      setErrorMessage("Selecciona la modalidad de la sesión.")
+      return
+    }
+
     const [hour, minute] = selectedHourEfectivo.split(":").map(Number)
     const startTime = new Date(selectedDateEfectiva)
     startTime.setHours(hour, minute, 0, 0)
 
     if (startTime.getTime() <= Date.now()) {
       setErrorMessage("Elige un horario en el futuro.")
+      return
+    }
+
+    // El paciente reagenda: se confirma y la API cancela la cita actual + crea
+    // la solicitud en una sola transacción.
+    if (isEdit && isPatient && initialAppointment) {
+      if (startTime.getTime() === toDate(initialAppointment.startTime).getTime()) {
+        setErrorMessage("Elige un horario distinto al actual.")
+        return
+      }
+
+      setRescheduleDraft({
+        startTime,
+        durationMinutes: durationMinutesEfectivos,
+        modality,
+        reason: reason || undefined,
+      })
+      setIsRescheduleModalOpen(true)
       return
     }
 
@@ -626,10 +771,33 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       }
 
       setTimeout(() => {
-        router.push(isPatient && !isEdit ? "/dashboard" : "/agenda")
+        router.push(isPatient ? "/dashboard" : "/agenda")
       }, 900)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo guardar la cita")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Confirmación del reagendamiento del paciente.
+  const handleConfirmReschedule = async () => {
+    const draft = rescheduleDraft
+    if (!draft || !initialAppointment) return
+
+    setIsSubmitting(true)
+    setErrorMessage(null)
+
+    try {
+      await appointmentRequestService.reschedule({
+        appointmentId: initialAppointment.id,
+        ...draft,
+      })
+      setIsRescheduleModalOpen(false)
+      setSuccessMessage("Solicitud de reagendamiento enviada. Tu cita anterior fue cancelada.")
+      setTimeout(() => router.push("/dashboard"), 900)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "No se pudo reagendar la cita")
     } finally {
       setIsSubmitting(false)
     }
@@ -684,7 +852,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto pb-12">
+    <div className="space-y-6 max-w-6xl mx-auto pb-12">
       {/* Header and Back Link */}
       <div className="flex flex-col gap-2">
         <Button
@@ -703,11 +871,19 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground font-heading">
-              {isEdit ? "Detalles y Modificación de Cita" : isPatient ? "Solicitar Cita" : "Agendar Nueva Cita"}
+              {isEdit
+                ? isPatient
+                  ? "Reagendar cita"
+                  : "Modificar cita"
+                : isPatient
+                  ? "Solicitar Cita"
+                  : "Agendar Nueva Cita"}
             </h1>
             <p className="text-sm text-muted-foreground">
               {isEdit
-                ? `Gestión integral de la sesión con el paciente.`
+                ? isPatient
+                  ? "Elige un nuevo horario. Tu cita actual se cancelará al enviar la solicitud."
+                  : "Ajusta la fecha, la hora o los datos de la sesión."
                 : isPatient
                   ? "Elige fecha, hora y modalidad. Tu psicólogo confirmará la solicitud."
                   : "Programa una nueva consulta clínica definiendo paciente, fecha, hora y modalidad."}
@@ -947,106 +1123,60 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         )}
 
         {/* CARD 2: SELECTOR DE FECHA (DATEPICKER) */}
-        <Card className={`border-border/70 shadow-2xs bg-card ${isRebookingMode ? "ring-2 ring-primary/40" : ""}`}>
+        <Card className="border-border/70 shadow-2xs bg-card">
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
               <CalendarIcon className="size-4 text-primary" />
               <span>{isPatient ? "1." : "2."} Fecha de la Cita</span>
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              Elige el día programado para la sesión.
+              Elige un día disponible dentro de los próximos 3 meses. Los que ya tienen citas se marcan en azul y los completos en ámbar.
             </CardDescription>
           </CardHeader>
 
           <CardContent className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-center">
-              {/* Native Date Input with Clean Styling */}
-              <div className="space-y-1">
-                <label htmlFor="appointment-date-input" className="text-xs font-medium text-muted-foreground">
-                  Fecha seleccionada
-                </label>
-                <Input
-                  id="appointment-date-input"
-                  type="date"
-                  value={dateInputValue}
-                  min={minimaFechaInput ? formatDateToInput(minimaFechaInput) : undefined}
-                  onChange={(e) => handleDateChange(e.target.value)}
-                  className="h-10 rounded-xl border-border/80 focus-visible:ring-primary/20 text-sm font-medium"
-                />
-              </div>
-
-              {/* Quick Preset Date Buttons */}
-              <div className="flex flex-wrap items-center gap-1.5 sm:pt-5">
-                {(!isPatient || isEdit) && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setQuickDate(0)}
-                    className="h-8 px-2.5 text-xs rounded-lg border-border/80 hover:border-primary/50"
-                  >
-                    Hoy
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setQuickDate(1)}
-                  className="h-8 px-2.5 text-xs rounded-lg border-border/80 hover:border-primary/50"
-                >
-                  Mañana
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setQuickDate(2)}
-                  className="h-8 px-2.5 text-xs rounded-lg border-border/80 hover:border-primary/50"
-                >
-                  En 2 días
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setQuickDate(7)}
-                  className="h-8 px-2.5 text-xs rounded-lg border-border/80 hover:border-primary/50"
-                >
-                  Próxima semana
-                </Button>
-              </div>
-            </div>
+            {hydrated ? (
+              <MultiMonthCalendar
+                selected={selectedDateEfectiva}
+                initialMonth={selectedDateEfectiva ?? minimaFecha ?? undefined}
+                onSelect={(fecha) => {
+                  setAhora(new Date())
+                  setSelectedDate(fecha)
+                  setSelectedHour("")
+                }}
+                minDate={minimaFecha}
+                maxDate={maximaFecha}
+                months={3}
+                dayStatus={estadoDia}
+                onVisibleRangeChange={handleRangoVisible}
+                loading={schedule === undefined}
+              />
+            ) : (
+              <div className="h-64 animate-pulse rounded-xl bg-muted/30" aria-hidden="true" />
+            )}
 
             {/* Human Readable Date Preview + estado de disponibilidad */}
-            <div
-              className={`p-3 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-2 ${estadoFechaEstilo.caja}`}
-            >
-              <div className="flex items-center gap-2 text-foreground">
-                <CalendarDays className={`size-4 ${estadoFechaEstilo.icono}`} />
-                <span>
-                  {selectedDateEfectiva ? (
-                    <>
-                      <strong>{DAYS_NAMES[selectedDateEfectiva.getDay()]}</strong>, {selectedDateEfectiva.getDate()} de {MONTH_NAMES[selectedDateEfectiva.getMonth()]} de {selectedDateEfectiva.getFullYear()}
-                    </>
-                  ) : (
-                    "Selecciona una fecha para ver la disponibilidad"
-                  )}
+            {selectedDateEfectiva && (
+              <div
+                className={`p-3 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-2 ${estadoFechaEstilo.caja}`}
+              >
+                <div className="flex items-center gap-2 text-foreground">
+                  <CalendarDays className={`size-4 ${estadoFechaEstilo.icono}`} />
+                  <span>
+                    <strong>{DAYS_NAMES[selectedDateEfectiva.getDay()]}</strong>, {selectedDateEfectiva.getDate()} de {MONTH_NAMES[selectedDateEfectiva.getMonth()]} de {selectedDateEfectiva.getFullYear()}
+                  </span>
+                </div>
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${estadoFechaEstilo.chip}`}>
+                  <span className={`size-1.5 rounded-full ${estadoFechaEstilo.punto}`} />
+                  {estadoFechaEtiqueta}
                 </span>
               </div>
-              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${estadoFechaEstilo.chip}`}>
-                <span className={`size-1.5 rounded-full ${estadoFechaEstilo.punto}`} />
-                {estadoFechaEtiqueta}
-              </span>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Verde: hay horarios libres · Ámbar: día completo · Rojo: sin horario.
-            </p>
+            )}
           </CardContent>
         </Card>
 
         {/* CARD 3: SELECTOR DE HORA Y DURACIÓN (TIMEPICKER BASADO EN DISPONIBILIDAD) */}
-        <Card className={`border-border/70 shadow-2xs bg-card ${isRebookingMode ? "ring-2 ring-primary/40" : ""}`}>
+        <Card className="border-border/70 shadow-2xs bg-card">
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
               <Clock className="size-4 text-primary" />
@@ -1067,67 +1197,74 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 </div>
               ) : (
                 <>
-                  <span className="text-xs font-medium text-muted-foreground block">
-                    Selecciona una franja horaria disponible:
-                  </span>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                    {availableHours.map((hourStr) => {
-                      const slot = slotAvailability[hourStr]
-                      const isSelected = selectedHourEfectivo === hourStr
-                      const isAvailable = slot?.available ?? true
+                  {!dayAppointmentsLoading && horasLibres > 0 && (
+                    <span className="text-xs font-medium text-muted-foreground block">
+                      Selecciona una franja horaria disponible:
+                    </span>
+                  )}
+                  {availableHours.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                      {availableHours.map((hourStr) => {
+                        const slot = slotAvailability[hourStr]
+                        const isSelected = selectedHourEfectivo === hourStr
+                        const isAvailable = slot?.available ?? true
 
-                      return (
-                        <button
-                          key={hourStr}
-                          type="button"
-                          disabled={!isAvailable || dayAppointmentsLoading}
-                          onClick={() => setSelectedHour(hourStr)}
-                          className={`p-2.5 rounded-xl border text-xs font-medium transition-all text-center flex flex-col items-center gap-1 ${
-                            isSelected
-                              ? "bg-primary text-primary-foreground border-primary shadow-xs font-semibold"
-                              : isAvailable
-                              ? "bg-card hover:bg-muted/40 text-foreground border-border/70 hover:border-primary/40"
-                              : "bg-muted/40 text-muted-foreground/50 border-border/40 cursor-not-allowed line-through"
-                          }`}
-                          title={!isAvailable ? `Ocupado por ${slot?.conflictWith}` : "Disponible"}
-                        >
-                          <span className="text-sm font-bold">{hourStr}</span>
-                          <span
-                            className={`text-[10px] flex items-center gap-1 ${
+                        return (
+                          <button
+                            key={hourStr}
+                            type="button"
+                            disabled={!isAvailable || dayAppointmentsLoading}
+                            onClick={() => setSelectedHour(hourStr)}
+                            className={`p-2.5 rounded-xl border text-xs font-medium transition-all text-center flex flex-col items-center gap-1 ${
                               isSelected
-                                ? "text-primary-foreground"
+                                ? "bg-primary text-primary-foreground border-primary shadow-xs font-semibold"
                                 : isAvailable
-                                ? "text-primary"
-                                : "text-muted-foreground/60"
+                                ? "bg-card hover:bg-muted/40 text-foreground border-border/70 hover:border-primary/40"
+                                : "bg-muted/40 text-muted-foreground/50 border-border/40 cursor-not-allowed line-through"
                             }`}
+                            title={!isAvailable ? `Ocupado por ${slot?.conflictWith}` : "Disponible"}
                           >
+                            <span className="text-sm font-bold">{hourStr}</span>
                             <span
-                              className={`size-1.5 rounded-full ${
-                                isSelected ? "bg-primary-foreground" : isAvailable ? "bg-primary" : "bg-destructive/60"
+                              className={`text-[10px] flex items-center gap-1 ${
+                                isSelected
+                                  ? "text-primary-foreground"
+                                  : isAvailable
+                                  ? "text-primary"
+                                  : "text-muted-foreground/60"
                               }`}
-                            />
-                            {isAvailable ? "Disponible" : "Ocupado"}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                  {availableHours.length === 0 && !dayAppointmentsLoading && (
+                            >
+                              <span
+                                className={`size-1.5 rounded-full ${
+                                  isSelected ? "bg-primary-foreground" : isAvailable ? "bg-primary" : "bg-destructive/60"
+                                }`}
+                              />
+                              {isAvailable ? "Disponible" : "Ocupado"}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {horasLibres === 0 && !dayAppointmentsLoading && (
                     <div className="p-3 rounded-xl bg-muted/40 border border-border/50 text-xs text-muted-foreground space-y-2">
                       <p>
-                        El {DAYS_NAMES[selectedDateEfectiva.getDay()]} {selectedDateEfectiva.getDate()} de{" "}
-                        {MONTH_NAMES[selectedDateEfectiva.getMonth()]} no tiene horarios disponibles.
+                        {estadoDeFecha === "sin-horario"
+                          ? `El profesional no atiende el ${formatearDiaCorto(selectedDateEfectiva)}.`
+                          : `Sin horarios disponibles para el ${formatearDiaCorto(selectedDateEfectiva)}.`}
                       </p>
                       {nextAvailableDate && (
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
-                          onClick={() => setSelectedDate(nextAvailableDate)}
+                          onClick={() => {
+                            setSelectedDate(nextAvailableDate)
+                            setSelectedHour("")
+                          }}
                           className="h-8 px-2.5 text-xs rounded-lg border-border/80 hover:border-primary/50"
                         >
-                          Ir al {DAYS_NAMES[nextAvailableDate.getDay()]} {nextAvailableDate.getDate()} de{" "}
-                          {MONTH_NAMES[nextAvailableDate.getMonth()]}
+                          Ir al {formatearDiaCorto(nextAvailableDate)}
                         </Button>
                       )}
                     </div>
@@ -1371,22 +1508,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 <XCircle className="size-4" />
                 <span>Cancelar Cita</span>
               </Button>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setIsRebookingMode(true)
-                  // Highlight and notify
-                  setSuccessMessage("Modo Reagendar activo: Modifica la fecha u hora en las secciones 2 y 3.")
-                }}
-                disabled={isSubmitting || status === AppointmentStatus.CANCELLED}
-                className="h-10 px-3.5 rounded-xl text-xs font-medium border-border/80 hover:border-primary/50 gap-1.5"
-              >
-                <RefreshCw className="size-4 text-muted-foreground" />
-                <span>Solicitar Reagendar</span>
-              </Button>
             </div>
           ) : (
             <Button
@@ -1412,8 +1533,12 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
             <Button
               type="submit"
-              disabled={isSubmitting}
-              className="h-10 px-6 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm font-semibold text-sm gap-2"
+              disabled={!formularioCompleto || isSubmitting}
+              className={`h-10 px-6 rounded-xl shadow-sm font-semibold text-sm gap-2 ${
+                formularioCompleto
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "bg-muted text-muted-foreground cursor-not-allowed"
+              }`}
             >
               {isSubmitting ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -1426,10 +1551,12 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 {isSubmitting
                   ? "Guardando..."
                   : isEdit
-                  ? "Actualizar Cambios"
-                  : isPatient
-                  ? "Solicitar Cita"
-                  : "Guardar Cita"}
+                    ? isPatient
+                      ? "Solicitar cambio"
+                      : "Guardar cambios"
+                    : isPatient
+                      ? "Solicitar Cita"
+                      : "Guardar Cita"}
               </span>
             </Button>
           </div>
@@ -1471,9 +1598,11 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               )}
             </div>
 
-            <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-xs border border-amber-200">
-              Esta acción liberará la franja horaria ({selectedHourEfectivo}) en la agenda digital.
-            </div>
+            {initialAppointment && (
+              <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-xs border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900">
+                Esta acción liberará la franja del {formatearDiaHora(toDate(initialAppointment.startTime))} en la agenda digital.
+              </div>
+            )}
           </div>
 
           <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 border-t border-border/60 pt-4">
@@ -1493,6 +1622,55 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               className="h-9 rounded-xl text-xs font-semibold"
             >
               {isSubmitting ? "Cancelando..." : "Confirmar Cancelación"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL DE REAGENDAMIENTO (PACIENTE) */}
+      <Dialog
+        open={isRescheduleModalOpen}
+        onOpenChange={(open) => {
+          setIsRescheduleModalOpen(open)
+          if (!open) setRescheduleDraft(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md p-6 bg-card border-border/80">
+          <DialogHeader className="space-y-1.5">
+            <div className="size-10 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-1">
+              <RefreshCw className="size-5" />
+            </div>
+            <DialogTitle className="text-lg font-heading font-semibold text-foreground">
+              Reagendar cita
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {initialAppointment && rescheduleDraft
+                ? `Tu cita actual es el ${formatearDiaHora(toDate(initialAppointment.startTime))}. Al continuar, se cancelará y enviaremos una solicitud para el ${formatearDiaHora(rescheduleDraft.startTime)}. Tu psicólogo debe confirmarla.`
+                : "Tu cita actual se cancelará y enviaremos una solicitud con el nuevo horario."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-xs border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900">
+            La franja actual se liberará de inmediato. Si la solicitud no se acepta, podrás pedir otro horario.
+          </div>
+
+          <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 border-t border-border/60 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsRescheduleModalOpen(false)}
+              disabled={isSubmitting}
+              className="h-9 rounded-xl border-border/80 text-xs"
+            >
+              Volver
+            </Button>
+            <Button
+              type="button"
+              onClick={handleConfirmReschedule}
+              disabled={isSubmitting}
+              className="h-9 rounded-xl text-xs font-semibold"
+            >
+              {isSubmitting ? "Enviando..." : "Solicitar cambio"}
             </Button>
           </DialogFooter>
         </DialogContent>

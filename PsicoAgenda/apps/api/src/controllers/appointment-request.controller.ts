@@ -6,7 +6,9 @@ import {
   createAppointmentRequest,
   listAppointmentRequests,
   rejectAppointmentRequest,
+  rescheduleAppointmentRequest,
   type CreateAppointmentRequestInput,
+  type RescheduleAppointmentRequestInput,
 } from "@/services/appointment-request.service";
 import type { AuthedRequest } from "@/types/express";
 
@@ -22,6 +24,18 @@ export const listAppointmentRequestsController: RequestHandler = async (req: Aut
 export const createAppointmentRequestController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     const created = await createAppointmentRequest(req.auth!, req.body as CreateAppointmentRequestInput);
+    res.status(201).json(created);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const rescheduleAppointmentRequestController: RequestHandler = async (req: AuthedRequest, res, next) => {
+  try {
+    const created = await rescheduleAppointmentRequest(
+      req.auth!,
+      req.body as RescheduleAppointmentRequestInput,
+    );
     res.status(201).json(created);
   } catch (error) {
     next(error);

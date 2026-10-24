@@ -37,6 +37,12 @@ export interface CreateAppointmentRequestInput {
   reason?: string;
 }
 
+export interface RescheduleAppointmentRequestInput extends CreateAppointmentRequestInput {
+  appointmentId: string;
+}
+
+const MOTIVO_REAGENDAMIENTO = "Reagendamiento solicitado por el paciente";
+
 const toSharedRequestStatus = (status: estado_solicitud): AppointmentRequestStatus => {
   switch (status) {
     case estado_solicitud.PENDIENTE:
@@ -168,6 +174,121 @@ export async function createAppointmentRequest(
   await notificar("SOLICITUD_CREADA", avisoDeSolicitud(created));
 
   return toAppointmentRequest(created);
+}
+
+/**
+ * Reagendamiento del paciente: cancela la cita actual y crea la solicitud del
+ * nuevo horario en una sola transacción. No deja una cita cancelada sin
+ * solicitud (ni al revés) si algo falla a mitad de camino.
+ */
+export async function rescheduleAppointmentRequest(
+  auth: AuthenticatedUser,
+  input: RescheduleAppointmentRequestInput,
+): Promise<AppointmentRequest> {
+  const patientId = await requirePatientId(auth);
+  const start = input.startTime;
+
+  if (start.getTime() <= Date.now()) {
+    throw AppError.badRequest("Elige un horario en el futuro");
+  }
+
+  const current = await prisma.citas.findUnique({
+    where: { id: input.appointmentId },
+    select: {
+      id: true,
+      paciente_id: true,
+      psicologo_id: true,
+      inicio: true,
+      fin: true,
+      modalidad: true,
+      estado: true,
+    },
+  });
+
+  if (!current) {
+    throw AppError.notFound("La cita no existe");
+  }
+  if (current.paciente_id !== patientId) {
+    throw AppError.forbidden("No puedes reagendar la cita de otro paciente");
+  }
+  if (current.estado === estado_cita.CANCELADA) {
+    throw AppError.conflict("La cita ya está cancelada");
+  }
+  if (current.estado === estado_cita.COMPLETADA || current.estado === estado_cita.NO_ASISTIO) {
+    throw AppError.conflict("La cita ya fue atendida");
+  }
+  if (start.getTime() === current.inicio.getTime()) {
+    throw AppError.badRequest("Elige un horario distinto al actual");
+  }
+
+  const patient = await prisma.pacientes.findUniqueOrThrow({
+    where: { id: patientId },
+    select: { psicologo_id: true },
+  });
+  if (!patient.psicologo_id) {
+    throw AppError.badRequest("Aún no tienes un psicólogo asignado");
+  }
+
+  const psychologistId = current.psicologo_id;
+  const end = new Date(start.getTime() + input.durationMinutes * 60_000);
+
+  try {
+    const created = await prisma.$transaction(async (tx) => {
+      // Mismo tratamiento que cancelAppointment: el honorario no sobrevive a una
+      // cita cancelada.
+      await tx.pagos_honorarios.deleteMany({ where: { cita_id: current.id } });
+
+      const cancelled = await tx.citas.updateMany({
+        where: { id: current.id, estado: { not: estado_cita.CANCELADA } },
+        data: {
+          estado: estado_cita.CANCELADA,
+          motivo_cancelacion: MOTIVO_REAGENDAMIENTO,
+          cancelada_por_id: auth.id,
+          cancelada_en: new Date(),
+        },
+      });
+
+      if (cancelled.count === 0) {
+        throw AppError.conflict("La cita ya está cancelada");
+      }
+
+      // La cita acaba de quedar cancelada, así que el chequeo de solapes ya no
+      // la cuenta como activa.
+      await assertNoOverlap(tx, { psychologistId, patientId, start, end });
+
+      const duplicate = await tx.solicitudes_cita.findFirst({
+        where: { paciente_id: patientId, inicio_solicitado: start, estado: estado_solicitud.PENDIENTE },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw AppError.conflict("Ya tienes una solicitud pendiente para ese horario");
+      }
+
+      return tx.solicitudes_cita.create({
+        data: {
+          id: randomUUID(),
+          paciente_id: patientId,
+          psicologo_id: psychologistId,
+          inicio_solicitado: start,
+          duracion_minutos: input.durationMinutes,
+          modalidad: toSchemaModality(input.modality),
+          tipo_sesion: await resolveSessionType(tx, patientId),
+          motivo: input.reason?.trim() || null,
+        },
+        include: requestInclude,
+      });
+    });
+
+    await notificar(
+      "CITA_CANCELADA_POR_PACIENTE",
+      avisoDeCita(current, { motivoCancelacion: MOTIVO_REAGENDAMIENTO }),
+    );
+    await notificar("SOLICITUD_CREADA", avisoDeSolicitud(created));
+
+    return toAppointmentRequest(created);
+  } catch (error) {
+    normalizeOverlapError(error);
+  }
 }
 
 /** Carga la solicitud del psicólogo autenticado y exige que siga pendiente. */

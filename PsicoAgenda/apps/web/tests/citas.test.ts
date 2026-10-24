@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   calcularEstadoFecha,
   fechaMinimaPara,
-  fechaMinimaSolicitud,
   filtrarHorasDisponibles,
   formatDateToInput,
   parseInputToDate,
@@ -24,24 +23,15 @@ const estado = (extra: Partial<Parameters<typeof calcularEstadoFecha>[0]> = {}) 
     ...extra,
   });
 
-describe("fechaMinimaSolicitud", () => {
-  it("es mañana a las 00:00, sin importar la hora actual", () => {
-    expect(fechaMinimaSolicitud(AHORA)).toEqual(new Date(2026, 9, 22, 0, 0, 0));
-    expect(fechaMinimaSolicitud(new Date(2026, 9, 21, 23, 59))).toEqual(
-      new Date(2026, 9, 22, 0, 0, 0),
-    );
-  });
-});
-
 describe("fechaMinimaPara", () => {
-  it("el paciente empieza mañana, el psicólogo hoy y la edición no tiene mínimo", () => {
-    expect(fechaMinimaPara({ esPaciente: true, esEdicion: false, ahora: AHORA })).toEqual(
-      new Date(2026, 9, 22, 0, 0, 0),
-    );
-    expect(fechaMinimaPara({ esPaciente: false, esEdicion: false, ahora: AHORA })).toEqual(
+  it("la cita nueva puede ser hoy y la edición no tiene mínimo", () => {
+    expect(fechaMinimaPara({ esEdicion: false, ahora: AHORA })).toEqual(
       new Date(2026, 9, 21, 0, 0, 0),
     );
-    expect(fechaMinimaPara({ esPaciente: true, esEdicion: true, ahora: AHORA })).toBeNull();
+    expect(
+      fechaMinimaPara({ esEdicion: false, ahora: new Date(2026, 9, 21, 23, 59) }),
+    ).toEqual(new Date(2026, 9, 21, 0, 0, 0));
+    expect(fechaMinimaPara({ esEdicion: true, ahora: AHORA })).toBeNull();
   });
 });
 
