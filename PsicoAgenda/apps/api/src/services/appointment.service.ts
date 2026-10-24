@@ -50,6 +50,16 @@ export interface ListAppointmentsFilter {
   status?: SharedStatus;
 }
 
+export interface AppointmentOccupancyFilter {
+  from: Date;
+  to: Date;
+}
+
+export interface AppointmentOccupancySlot {
+  startTime: Date;
+  endTime: Date;
+}
+
 /**
  * El enum del esquema usa las claves de la base (`CONFIRMADA`) y el compartido los
  * valores que viajan en la interfaz (`confirmed`). La conversión es explícita en
@@ -360,6 +370,43 @@ export async function listAppointments(
   });
 
   return rows.map(toAppointment);
+}
+
+/**
+ * Ocupación de la agenda para el calendario multimes. Devuelve solo los rangos
+ * ocupados (sin datos del paciente) del psicólogo que corresponde a la sesión.
+ */
+export async function listAppointmentOccupancy(
+  auth: AuthenticatedUser,
+  filter: AppointmentOccupancyFilter,
+): Promise<AppointmentOccupancySlot[]> {
+  let psychologistId: string | null = null;
+
+  if (auth.role === UserRole.PATIENT) {
+    const patientId = await requirePatientId(auth);
+    const patient = await prisma.pacientes.findUnique({
+      where: { id: patientId },
+      select: { psicologo_id: true },
+    });
+    psychologistId = patient?.psicologo_id ?? null;
+  } else if (auth.role === UserRole.PSYCHOLOGIST) {
+    psychologistId = await requirePsychologistId(auth);
+  }
+
+  if (!psychologistId) return [];
+
+  const rows = await prisma.citas.findMany({
+    where: {
+      psicologo_id: psychologistId,
+      estado: { in: ACTIVE_STATUSES },
+      inicio: { lt: filter.to },
+      fin: { gt: filter.from },
+    },
+    select: { inicio: true, fin: true },
+    orderBy: { inicio: "asc" },
+  });
+
+  return rows.map((row) => ({ startTime: row.inicio, endTime: row.fin }));
 }
 
 export async function getAppointmentById(id: string, auth: AuthenticatedUser): Promise<Appointment> {

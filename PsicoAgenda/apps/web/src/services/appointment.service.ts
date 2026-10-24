@@ -59,6 +59,11 @@ export interface AppointmentListParams {
   page?: number
 }
 
+export interface AppointmentOccupancySlot {
+  startTime: Date
+  endTime: Date
+}
+
 export interface CreateAppointmentPayload {
   patientId: string
   startTime: Date
@@ -95,6 +100,17 @@ export const appointmentService = {
   list: async (params: AppointmentListParams = {}): Promise<Appointment[]> => {
     const rows = await apiFetch<SerializedAppointment[]>(`/appointments${buildQuery(params)}`)
     return rows.map(reviveAppointment)
+  },
+
+  /** Solo los rangos ocupados (sin datos del paciente) para el calendario. */
+  getOccupancy: async (params: { from: Date; to: Date }): Promise<AppointmentOccupancySlot[]> => {
+    const rows = await apiFetch<{ startTime: string; endTime: string }[]>(
+      `/appointments/occupancy${buildQuery(params)}`,
+    )
+    return rows.map((row) => ({
+      startTime: new Date(row.startTime),
+      endTime: new Date(row.endTime),
+    }))
   },
 
   get: async (id: string, token?: string): Promise<Appointment> =>
@@ -170,6 +186,10 @@ export interface CreateAppointmentRequestPayload {
   reason?: string
 }
 
+export interface RescheduleAppointmentRequestPayload extends CreateAppointmentRequestPayload {
+  appointmentId: string
+}
+
 /** Solicitudes del paciente: no ocupan agenda hasta que el psicólogo las acepta. */
 export const appointmentRequestService = {
   list: async (status?: AppointmentRequestStatus): Promise<AppointmentRequest[]> => {
@@ -182,6 +202,15 @@ export const appointmentRequestService = {
   create: async (payload: CreateAppointmentRequestPayload): Promise<AppointmentRequest> =>
     reviveAppointmentRequest(
       await apiFetch<SerializedAppointmentRequest>("/appointment-requests", {
+        method: "POST",
+        body: { ...payload, startTime: payload.startTime.toISOString() },
+      }),
+    ),
+
+  /** Cancela la cita actual y pide el nuevo horario en una sola operación. */
+  reschedule: async (payload: RescheduleAppointmentRequestPayload): Promise<AppointmentRequest> =>
+    reviveAppointmentRequest(
+      await apiFetch<SerializedAppointmentRequest>("/appointment-requests/reschedule", {
         method: "POST",
         body: { ...payload, startTime: payload.startTime.toISOString() },
       }),
