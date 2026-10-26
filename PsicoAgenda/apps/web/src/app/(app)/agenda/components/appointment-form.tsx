@@ -55,6 +55,7 @@ import {
 import { useSession } from "@/lib/use-session"
 import { useHydrated } from "@/lib/use-hydrated"
 import { Calendar } from "@/components/arc/calendar/calendar"
+import { useToast } from "@/components/toast-provider"
 import {
   addMonths,
   agruparOcupacionPorDia,
@@ -294,7 +295,9 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   } | null>(null)
 
   // Form feedback state
-  const [successMessage, setSuccessMessage] = React.useState<string | null>(null)
+  // Los éxitos salen como aviso flotante: sigue visible aunque se navegue a la agenda.
+  const { toast } = useToast()
+  const notifySuccess = (title: string) => toast({ title, status: "success" })
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false)
 
@@ -662,7 +665,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage(null)
-    setSuccessMessage(null)
 
     if (!lockedPatientId) {
       setErrorMessage("Por favor selecciona un paciente antes de continuar.")
@@ -749,7 +751,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           await appointmentService.changeStatus(initialAppointment.id, status)
         }
 
-        setSuccessMessage("¡Cita actualizada exitosamente!")
+        notifySuccess("¡Cita actualizada exitosamente!")
       } else if (isPatient) {
         // El paciente no agenda: solicita. La cita existe cuando el psicólogo acepta.
         await appointmentRequestService.create({
@@ -758,7 +760,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           modality,
           reason: reason || undefined,
         })
-        setSuccessMessage("Solicitud enviada. Te avisaremos cuando tu psicólogo la confirme.")
+        notifySuccess("Solicitud enviada. Te avisaremos cuando tu psicólogo la confirme.")
       } else {
         await appointmentService.create({
           patientId: lockedPatientId,
@@ -767,7 +769,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           modality,
           reason: reason || undefined,
         })
-        setSuccessMessage("¡Cita agendada exitosamente!")
+        notifySuccess("¡Cita agendada exitosamente!")
       }
 
       setTimeout(() => {
@@ -794,7 +796,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         ...draft,
       })
       setIsRescheduleModalOpen(false)
-      setSuccessMessage("Solicitud de reagendamiento enviada. Tu cita anterior fue cancelada.")
+      notifySuccess("Solicitud de reagendamiento enviada. Tu cita anterior fue cancelada.")
       setTimeout(() => router.push("/dashboard"), 900)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo reagendar la cita")
@@ -817,7 +819,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       await appointmentService.cancel(initialAppointment.id, cancellationReason.trim())
       setStatus(AppointmentStatus.CANCELLED)
       setIsCancelModalOpen(false)
-      setSuccessMessage("La cita ha sido cancelada correctamente.")
+      notifySuccess("La cita ha sido cancelada correctamente.")
       setTimeout(() => {
         router.push("/agenda")
       }, 1100)
@@ -839,7 +841,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       await appointmentService.changeStatus(initialAppointment.id, nextStatus)
       setAttendance(attended ? AttendanceStatus.ATTENDED : AttendanceStatus.NO_SHOW)
       setStatus(nextStatus)
-      setSuccessMessage(
+      notifySuccess(
         attended
           ? "Asistencia registrada: Paciente asistió a la sesión."
           : "Asistencia registrada: Paciente no asistió.",
@@ -903,14 +905,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         </div>
       </div>
 
-      {/* Success / Error Alerts */}
-      {successMessage && (
-        <div role="status" className="p-4 rounded-xl bg-primary/10 text-foreground border border-primary/20 flex items-center gap-3 animate-in fade-in-50">
-          <CheckCircle2 className="size-5 text-primary shrink-0" />
-          <p className="text-sm font-medium">{successMessage}</p>
-        </div>
-      )}
-
+      {/* Errores de validación: se quedan junto al formulario */}
       {errorMessage && (
         <div role="alert" className="p-4 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 flex items-center gap-3 animate-in fade-in-50">
           <AlertCircle className="size-5 shrink-0" />

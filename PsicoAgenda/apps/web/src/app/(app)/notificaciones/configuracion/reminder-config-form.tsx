@@ -4,7 +4,6 @@ import { useEffect, useState } from "react"
 import { UserRole } from "@psicoagenda/shared"
 import {
   Bell,
-  CheckCircle2,
   MessageSquare,
   Mail,
   Save,
@@ -12,6 +11,7 @@ import {
 } from "lucide-react"
 import { useSession } from "@/lib/use-session"
 import { patientService, psychologistService } from "@/services"
+import { useToast } from "@/components/toast-provider"
 import {
   Card,
   CardContent,
@@ -21,7 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Switch } from "@/components/ui/switch"
 
 interface ReminderConfigState {
@@ -34,7 +34,7 @@ export function ReminderConfigForm() {
   const isPatient = user?.role === UserRole.PATIENT
   const [config, setConfig] = useState<ReminderConfigState | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-  const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null)
+  const { toast } = useToast()
   const [error, setError] = useState<string | null>(null)
 
   // Las preferencias viven en el perfil del usuario (usuarios.notificar_*).
@@ -62,14 +62,12 @@ export function ReminderConfigForm() {
   const handleSave = async () => {
     if (!config) return
     setIsSaving(true)
-    setSaveSuccessMessage(null)
     setError(null)
 
     const payload = { notifyWhatsapp: config.whatsappEnabled, notifyEmail: config.emailEnabled }
     try {
       await (isPatient ? patientService.updateProfile(payload) : psychologistService.updateMe(payload))
-      setSaveSuccessMessage("Tus preferencias de notificaciones se han guardado exitosamente.")
-      setTimeout(() => setSaveSuccessMessage(null), 4000)
+      toast({ title: "Preferencias guardadas", status: "success" })
     } catch {
       setError("No se pudieron guardar tus preferencias. Inténtalo de nuevo.")
     } finally {
@@ -82,13 +80,6 @@ export function ReminderConfigForm() {
       {error && (
         <Alert variant="destructive" className="rounded-2xl py-3">
           <AlertDescription className="text-xs">{error}</AlertDescription>
-        </Alert>
-      )}
-      {saveSuccessMessage && (
-        <Alert className="border-primary/20 bg-primary/10 text-foreground rounded-2xl py-3 animate-in fade-in-50">
-          <CheckCircle2 className="size-4 text-primary" />
-          <AlertTitle className="font-semibold text-xs sm:text-sm">Preferencias actualizadas</AlertTitle>
-          <AlertDescription className="text-xs">{saveSuccessMessage}</AlertDescription>
         </Alert>
       )}
 

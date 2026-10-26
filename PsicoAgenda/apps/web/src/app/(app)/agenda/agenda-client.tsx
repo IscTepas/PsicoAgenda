@@ -37,6 +37,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Calendar } from "@/components/arc/calendar/calendar"
+import { useToast } from "@/components/toast-provider"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs"
 import {
@@ -54,14 +55,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Table, type TableColumn } from "@/components/motion/table"
 import { useSession } from "@/lib/use-session"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
 import { appointmentService, patientService } from "@/services"
@@ -269,6 +263,7 @@ export function AgendaClient() {
 
   // Estados del cobro y de la cita seleccionada: se declaran antes del callback
   // que los usa (regla react-hooks/immutability).
+  const { toast } = useToast()
   const [paymentUpdating, setPaymentUpdating] = React.useState(false)
   const [paymentError, setPaymentError] = React.useState<string | null>(null)
   const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(null)
@@ -282,12 +277,16 @@ export function AgendaClient() {
       const updated = await appointmentService.updatePayment(appointment.id, status)
       setAppointments((prev) => prev.map((apt) => (apt.id === updated.id ? updated : apt)))
       setSelectedAppointment(updated)
+      toast({
+        title: "Pago registrado",
+        status: "success",
+      })
     } catch (error) {
       setPaymentError(error instanceof Error ? error.message : "No se pudo actualizar el pago")
     } finally {
       setPaymentUpdating(false)
     }
-  }, [])
+  }, [toast])
 
   const baseAppointments = appointments
 
@@ -422,6 +421,111 @@ export function AgendaClient() {
       </div>
     )
   }
+
+  // Próximas citas: misma tabla que Pacientes (ordena por encabezado y crece con sus filas).
+  const upcomingColumns: TableColumn<Appointment>[] = [
+    ...(isPatient
+      ? []
+      : [
+          {
+            key: "patient",
+            header: "Paciente",
+            sortable: true,
+            width: "26%",
+            sortValue: (apt: Appointment) => (patientById(apt.patientId)?.name ?? "").toLocaleLowerCase("es"),
+            cell: (apt: Appointment) => {
+              const patient = patientById(apt.patientId)
+              return (
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                    {patient?.name?.[0] ?? "P"}
+                  </div>
+                  <span className="truncate text-sm font-medium text-foreground">{patient?.name ?? "Desconocido"}</span>
+                </div>
+              )
+            },
+          } satisfies TableColumn<Appointment>,
+        ]),
+    {
+      key: "startTime",
+      header: "Fecha y hora",
+      sortable: true,
+      width: "170px",
+      sortValue: (apt) => new Date(apt.startTime).getTime(),
+      cell: (apt) => (
+        <div className="flex flex-col text-xs tabular-nums">
+          <span className="font-medium text-foreground">{formatShortDate(apt.startTime)}</span>
+          <span className="text-[11px] text-muted-foreground">{formatAppointmentTime(apt.startTime)}</span>
+        </div>
+      ),
+    },
+    {
+      key: "modality",
+      header: "Modalidad",
+      sortable: true,
+      width: "130px",
+      sortValue: (apt) => apt.modality,
+      cell: (apt) =>
+        apt.modality === AppointmentModality.IN_PERSON ? (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <MapPin className="size-3" /> Presencial
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-xs text-primary">
+            <Video className="size-3" /> Virtual
+          </span>
+        ),
+    },
+    {
+      key: "price",
+      header: "Costo",
+      sortable: true,
+      sortValue: (apt) => apt.price ?? 0,
+      cell: (apt) => (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-semibold tabular-nums text-foreground">
+            {apt.price != null ? `$${apt.price.toLocaleString("es-MX")}` : "—"}
+          </span>
+          {apt.payment && (
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${PAYMENT_CONFIG[apt.payment.status].badgeClass}`}
+            >
+              {PAYMENT_CONFIG[apt.payment.status].label}
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      header: "Estado",
+      sortable: true,
+      width: "130px",
+      sortValue: (apt) => STATUS_CONFIG[apt.status].label,
+      cell: (apt) => (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-xs font-medium text-foreground/80">
+          <span className={`size-1.5 rounded-full ${STATUS_CONFIG[apt.status].dotClass}`} aria-hidden="true" />
+          {STATUS_CONFIG[apt.status].label}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Acciones</span>,
+      align: "right",
+      width: "130px",
+      cell: (apt) => (
+        <button
+          type="button"
+          onClick={() => setSelectedAppointment(apt)}
+          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+        >
+          Ver detalles
+          <ChevronRight className="size-3.5" />
+        </button>
+      ),
+    },
+  ]
 
   return (
     <div className="space-y-6">
@@ -1072,7 +1176,7 @@ export function AgendaClient() {
                         )}
 
                       {!isPatient && selectedAppointment.status !== AppointmentStatus.CANCELLED && (
-                        <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                        <div className="pt-1">
                           {selectedAppointment.payment.status !== PaymentStatus.PAID && (
                             <Button
                               type="button"
@@ -1087,18 +1191,6 @@ export function AgendaClient() {
                                 <Check className="size-3.5 mr-1" />
                               )}
                               Marcar como pagado
-                            </Button>
-                          )}
-                          {selectedAppointment.payment.status !== PaymentStatus.WAIVED && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={paymentUpdating}
-                              onClick={() => void handleUpdatePayment(selectedAppointment, PaymentStatus.WAIVED)}
-                              className="h-8 w-full rounded-lg text-xs border-border/80"
-                            >
-                              Condonar
                             </Button>
                           )}
                         </div>
@@ -1171,99 +1263,25 @@ export function AgendaClient() {
           </Badge>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-b border-border/60 bg-muted/20">
-                  <TableHead className="font-semibold text-xs">Paciente</TableHead>
-                  <TableHead className="font-semibold text-xs">Fecha</TableHead>
-                  <TableHead className="font-semibold text-xs">Hora</TableHead>
-                  <TableHead className="font-semibold text-xs">Modalidad</TableHead>
-                  <TableHead className="font-semibold text-xs">Costo</TableHead>
-                  <TableHead className="font-semibold text-xs">Estado</TableHead>
-                  <TableHead className="font-semibold text-xs text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {upcomingAppointments.length > 0 ? (
-                  upcomingAppointments.map((apt) => {
-                    const patient = patientById(apt.patientId)
-                    const status = STATUS_CONFIG[apt.status]
-
-                    return (
-                      <TableRow
-                        key={apt.id}
-                        className="hover:bg-muted/30 transition-colors border-b border-border/40 cursor-pointer"
-                        onClick={() => setSelectedAppointment(apt)}
-                      >
-                        <TableCell className="font-medium text-foreground py-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className="size-7 rounded-full bg-primary/10 text-primary font-semibold text-xs flex items-center justify-center">
-                              {patient?.name?.[0] ?? "P"}
-                            </div>
-                            <span className="font-heading">{patient?.name ?? "Desconocido"}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-xs">
-                          {formatShortDate(apt.startTime)}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-xs font-mono">
-                          {formatAppointmentTime(apt.startTime)}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {apt.modality === AppointmentModality.IN_PERSON ? (
-                            <span className="inline-flex items-center gap-1">
-                              <MapPin className="size-3 text-muted-foreground" /> Presencial
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-primary">
-                              <Video className="size-3" /> Virtual
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs font-semibold text-foreground">
-                          <div className="flex flex-col items-start gap-1">
-                            <span>{apt.price != null ? `$${apt.price.toLocaleString("es-MX")}` : "—"}</span>
-                            {apt.payment && (
-                              <span
-                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${PAYMENT_CONFIG[apt.payment.status].badgeClass}`}
-                              >
-                                {PAYMENT_CONFIG[apt.payment.status].label}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-xs font-medium text-foreground/80">
-                            <span className={`size-1.5 rounded-full ${status.dotClass}`} aria-hidden="true" />
-                            {status.label}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedAppointment(apt)}
-                            className="h-8 text-xs text-primary hover:text-primary hover:bg-primary/10 rounded-lg"
-                          >
-                            Ver detalles
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground text-sm">
-                      {searchQuery || selectedStatus !== "ALL"
-                        ? "Ninguna cita próxima coincide con los filtros o la búsqueda."
-                        : "No hay citas próximas."}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+          {upcomingAppointments.length > 0 ? (
+            <Table
+              data={upcomingAppointments}
+              columns={upcomingColumns}
+              getRowId={(apt) => apt.id}
+              defaultSort={{ key: "startTime", direction: "asc" }}
+              resizable
+              rowHeight={56}
+              height="auto"
+              overscan={upcomingAppointments.length}
+              className="rounded-none border-0 bg-card"
+            />
+          ) : (
+            <p className="flex h-32 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+              {searchQuery || selectedStatus !== "ALL"
+                ? "Ninguna cita próxima coincide con los filtros o la búsqueda."
+                : "No hay citas próximas."}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

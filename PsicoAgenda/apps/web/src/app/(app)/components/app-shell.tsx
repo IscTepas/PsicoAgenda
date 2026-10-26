@@ -20,6 +20,7 @@ import {
   useAnimatedSidebar,
 } from "@/components/motion/animated-sidebar"
 import { Button } from "@/components/ui/button"
+import { ToastProvider } from "@/components/toast-provider"
 import { navItemsForRole } from "@/lib/navigation"
 import { cn } from "@/lib/utils"
 import { useSession } from "@/lib/use-session"
@@ -69,9 +70,11 @@ function isActivePath(pathname: string, href: string): boolean {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <AnimatedSidebarProvider style={{ "--sidebar-width": "15rem", "--sidebar-width-icon": "4.5rem" }}>
-      <ShellContent>{children}</ShellContent>
-    </AnimatedSidebarProvider>
+    <ToastProvider>
+      <AnimatedSidebarProvider style={{ "--sidebar-width": "15rem", "--sidebar-width-icon": "4.5rem" }}>
+        <ShellContent>{children}</ShellContent>
+      </AnimatedSidebarProvider>
+    </ToastProvider>
   )
 }
 

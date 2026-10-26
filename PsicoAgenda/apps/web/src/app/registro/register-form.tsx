@@ -32,7 +32,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/motion/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -41,8 +41,7 @@ import {
   ArrowLeft,
   ClipboardPaste,
   Loader2,
-  Eye,
-  EyeOff,
+  Lock,
 } from "lucide-react"
 import { isSupabaseConfigured } from "@/lib/supabase/client"
 import {
@@ -57,6 +56,9 @@ import {
 } from "@/services/registro.service"
 import { TelefonoInput } from "@/components/telefono-input"
 import { WheelDatePicker } from "@/components/wheel-date-picker"
+import { OTPInput } from "@/components/motion/otp-input"
+import { NewPasswordInput } from "@/components/new-password-input"
+import { Input as MotionInput } from "@/components/motion/input"
 
 /**
  * Valor del item "Selecciona una opción" de los desplegables. Es un centinela
@@ -263,6 +265,7 @@ export function RegisterForm() {
 
   const watchBirthDate = useWatch({ control: form.control, name: "birthDate" });
   const watchParaMenor = useWatch({ control: form.control, name: "paraMenor" });
+  const watchPassword = useWatch({ control: form.control, name: "password" });
   const watchGuardianPhone = useWatch({ control: form.control, name: "guardianPhone" });
 
   // La fecha es la fuente de verdad (el servidor también la usa). Mientras no
@@ -319,13 +322,14 @@ export function RegisterForm() {
 
   // Paso 2: verificar el código. En éxito la API crea la cuenta confirmada,
   // iniciamos sesión y entramos al panel; en fallo no se pierde nada.
-  async function onVerificar() {
+  // Recibe el código explícito cuando lo dispara el OTP al completarse (el estado aún no se actualizó).
+  async function onVerificar(valor: string = codigo) {
     if (!datos || isPending) return;
     setCodigoError(null);
     setIsPending(true);
 
     try {
-      await completarRegistro(datos, codigo, (ruta) => {
+      await completarRegistro(datos, valor, (ruta) => {
         router.push(ruta);
         router.refresh();
       });
@@ -421,34 +425,16 @@ export function RegisterForm() {
         ) : null}
 
         <div className="space-y-2.5">
-          <label htmlFor="codigo-verificacion" className="text-sm font-medium text-foreground">
-            Código de verificación
-          </label>
-          <div className="flex gap-2">
-            <Input
-              id="codigo-verificacion"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              placeholder="000000"
-              autoFocus
-              value={codigo}
-              onChange={(evento) => setCodigo(normalizarCodigo(evento.target.value))}
-              onKeyDown={(evento) => {
-                if (evento.key === "Enter") {
-                  evento.preventDefault();
-                  void onVerificar();
-                }
-              }}
-              className="h-14 min-w-0 flex-1 text-center text-2xl tracking-[0.4em] tabular-nums"
-            />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium text-foreground">Código de verificación</span>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
+              size="sm"
               onClick={() => void onPegarCodigo()}
               disabled={pegando}
               title="Pegar el código copiado del correo"
-              className="h-14 shrink-0 px-4"
+              className="h-8 shrink-0 px-2.5 text-xs"
             >
               {pegando ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -458,6 +444,22 @@ export function RegisterForm() {
               Pegar
               <span className="sr-only"> el código del portapapeles</span>
             </Button>
+          </div>
+          {/* Seis casillas: al completarse verifica solo; un error las sacude */}
+          <div className="flex justify-center">
+            <OTPInput
+              length={6}
+              value={codigo}
+              onChange={(valor) => {
+                setCodigo(normalizarCodigo(valor));
+                if (codigoError) setCodigoError(null);
+              }}
+              onComplete={(valor) => void onVerificar(normalizarCodigo(valor))}
+              status={codigoError ? "error" : "idle"}
+              disabled={isPending || codigoVencido}
+              autoFocus
+              aria-label="Código de verificación de 6 dígitos"
+            />
           </div>
           <p
             aria-live="polite"
@@ -750,37 +752,20 @@ export function RegisterForm() {
                   <FormField
                     control={form.control}
                     name="password"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem>
-                        <FormLabel>Contraseña</FormLabel>
-                        <div className="relative flex items-center">
-                          <FormControl>
-                            <Input
-                              type={showPassword ? "text" : "password"}
-                              placeholder="••••••••"
-                              autoComplete="new-password"
-                              className="pr-10"
-                              {...field}
-                            />
-                          </FormControl>
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword((prev) => !prev)}
-                            aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
-                            aria-pressed={showPassword}
-                            className="absolute right-3 text-muted-foreground hover:text-foreground transition-colors p-1"
-                          >
-                            {showPassword ? (
-                              <EyeOff className="size-4" />
-                            ) : (
-                              <Eye className="size-4" />
-                            )}
-                          </button>
-                        </div>
-                        <FormDescription className="text-[11px] leading-tight text-muted-foreground">
-                          Mín. 8 caracteres, mayúscula, minúscula y número
-                        </FormDescription>
-                        <FormMessage />
+                        {/* Campo con medidor de seguridad; el ojo también muestra "Confirmar contraseña". */}
+                        <NewPasswordInput
+                          id="registro-password"
+                          name={field.name}
+                          inputRef={field.ref}
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          error={fieldState.error?.message}
+                          revealed={showPassword}
+                          onRevealedChange={setShowPassword}
+                        />
                       </FormItem>
                     )}
                   />
@@ -788,21 +773,24 @@ export function RegisterForm() {
                   <FormField
                     control={form.control}
                     name="confirmPassword"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem>
-                        <FormLabel>Confirmar contraseña</FormLabel>
-                        <div className="relative flex items-center">
-                          <FormControl>
-                            <Input
-                              type={showPassword ? "text" : "password"}
-                              placeholder="••••••••"
-                              autoComplete="new-password"
-                              className="pr-10"
-                              {...field}
-                            />
-                          </FormControl>
-                        </div>
-                        <FormMessage />
+                        <MotionInput
+                          ref={field.ref}
+                          id="registro-confirm-password"
+                          name={field.name}
+                          label="Confirmar contraseña"
+                          type={showPassword ? "text" : "password"}
+                          autoComplete="new-password"
+                          placeholder="Repite tu contraseña"
+                          leftIcon={<Lock />}
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          onBlur={field.onBlur}
+                          error={fieldState.error?.message}
+                          // Palomita cuando coincide con la contraseña.
+                          success={Boolean(field.value) && field.value === watchPassword}
+                        />
                       </FormItem>
                     )}
                   />
