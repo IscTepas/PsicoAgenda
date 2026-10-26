@@ -6,7 +6,6 @@ import {
   User,
   Phone,
   Mail,
-  CheckCircle2,
   Globe,
   Palette,
   Shield,
@@ -26,7 +25,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/motion/select"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { PageHeader } from "../components/page-header"
 import { useSession } from "@/lib/use-session"
@@ -36,19 +35,21 @@ import { contarDigitosTelefono, formatearTelefonoPegado } from "@/lib/telefono"
 import { comprimirAvatar } from "@/lib/imagen"
 import { ThemePicker } from "@/components/theme-picker"
 import { patientService, psychologistService } from "@/services"
+import { useToast } from "@/components/toast-provider"
 
 const TIMEZONE_LABELS: Record<(typeof TIMEZONES)[number], string> = {
   "America/Mexico_City": "Ciudad de México (CDMX)",
   "America/Tijuana": "Tijuana",
   "America/Cancun": "Cancún",
   "America/Hermosillo": "Hermosillo",
+  "America/Mazatlan": "Tepic / Mazatlán (Nayarit, Sinaloa)",
 }
 
 const TIMEZONE_OPTIONS = TIMEZONES.map((value) => ({ value, label: TIMEZONE_LABELS[value] }))
 
 // La BD guarda "UTC" por defecto y no está en la lista: el Select quedaría vacío y la API lo rechaza.
 function toKnownTimezone(value: string | null | undefined): string {
-  return TIMEZONE_OPTIONS.find((tz) => tz.value === value)?.value ?? "America/Mexico_City"
+  return TIMEZONE_OPTIONS.find((tz) => tz.value === value)?.value ?? "America/Mazatlan" // la del consultorio
 }
 
 function getInitials(name: string): string {
@@ -83,14 +84,14 @@ export function PantallaPerfilUsuario() {
   const [avatarImage, setAvatarImage] = useState<string | null>(null)
 
   // 3. Preferencias (Zona horaria y tema de interfaz)
-  const [timezone, setTimezone] = useState<string>("America/Mexico_City")
+  const [timezone, setTimezone] = useState<string>("America/Mazatlan")
   const { mode, palette, setMode, setPalette, reset } = useThemePreference()
 
   // Estados de retroalimentación
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-  const [saveSuccess, setSaveSuccess] = useState(false)
+  const { toast } = useToast()
   const [validationError, setValidationError] = useState<string | null>(null)
 
   // Última versión guardada: permite que "Cancelar" descarte ediciones sin confirmar.
@@ -199,7 +200,6 @@ export function PantallaPerfilUsuario() {
     try {
       // El base64 original podía pesar varios MB y ahora viaja en /auth/me.
       setAvatarImage(await comprimirAvatar(file))
-      setSaveSuccess(false)
     } catch {
       setValidationError("No se pudo procesar la imagen. Prueba con otra.")
     }
@@ -217,7 +217,6 @@ export function PantallaPerfilUsuario() {
     setEmergencyPhone(saved.emergencyPhone)
     setAvatarImage(saved.avatarImage)
     setValidationError(null)
-    setSaveSuccess(false)
   }
 
   // Guardar Cambios (datos personales y preferencias)
@@ -263,7 +262,6 @@ export function PantallaPerfilUsuario() {
     }
 
     setIsSaving(true)
-    setSaveSuccess(false)
 
     try {
       if (isPatient) {
@@ -299,11 +297,11 @@ export function PantallaPerfilUsuario() {
         emergencyPhone,
         avatarImage,
       }
-      setSaveSuccess(true)
-      // Ocultar mensaje de éxito tras 6 segundos
-      setTimeout(() => {
-        setSaveSuccess(false)
-      }, 6000)
+      toast({
+        title: "Cambios guardados",
+        description: "Tus datos personales y preferencias se actualizaron.",
+        status: "success",
+      })
     } catch (error) {
       setValidationError(
         error instanceof Error ? error.message : "No se pudieron guardar los cambios.",
@@ -321,18 +319,6 @@ export function PantallaPerfilUsuario() {
         description="Administra tu información personal, datos de contacto y preferencias de la interfaz."
       />
 
-      {/* Alerta de Éxito al Guardar */}
-      {saveSuccess && (
-        <Alert className="border-primary/40 bg-primary/10 text-foreground rounded-2xl animate-in fade-in-50 duration-200">
-          <CheckCircle2 className="size-5 text-primary" />
-          <AlertTitle className="font-bold text-foreground">
-            ¡Cambios guardados con éxito!
-          </AlertTitle>
-          <AlertDescription className="text-xs text-muted-foreground">
-            Tus datos personales y preferencias han sido actualizados.
-          </AlertDescription>
-        </Alert>
-      )}
 
       {/* Alerta de Error de Carga del Perfil */}
       {loadError && (
@@ -459,7 +445,6 @@ export function PantallaPerfilUsuario() {
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value)
-                    setSaveSuccess(false)
                   }}
                   placeholder="Tu nombre y apellidos"
                   className="rounded-xl h-11 text-sm bg-background border-border/80"
@@ -477,7 +462,6 @@ export function PantallaPerfilUsuario() {
                   value={phone}
                   onChange={(valor) => {
                     setPhone(valor)
-                    setSaveSuccess(false)
                   }}
                   placeholder="311-123-4567"
                   className="rounded-xl h-11 text-sm bg-background border-border/80 font-mono"
@@ -563,7 +547,6 @@ export function PantallaPerfilUsuario() {
                       value={emergencyPhone}
                       onChange={(valor) => {
                         setEmergencyPhone(valor)
-                        setSaveSuccess(false)
                       }}
                       placeholder="311-123-4567"
                       className="rounded-xl h-11 text-sm bg-background border-border/80 font-mono"
@@ -576,8 +559,8 @@ export function PantallaPerfilUsuario() {
         </Card>
 
         {/* SECCIÓN 2: PREFERENCIAS (Zona horaria y tema de interfaz) */}
-        <Card className="border-border/80 bg-card rounded-2xl shadow-2xs overflow-hidden">
-          <CardHeader className="pb-4 border-b border-border/40 bg-muted/10">
+        <Card className="border-border/80 bg-card rounded-2xl shadow-2xs overflow-visible">
+          <CardHeader className="rounded-t-2xl pb-4 border-b border-border/40 bg-muted/10">
             <div className="flex items-center gap-2.5">
               <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
                 <Palette className="size-4" />
@@ -605,7 +588,6 @@ export function PantallaPerfilUsuario() {
                 onValueChange={(val) => {
                   if (!val) return
                   setTimezone(val)
-                  setSaveSuccess(false)
                 }}
               >
                 <SelectTrigger className="w-full rounded-xl h-11 text-sm bg-background border-border/80">

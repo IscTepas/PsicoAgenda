@@ -128,7 +128,8 @@ describe("createAppointment", () => {
     expect(data).toMatchObject({
       psicologo_id: PSYCH_ID,
       paciente_id: PATIENT_ID,
-      estado: "PENDIENTE",
+      // La agenda el profesional: nace confirmada.
+      estado: "CONFIRMADA",
       tipo_sesion: "CONSULTA_INICIAL",
       // Adulto, presencial y sin recargo de mismo día (la cita es futura).
       precio: 800,
@@ -340,8 +341,9 @@ describe("cancelAppointment", () => {
 
     await cancelAppointment(patient, APPOINTMENT_ID, "Me surgió un imprevisto");
 
+    // Solo el honorario pendiente: un pago cobrado o condonado se conserva.
     expect(prismaMock.pagos_honorarios.deleteMany).toHaveBeenCalledWith({
-      where: { cita_id: APPOINTMENT_ID },
+      where: { cita_id: APPOINTMENT_ID, estado: "PENDIENTE" },
     });
   });
 

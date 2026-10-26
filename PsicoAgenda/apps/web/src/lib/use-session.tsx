@@ -46,7 +46,8 @@ export function SessionProvider({
   const [isLoading, setIsLoading] = React.useState(!initialUser && isConfigured);
   // La foto se asocia al usuario al que pertenece: al cambiar de sesión no se
   // reutiliza la imagen anterior mientras llega la nueva.
-  const [foto, setFoto] = React.useState<{ userId: string; photoUrl?: string } | null>(null);
+  // Foto y nombre del perfil de la API (la BD manda sobre los metadatos de Supabase Auth).
+  const [foto, setFoto] = React.useState<{ userId: string; photoUrl?: string; name?: string } | null>(null);
 
   React.useEffect(() => {
     // `isConfigured` no cambia en tiempo de ejecución: si falta configuración,
@@ -108,9 +109,9 @@ export function SessionProvider({
     const userId = user.id;
     let cancelled = false;
 
-    apiFetch<{ photoUrl?: string }>("/auth/me")
+    apiFetch<{ photoUrl?: string; name?: string }>("/auth/me")
       .then((perfil) => {
-        if (!cancelled) setFoto({ userId, photoUrl: perfil.photoUrl });
+        if (!cancelled) setFoto({ userId, photoUrl: perfil.photoUrl, name: perfil.name });
       })
       .catch(() => {
         // Sin perfil accesible se cae a las iniciales; no se rompe la sesión.
@@ -123,10 +124,11 @@ export function SessionProvider({
   }, [isConfigured, user?.id]);
 
   const photoUrl = foto && foto.userId === user?.id ? foto.photoUrl : undefined;
+  const profileName = foto && foto.userId === user?.id ? foto.name : undefined;
 
   const updatePhoto = React.useCallback(
     (next?: string) => {
-      if (user?.id) setFoto({ userId: user.id, photoUrl: next });
+      if (user?.id) setFoto((prev) => ({ userId: user.id, photoUrl: next, name: prev?.name }));
     },
     [user],
   );
@@ -135,13 +137,13 @@ export function SessionProvider({
     const identity = readIdentity(user);
 
     return {
-      user: identity ? { ...identity, photoUrl } : null,
+      user: identity ? { ...identity, name: profileName || identity.name, photoUrl } : null,
       isLoading,
       isConfigured,
       logout,
       updatePhoto,
     };
-  }, [user, photoUrl, isLoading, isConfigured, logout, updatePhoto]);
+  }, [user, photoUrl, profileName, isLoading, isConfigured, logout, updatePhoto]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

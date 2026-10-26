@@ -31,7 +31,7 @@ function getInitials(name: string): string {
     .toUpperCase()
 }
 
-const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(PRACTICE.address)}`
+const mapEmbedUrl = `https://maps.google.com/maps?q=${encodeURIComponent(PRACTICE.mapQuery)}&z=16&output=embed`
 
 const CONTACT = [
   { icon: MessageCircle, label: "WhatsApp", value: PRACTICE.phoneDisplay, href: `https://wa.me/${PRACTICE.phoneE164}`, external: true },
@@ -124,6 +124,11 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Presentación en sus palabras */}
+              <blockquote className="mt-5 border-l-2 border-primary/40 pl-4 text-[15px] italic leading-relaxed text-foreground/80">
+                {PRACTICE.bio}
+              </blockquote>
+
               <dl className="mt-6 divide-y divide-border border-t border-border">
                 {FACTS.map((fact) => (
                   <div key={fact.label} className="grid gap-1 py-4 sm:grid-cols-[9rem_1fr] sm:gap-6">
@@ -154,15 +159,19 @@ export default function Home() {
                 Consultorio
               </h2>
               <address className="mt-1 not-italic leading-relaxed text-muted-foreground">{PRACTICE.address}</address>
-              <Button variant="outline" asChild className="mt-4 self-start">
-                <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
-                  Cómo llegar
-                  <ArrowUpRight className="transition-transform duration-200 ease-out group-hover/button:-translate-y-px group-hover/button:translate-x-px" />
-                </a>
-              </Button>
+              {/* Mapa (trae su propio "Ver en Maps"): ocupa el alto que sobra junto a la ficha */}
+              <div className="mt-5 flex min-h-48 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+                <iframe
+                  title={`Mapa: ${PRACTICE.address}`}
+                  src={mapEmbedUrl}
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  className="block min-h-48 w-full flex-1 border-0"
+                />
+              </div>
 
               {/* Lista agrupada al estilo iOS: filas de 48px que se iluminan al tocar */}
-              <ul className="mt-8 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card lg:mt-auto">
+              <ul className="mt-6 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
                 {CONTACT.map(({ icon: Icon, label, value, href, external }) => {
                   const Trailing = external ? ArrowUpRight : ChevronRight
                   return (

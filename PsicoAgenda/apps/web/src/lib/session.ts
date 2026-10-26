@@ -38,7 +38,7 @@ export function readIdentity(user: User | null): SessionUser | null {
 
   const email = readString(user.email);
   const name =
-    readString(metadata.name) || readString(metadata.full_name) || (email ? email.split("@")[0] : "Dra. Ana García");
+    readString(metadata.name) || readString(metadata.full_name) || (email ? email.split("@")[0] : "Tu cuenta");
 
   return { id: user.id, email, name, role: candidateRole as UserRole };
 }

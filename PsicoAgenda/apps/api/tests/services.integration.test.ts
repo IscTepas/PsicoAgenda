@@ -79,6 +79,8 @@ describe("services integration against real database", () => {
 
   afterAll(async () => {
     if (appointmentId) {
+      // El pago condonado sobrevive a la cancelación y la llave es RESTRICT: va primero.
+      await prisma.pagos_honorarios.deleteMany({ where: { cita_id: appointmentId } }).catch(() => {});
       await prisma.citas.deleteMany({ where: { id: appointmentId } }).catch(() => {});
     }
     await prisma.pacientes.deleteMany({ where: { id: patientId } }).catch(() => {});
@@ -102,8 +104,8 @@ describe("services integration against real database", () => {
     appointmentId = appointment.id;
     expect(appointment.psychologistId).toBe(psychologistId);
     expect(appointment.patientId).toBe(patientId);
-    // La cita nace pendiente de confirmación por el profesional.
-    expect(appointment.status).toBe("pending");
+    // La agenda el profesional: nace confirmada.
+    expect(appointment.status).toBe("confirmed");
     // Adulto, presencial y a 48h: tarifa base sin recargos.
     expect(appointment.price).toBe(800);
     // El honorario nace con la cita, pendiente de cobro y por el mismo importe.
@@ -189,12 +191,11 @@ describe("services integration against real database", () => {
     await prisma.usuarios.deleteMany({ where: { id: otherPatientUserId } }).catch(() => {});
   });
 
-  it("cancels the appointment and drops its honorarium", async () => {
+  it("cancels the appointment and keeps an already waived honorarium", async () => {
     const cancelled = await cancelAppointment(psychologistAuth, appointmentId, "Test cancellation");
 
     expect(cancelled.status).toBe("cancelled");
-    // Cancelar no debe dejar una deuda pendiente colgando.
-    expect(cancelled.payment).toBeUndefined();
-    expect(await prisma.pagos_honorarios.findUnique({ where: { cita_id: appointmentId } })).toBeNull();
+    // El honorario ya estaba condonado (paso anterior): es constancia y se conserva.
+    expect(cancelled.payment?.status).toBe(PaymentStatus.WAIVED);
   });
 });

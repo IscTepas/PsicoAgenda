@@ -36,8 +36,10 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Calendar } from "@/components/ui/calendar"
+import { Calendar } from "@/components/arc/calendar/calendar"
+import { useToast } from "@/components/toast-provider"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs"
 import {
   Card,
   CardContent,
@@ -53,19 +55,19 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Table, type TableColumn } from "@/components/motion/table"
 import { useSession } from "@/lib/use-session"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
 import { appointmentService, patientService } from "@/services"
 
 type CalendarView = "mes" | "semana" | "dia"
+
+const STATUS_FILTERS = [
+  { value: "ALL", label: "Todas", dot: null },
+  { value: AppointmentStatus.CONFIRMED, label: "Confirmadas", dot: "bg-primary ring-1 ring-primary-foreground/70" },
+  { value: AppointmentStatus.PENDING, label: "Pendientes", dot: "bg-amber-400" },
+  { value: AppointmentStatus.CANCELLED, label: "Canceladas", dot: "bg-rose-400" },
+] as const
 
 interface StatusConfig {
   label: string
@@ -261,6 +263,7 @@ export function AgendaClient() {
 
   // Estados del cobro y de la cita seleccionada: se declaran antes del callback
   // que los usa (regla react-hooks/immutability).
+  const { toast } = useToast()
   const [paymentUpdating, setPaymentUpdating] = React.useState(false)
   const [paymentError, setPaymentError] = React.useState<string | null>(null)
   const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(null)
@@ -274,12 +277,16 @@ export function AgendaClient() {
       const updated = await appointmentService.updatePayment(appointment.id, status)
       setAppointments((prev) => prev.map((apt) => (apt.id === updated.id ? updated : apt)))
       setSelectedAppointment(updated)
+      toast({
+        title: "Pago registrado",
+        status: "success",
+      })
     } catch (error) {
       setPaymentError(error instanceof Error ? error.message : "No se pudo actualizar el pago")
     } finally {
       setPaymentUpdating(false)
     }
-  }, [])
+  }, [toast])
 
   const baseAppointments = appointments
 
@@ -294,7 +301,10 @@ export function AgendaClient() {
   // Appointments today for header stats
   const today = React.useMemo(() => new Date(), [])
   const todayAppointments = React.useMemo(() => {
-    return baseAppointments.filter((apt) => isSameDay(apt.startTime, today))
+    // Las canceladas ya no son citas "programadas para hoy".
+    return baseAppointments.filter(
+      (apt) => isSameDay(apt.startTime, today) && apt.status !== AppointmentStatus.CANCELLED,
+    )
   }, [baseAppointments, today])
 
   // Filtered appointments according to status & search query
@@ -332,9 +342,14 @@ export function AgendaClient() {
     const startOfToday = new Date(today)
     startOfToday.setHours(0, 0, 0, 0)
     return filteredAppointments
-      .filter((apt) => apt.startTime >= startOfToday)
+      // Próximas = por realizar: sin canceladas, salvo que se filtre justo por canceladas.
+      .filter(
+        (apt) =>
+          apt.startTime >= startOfToday &&
+          (selectedStatus === AppointmentStatus.CANCELLED || apt.status !== AppointmentStatus.CANCELLED),
+      )
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
-  }, [filteredAppointments, today])
+  }, [filteredAppointments, today, selectedStatus])
 
   // Counts by status
   const counts = React.useMemo(() => {
@@ -415,6 +430,111 @@ export function AgendaClient() {
     )
   }
 
+  // Próximas citas: misma tabla que Pacientes (ordena por encabezado y crece con sus filas).
+  const upcomingColumns: TableColumn<Appointment>[] = [
+    ...(isPatient
+      ? []
+      : [
+          {
+            key: "patient",
+            header: "Paciente",
+            sortable: true,
+            width: "26%",
+            sortValue: (apt: Appointment) => (patientById(apt.patientId)?.name ?? "").toLocaleLowerCase("es"),
+            cell: (apt: Appointment) => {
+              const patient = patientById(apt.patientId)
+              return (
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                    {patient?.name?.[0] ?? "P"}
+                  </div>
+                  <span className="truncate text-sm font-medium text-foreground">{patient?.name ?? "Desconocido"}</span>
+                </div>
+              )
+            },
+          } satisfies TableColumn<Appointment>,
+        ]),
+    {
+      key: "startTime",
+      header: "Fecha y hora",
+      sortable: true,
+      width: "170px",
+      sortValue: (apt) => new Date(apt.startTime).getTime(),
+      cell: (apt) => (
+        <div className="flex flex-col text-xs tabular-nums">
+          <span className="font-medium text-foreground">{formatShortDate(apt.startTime)}</span>
+          <span className="text-[11px] text-muted-foreground">{formatAppointmentTime(apt.startTime)}</span>
+        </div>
+      ),
+    },
+    {
+      key: "modality",
+      header: "Modalidad",
+      sortable: true,
+      width: "130px",
+      sortValue: (apt) => apt.modality,
+      cell: (apt) =>
+        apt.modality === AppointmentModality.IN_PERSON ? (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <MapPin className="size-3" /> Presencial
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-xs text-primary">
+            <Video className="size-3" /> Virtual
+          </span>
+        ),
+    },
+    {
+      key: "price",
+      header: "Costo",
+      sortable: true,
+      sortValue: (apt) => apt.price ?? 0,
+      cell: (apt) => (
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-semibold tabular-nums text-foreground">
+            {apt.price != null ? `$${apt.price.toLocaleString("es-MX")}` : "—"}
+          </span>
+          {apt.payment && (
+            <span
+              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${PAYMENT_CONFIG[apt.payment.status].badgeClass}`}
+            >
+              {PAYMENT_CONFIG[apt.payment.status].label}
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "status",
+      header: "Estado",
+      sortable: true,
+      width: "130px",
+      sortValue: (apt) => STATUS_CONFIG[apt.status].label,
+      cell: (apt) => (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-xs font-medium text-foreground/80">
+          <span className={`size-1.5 rounded-full ${STATUS_CONFIG[apt.status].dotClass}`} aria-hidden="true" />
+          {STATUS_CONFIG[apt.status].label}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Acciones</span>,
+      align: "right",
+      width: "130px",
+      cell: (apt) => (
+        <button
+          type="button"
+          onClick={() => setSelectedAppointment(apt)}
+          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+        >
+          Ver detalles
+          <ChevronRight className="size-3.5" />
+        </button>
+      ),
+    },
+  ]
+
   return (
     <div className="space-y-6">
       {loadError && (
@@ -444,11 +564,13 @@ export function AgendaClient() {
           <p className="text-sm text-muted-foreground">
             {isPatient ? (
               <>
-                Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span> programadas para hoy. Consulta tus sesiones programadas.
+                Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span>{" "}
+                {todayAppointments.length === 1 ? "programada" : "programadas"} para hoy. Consulta tus sesiones programadas.
               </>
             ) : (
               <>
-                Tienes <span className="font-medium text-foreground">{todayAppointments.length} citas</span> programadas para hoy. Consulta y administra tus sesiones clínicas.
+                Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span>{" "}
+                {todayAppointments.length === 1 ? "programada" : "programadas"} para hoy. Consulta y administra tus sesiones clínicas.
               </>
             )}
           </p>
@@ -490,88 +612,21 @@ export function AgendaClient() {
       {/* 2. BARRA DE HERRAMIENTAS: Filtros rápidos, Navegación de Fecha y Selector de Vista (Mes/Semana/Día) */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-card p-4 rounded-2xl border border-border/60 shadow-2xs">
         {/* Filtros Rápidos por Estado */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
+        <div className="flex min-w-0 items-center gap-1.5">
           <span className="text-xs font-medium text-muted-foreground mr-1 shrink-0 hidden sm:inline">
             Filtrar:
           </span>
-          <button
-            type="button"
-            onClick={() => setSelectedStatus("ALL")}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              selectedStatus === "ALL"
-                ? "bg-primary text-primary-foreground shadow-2xs"
-                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-            }`}
-          >
-            <span>Todas</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                selectedStatus === "ALL" ? "bg-white/20 text-white" : "bg-background text-muted-foreground"
-              }`}
-            >
-              {counts.ALL}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSelectedStatus(AppointmentStatus.CONFIRMED)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              selectedStatus === AppointmentStatus.CONFIRMED
-                ? "bg-primary text-primary-foreground shadow-2xs"
-                : "bg-primary/[0.06] text-primary border border-primary/20 hover:bg-primary/10"
-            }`}
-          >
-            <span className={`size-2 rounded-full inline-block ${selectedStatus === AppointmentStatus.CONFIRMED ? "bg-primary-foreground/70" : "bg-primary"}`} />
-            <span>Confirmadas</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                selectedStatus === AppointmentStatus.CONFIRMED ? "bg-white/20 text-white" : "bg-primary/15 text-primary"
-              }`}
-            >
-              {counts[AppointmentStatus.CONFIRMED]}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSelectedStatus(AppointmentStatus.PENDING)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              selectedStatus === AppointmentStatus.PENDING
-                ? "bg-amber-600 text-white shadow-2xs"
-                : "bg-amber-50/70 text-amber-800 border border-amber-200/80 hover:bg-amber-100/70 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/60"
-            }`}
-          >
-            <span className="size-2 rounded-full bg-amber-400 inline-block" />
-            <span>Pendientes</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                selectedStatus === AppointmentStatus.PENDING ? "bg-white/20 text-white" : "bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200"
-              }`}
-            >
-              {counts[AppointmentStatus.PENDING]}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSelectedStatus(AppointmentStatus.CANCELLED)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              selectedStatus === AppointmentStatus.CANCELLED
-                ? "bg-rose-600 text-white shadow-2xs"
-                : "bg-rose-50/70 text-rose-800 border border-rose-200/80 hover:bg-rose-100/70 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-800/60"
-            }`}
-          >
-            <span className="size-2 rounded-full bg-rose-400 inline-block" />
-            <span>Canceladas</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                selectedStatus === AppointmentStatus.CANCELLED ? "bg-white/20 text-white" : "bg-rose-100 text-rose-900 dark:bg-rose-900/60 dark:text-rose-200"
-              }`}
-            >
-              {counts[AppointmentStatus.CANCELLED]}
-            </span>
-          </button>
+          <Tabs value={selectedStatus} onValueChange={setSelectedStatus} variant="pill">
+            <TabsList aria-label="Filtrar por estado" className="border border-border/60 bg-muted/40" wrapperClassName="w-auto">
+              {STATUS_FILTERS.map((filter) => (
+                <TabsTrigger key={filter.value} value={filter.value} className="gap-1.5 px-3 text-xs">
+                  {filter.dot && <span className={`size-2 rounded-full ${filter.dot}`} aria-hidden="true" />}
+                  {filter.label}
+                  <span className="tabular-nums opacity-70">{counts[filter.value]}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Controles de Navegación y Pestañas de Vista */}
@@ -621,56 +676,28 @@ export function AgendaClient() {
                   <ChevronDown className="size-3.5 text-muted-foreground transition-transform duration-200 [[data-state=open]_&]:rotate-180" aria-hidden="true" />
                 </button>
               </PopoverTrigger>
-              <PopoverContent align="end">
+              <PopoverContent align="end" className="w-80 p-4">
                 <Calendar
-                  key={currentDate.toDateString()}
-                  selected={currentDate}
+                  value={currentDate}
                   hasMarker={(day) => baseAppointments.some((apt) => isSameDay(apt.startTime, day))}
-                  onSelect={(day) => {
+                  onChange={(day) => {
                     setCurrentDate(day)
                     setDatePickerOpen(false)
                   }}
+                  showToday
                 />
               </PopoverContent>
             </Popover>
           </div>
 
-          {/* Pestañas de alternancia: Mes / Semana / Día */}
-          <div className="inline-flex items-center rounded-xl bg-muted/70 p-1 border border-border/40">
-            <button
-              type="button"
-              onClick={() => setView("dia")}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                view === "dia"
-                  ? "bg-card text-foreground shadow-2xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Día
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("semana")}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                view === "semana"
-                  ? "bg-card text-foreground shadow-2xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Semana
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("mes")}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                view === "mes"
-                  ? "bg-card text-foreground shadow-2xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Mes
-            </button>
-          </div>
+          {/* Pestañas de alternancia: Día / Semana / Mes */}
+          <Tabs value={view} onValueChange={(next) => setView(next as CalendarView)} variant="segment">
+            <TabsList aria-label="Vista del calendario" className="border border-border/40 bg-muted/70">
+              <TabsTrigger value="dia" className="px-3 py-1 text-xs">Día</TabsTrigger>
+              <TabsTrigger value="semana" className="px-3 py-1 text-xs">Semana</TabsTrigger>
+              <TabsTrigger value="mes" className="px-3 py-1 text-xs">Mes</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
       </div>
 
@@ -1159,7 +1186,7 @@ export function AgendaClient() {
                         )}
 
                       {!isPatient && selectedAppointment.status !== AppointmentStatus.CANCELLED && (
-                        <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                        <div className="pt-1">
                           {selectedAppointment.payment.status !== PaymentStatus.PAID && (
                             <Button
                               type="button"
@@ -1174,18 +1201,6 @@ export function AgendaClient() {
                                 <Check className="size-3.5 mr-1" />
                               )}
                               Marcar como pagado
-                            </Button>
-                          )}
-                          {selectedAppointment.payment.status !== PaymentStatus.WAIVED && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={paymentUpdating}
-                              onClick={() => void handleUpdatePayment(selectedAppointment, PaymentStatus.WAIVED)}
-                              className="h-8 w-full rounded-lg text-xs border-border/80"
-                            >
-                              Condonar
                             </Button>
                           )}
                         </div>
@@ -1258,99 +1273,25 @@ export function AgendaClient() {
           </Badge>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-b border-border/60 bg-muted/20">
-                  <TableHead className="font-semibold text-xs">Paciente</TableHead>
-                  <TableHead className="font-semibold text-xs">Fecha</TableHead>
-                  <TableHead className="font-semibold text-xs">Hora</TableHead>
-                  <TableHead className="font-semibold text-xs">Modalidad</TableHead>
-                  <TableHead className="font-semibold text-xs">Costo</TableHead>
-                  <TableHead className="font-semibold text-xs">Estado</TableHead>
-                  <TableHead className="font-semibold text-xs text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {upcomingAppointments.length > 0 ? (
-                  upcomingAppointments.map((apt) => {
-                    const patient = patientById(apt.patientId)
-                    const status = STATUS_CONFIG[apt.status]
-
-                    return (
-                      <TableRow
-                        key={apt.id}
-                        className="hover:bg-muted/30 transition-colors border-b border-border/40 cursor-pointer"
-                        onClick={() => setSelectedAppointment(apt)}
-                      >
-                        <TableCell className="font-medium text-foreground py-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className="size-7 rounded-full bg-primary/10 text-primary font-semibold text-xs flex items-center justify-center">
-                              {patient?.name?.[0] ?? "P"}
-                            </div>
-                            <span className="font-heading">{patient?.name ?? "Desconocido"}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-xs">
-                          {formatShortDate(apt.startTime)}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-xs font-mono">
-                          {formatAppointmentTime(apt.startTime)}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {apt.modality === AppointmentModality.IN_PERSON ? (
-                            <span className="inline-flex items-center gap-1">
-                              <MapPin className="size-3 text-muted-foreground" /> Presencial
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-primary">
-                              <Video className="size-3" /> Virtual
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-xs font-semibold text-foreground">
-                          <div className="flex flex-col items-start gap-1">
-                            <span>{apt.price != null ? `$${apt.price.toLocaleString("es-MX")}` : "—"}</span>
-                            {apt.payment && (
-                              <span
-                                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${PAYMENT_CONFIG[apt.payment.status].badgeClass}`}
-                              >
-                                {PAYMENT_CONFIG[apt.payment.status].label}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-xs font-medium text-foreground/80">
-                            <span className={`size-1.5 rounded-full ${status.dotClass}`} aria-hidden="true" />
-                            {status.label}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedAppointment(apt)}
-                            className="h-8 text-xs text-primary hover:text-primary hover:bg-primary/10 rounded-lg"
-                          >
-                            Ver detalles
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center text-muted-foreground text-sm">
-                      {searchQuery || selectedStatus !== "ALL"
-                        ? "Ninguna cita próxima coincide con los filtros o la búsqueda."
-                        : "No hay citas próximas."}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+          {upcomingAppointments.length > 0 ? (
+            <Table
+              data={upcomingAppointments}
+              columns={upcomingColumns}
+              getRowId={(apt) => apt.id}
+              defaultSort={{ key: "startTime", direction: "asc" }}
+              resizable
+              rowHeight={56}
+              height="auto"
+              overscan={upcomingAppointments.length}
+              className="rounded-none border-0 bg-card"
+            />
+          ) : (
+            <p className="flex h-32 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+              {searchQuery || selectedStatus !== "ALL"
+                ? "Ninguna cita próxima coincide con los filtros o la búsqueda."
+                : "No hay citas próximas."}
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

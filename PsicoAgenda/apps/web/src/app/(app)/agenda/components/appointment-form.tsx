@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeft,
   Calendar as CalendarIcon,
-  CalendarDays,
   Clock,
   User,
   Search,
@@ -55,7 +54,8 @@ import {
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
 import { useHydrated } from "@/lib/use-hydrated"
-import { MultiMonthCalendar } from "@/components/ui/multi-month-calendar"
+import { Calendar } from "@/components/arc/calendar/calendar"
+import { useToast } from "@/components/toast-provider"
 import {
   addMonths,
   agruparOcupacionPorDia,
@@ -295,7 +295,9 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   } | null>(null)
 
   // Form feedback state
-  const [successMessage, setSuccessMessage] = React.useState<string | null>(null)
+  // Los éxitos salen como aviso flotante: sigue visible aunque se navegue a la agenda.
+  const { toast } = useToast()
+  const notifySuccess = (title: string) => toast({ title, status: "success" })
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false)
 
@@ -405,14 +407,15 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   // Ocupación de la agenda para los meses visibles del calendario. La API
   // devuelve solo rangos ocupados del psicólogo (sin datos del paciente).
   const [ocupacion, setOcupacion] = React.useState<AppointmentOccupancySlot[]>([])
-  const [rangoOcupacion, setRangoOcupacion] = React.useState<{
-    from: string
-    to: string
-  } | null>(null)
-
-  const handleRangoVisible = React.useCallback((from: Date, to: Date) => {
-    setRangoOcupacion({ from: from.toISOString(), to: to.toISOString() })
-  }, [])
+  // El calendario muestra un mes a la vez; la ocupación se carga para el mes visible.
+  const [mesVisible, setMesVisible] = React.useState<Date | null>(null)
+  const mesMostrado = mesVisible ?? startOfMonth(selectedDateEfectiva ?? minimaFecha ?? ahora)
+  const mesMostradoTime = mesMostrado.getTime()
+  const rangoOcupacion = React.useMemo(() => {
+    if (!hydrated) return null
+    const inicio = new Date(mesMostradoTime)
+    return { from: inicio.toISOString(), to: addMonths(inicio, 1).toISOString() }
+  }, [hydrated, mesMostradoTime])
 
   React.useEffect(() => {
     if (!rangoOcupacion) return
@@ -662,7 +665,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMessage(null)
-    setSuccessMessage(null)
 
     if (!lockedPatientId) {
       setErrorMessage("Por favor selecciona un paciente antes de continuar.")
@@ -749,7 +751,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           await appointmentService.changeStatus(initialAppointment.id, status)
         }
 
-        setSuccessMessage("¡Cita actualizada exitosamente!")
+        notifySuccess("¡Cita actualizada exitosamente!")
       } else if (isPatient) {
         // El paciente no agenda: solicita. La cita existe cuando el psicólogo acepta.
         await appointmentRequestService.create({
@@ -758,7 +760,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           modality,
           reason: reason || undefined,
         })
-        setSuccessMessage("Solicitud enviada. Te avisaremos cuando tu psicólogo la confirme.")
+        notifySuccess("Solicitud enviada. Te avisaremos cuando tu psicólogo la confirme.")
       } else {
         await appointmentService.create({
           patientId: lockedPatientId,
@@ -767,7 +769,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           modality,
           reason: reason || undefined,
         })
-        setSuccessMessage("¡Cita agendada exitosamente!")
+        notifySuccess("¡Cita agendada exitosamente!")
       }
 
       setTimeout(() => {
@@ -794,7 +796,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         ...draft,
       })
       setIsRescheduleModalOpen(false)
-      setSuccessMessage("Solicitud de reagendamiento enviada. Tu cita anterior fue cancelada.")
+      notifySuccess("Solicitud de reagendamiento enviada. Tu cita anterior fue cancelada.")
       setTimeout(() => router.push("/dashboard"), 900)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "No se pudo reagendar la cita")
@@ -817,7 +819,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       await appointmentService.cancel(initialAppointment.id, cancellationReason.trim())
       setStatus(AppointmentStatus.CANCELLED)
       setIsCancelModalOpen(false)
-      setSuccessMessage("La cita ha sido cancelada correctamente.")
+      notifySuccess("La cita ha sido cancelada correctamente.")
       setTimeout(() => {
         router.push("/agenda")
       }, 1100)
@@ -839,7 +841,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       await appointmentService.changeStatus(initialAppointment.id, nextStatus)
       setAttendance(attended ? AttendanceStatus.ATTENDED : AttendanceStatus.NO_SHOW)
       setStatus(nextStatus)
-      setSuccessMessage(
+      notifySuccess(
         attended
           ? "Asistencia registrada: Paciente asistió a la sesión."
           : "Asistencia registrada: Paciente no asistió.",
@@ -903,14 +905,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         </div>
       </div>
 
-      {/* Success / Error Alerts */}
-      {successMessage && (
-        <div role="status" className="p-4 rounded-xl bg-primary/10 text-foreground border border-primary/20 flex items-center gap-3 animate-in fade-in-50">
-          <CheckCircle2 className="size-5 text-primary shrink-0" />
-          <p className="text-sm font-medium">{successMessage}</p>
-        </div>
-      )}
-
+      {/* Errores de validación: se quedan junto al formulario */}
       {errorMessage && (
         <div role="alert" className="p-4 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 flex items-center gap-3 animate-in fade-in-50">
           <AlertCircle className="size-5 shrink-0" />
@@ -986,7 +981,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* CARD 1: SELECCIÓN DEL PACIENTE (solo psicólogo/admin; el paciente ya sabe quién es) */}
         {!isPatient && (
-        <Card className="border-border/70 shadow-2xs bg-card">
+        // overflow-visible: la lista de resultados sale por debajo de la tarjeta; el Card la recortaba.
+        <Card className="overflow-visible border-border/70 shadow-2xs bg-card">
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
               <User className="size-4 text-primary" />
@@ -1046,8 +1042,16 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 </div>
               </div>
             ) : (
-              // Autocomplete Search Input
-              <div className="relative">
+              // Autocomplete Search Input: se cierra al salir el foco del buscador o con Escape
+              <div
+                className="relative"
+                onBlur={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsPatientDropdownOpen(false)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setIsPatientDropdownOpen(false)
+                }}
+              >
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
                   <Input
@@ -1060,6 +1064,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                       setIsPatientDropdownOpen(true)
                     }}
                     onFocus={() => setIsPatientDropdownOpen(true)}
+                    role="combobox"
+                    aria-expanded={isPatientDropdownOpen}
+                    aria-controls="patient-search-results"
+                    aria-autocomplete="list"
                     className="pl-9 pr-9 h-11 text-sm rounded-xl border-border/80 focus-visible:ring-primary/20"
                   />
                   {isLoadingData && (
@@ -1069,6 +1077,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                     <button
                       type="button"
                       onClick={() => setPatientSearch("")}
+                      aria-label="Borrar búsqueda"
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     >
                       <X className="size-4" />
@@ -1078,12 +1087,20 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
                 {/* Dropdown Results */}
                 {isPatientDropdownOpen && (
-                  <div className="absolute z-30 mt-1 w-full rounded-xl border border-border/80 bg-card p-1 shadow-lg max-h-60 overflow-y-auto">
+                  <div
+                    id="patient-search-results"
+                    role="listbox"
+                    className="absolute z-30 mt-1 w-full rounded-xl border border-border/80 bg-card p-1 shadow-lg max-h-60 overflow-y-auto overscroll-contain"
+                  >
                     {filteredPatients.length > 0 ? (
                       filteredPatients.map((patient) => (
                         <button
                           key={patient.id}
                           type="button"
+                          role="option"
+                          aria-selected={false}
+                          // Evita que el input pierda el foco antes del clic (Safari no enfoca botones).
+                          onMouseDown={(e) => e.preventDefault()}
                           onClick={() => {
                             setSelectedPatientId(patient.id)
                             setIsPatientDropdownOpen(false)
@@ -1122,191 +1139,183 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         </Card>
         )}
 
-        {/* CARD 2: SELECTOR DE FECHA (DATEPICKER) */}
+        {/* FECHA Y HORA: calendario a la izquierda y horarios del día a la derecha (apilados en móvil) */}
         <Card className="border-border/70 shadow-2xs bg-card">
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
               <CalendarIcon className="size-4 text-primary" />
-              <span>{isPatient ? "1." : "2."} Fecha de la Cita</span>
+              <span>{isPatient ? "1." : "2."} Fecha y Hora</span>
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              Elige un día disponible dentro de los próximos 3 meses. Los que ya tienen citas se marcan en azul y los completos en ámbar.
+              Elige un día dentro de los próximos 3 meses y después un horario libre. Los días con citas llevan un punto; los llenos o sin horario aparecen atenuados.
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="space-y-4">
-            {hydrated ? (
-              <MultiMonthCalendar
-                selected={selectedDateEfectiva}
-                initialMonth={selectedDateEfectiva ?? minimaFecha ?? undefined}
-                onSelect={(fecha) => {
-                  setAhora(new Date())
-                  setSelectedDate(fecha)
-                  setSelectedHour("")
-                }}
-                minDate={minimaFecha}
-                maxDate={maximaFecha}
-                months={3}
-                dayStatus={estadoDia}
-                onVisibleRangeChange={handleRangoVisible}
-                loading={schedule === undefined}
-              />
-            ) : (
-              <div className="h-64 animate-pulse rounded-xl bg-muted/30" aria-hidden="true" />
-            )}
-
-            {/* Human Readable Date Preview + estado de disponibilidad */}
-            {selectedDateEfectiva && (
-              <div
-                className={`p-3 rounded-xl border text-xs flex flex-wrap items-center justify-between gap-2 ${estadoFechaEstilo.caja}`}
-              >
-                <div className="flex items-center gap-2 text-foreground">
-                  <CalendarDays className={`size-4 ${estadoFechaEstilo.icono}`} />
-                  <span>
-                    <strong>{DAYS_NAMES[selectedDateEfectiva.getDay()]}</strong>, {selectedDateEfectiva.getDate()} de {MONTH_NAMES[selectedDateEfectiva.getMonth()]} de {selectedDateEfectiva.getFullYear()}
-                  </span>
-                </div>
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${estadoFechaEstilo.chip}`}>
-                  <span className={`size-1.5 rounded-full ${estadoFechaEstilo.punto}`} />
-                  {estadoFechaEtiqueta}
-                </span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* CARD 3: SELECTOR DE HORA Y DURACIÓN (TIMEPICKER BASADO EN DISPONIBILIDAD) */}
-        <Card className="border-border/70 shadow-2xs bg-card">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
-              <Clock className="size-4 text-primary" />
-              <span>{isPatient ? "2." : "3."} Hora y Disponibilidad de Agenda</span>
-            </CardTitle>
-            <CardDescription className="text-xs text-muted-foreground">
-              Horarios calculados según las citas del día. Si eliges hoy, se ocultan las horas que ya pasaron.
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="space-y-4">
-            {/* Hourly Slot Buttons Grid */}
-            <div className="space-y-1.5">
-              {!selectedDateEfectiva ? (
-                <div className="p-4 rounded-xl bg-muted/30 border border-border/50 text-xs text-muted-foreground flex items-center gap-2">
-                  <CalendarIcon className="size-4" />
-                  Elige una fecha para ver los horarios disponibles.
-                </div>
+          <CardContent className="grid gap-6 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] md:gap-0">
+            {/* Calendario */}
+            <div className="md:pr-6">
+              {hydrated ? (
+                <Calendar
+                  className="mx-auto md:mx-0"
+                  value={selectedDateEfectiva ?? undefined}
+                  month={mesMostrado}
+                  onMonthChange={setMesVisible}
+                  onChange={(fecha) => {
+                    setAhora(new Date())
+                    setSelectedDate(fecha)
+                    setSelectedHour("")
+                  }}
+                  minDate={minimaFecha ?? undefined}
+                  maxDate={maximaFecha ?? undefined}
+                  disabledDates={(fecha) => {
+                    const estado = estadoDia(fecha)
+                    return estado === "full" || estado === "no-schedule" || estado === "disabled"
+                  }}
+                  hasMarker={(fecha) => estadoDia(fecha) === "partial"}
+                  showToday
+                />
               ) : (
-                <>
-                  {!dayAppointmentsLoading && horasLibres > 0 && (
-                    <span className="text-xs font-medium text-muted-foreground block">
-                      Selecciona una franja horaria disponible:
-                    </span>
-                  )}
-                  {availableHours.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                      {availableHours.map((hourStr) => {
-                        const slot = slotAvailability[hourStr]
-                        const isSelected = selectedHourEfectivo === hourStr
-                        const isAvailable = slot?.available ?? true
-
-                        return (
-                          <button
-                            key={hourStr}
-                            type="button"
-                            disabled={!isAvailable || dayAppointmentsLoading}
-                            onClick={() => setSelectedHour(hourStr)}
-                            className={`p-2.5 rounded-xl border text-xs font-medium transition-all text-center flex flex-col items-center gap-1 ${
-                              isSelected
-                                ? "bg-primary text-primary-foreground border-primary shadow-xs font-semibold"
-                                : isAvailable
-                                ? "bg-card hover:bg-muted/40 text-foreground border-border/70 hover:border-primary/40"
-                                : "bg-muted/40 text-muted-foreground/50 border-border/40 cursor-not-allowed line-through"
-                            }`}
-                            title={!isAvailable ? `Ocupado por ${slot?.conflictWith}` : "Disponible"}
-                          >
-                            <span className="text-sm font-bold">{hourStr}</span>
-                            <span
-                              className={`text-[10px] flex items-center gap-1 ${
-                                isSelected
-                                  ? "text-primary-foreground"
-                                  : isAvailable
-                                  ? "text-primary"
-                                  : "text-muted-foreground/60"
-                              }`}
-                            >
-                              <span
-                                className={`size-1.5 rounded-full ${
-                                  isSelected ? "bg-primary-foreground" : isAvailable ? "bg-primary" : "bg-destructive/60"
-                                }`}
-                              />
-                              {isAvailable ? "Disponible" : "Ocupado"}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                  {horasLibres === 0 && !dayAppointmentsLoading && (
-                    <div className="p-3 rounded-xl bg-muted/40 border border-border/50 text-xs text-muted-foreground space-y-2">
-                      <p>
-                        {estadoDeFecha === "sin-horario"
-                          ? `El profesional no atiende el ${formatearDiaCorto(selectedDateEfectiva)}.`
-                          : `Sin horarios disponibles para el ${formatearDiaCorto(selectedDateEfectiva)}.`}
-                      </p>
-                      {nextAvailableDate && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedDate(nextAvailableDate)
-                            setSelectedHour("")
-                          }}
-                          className="h-8 px-2.5 text-xs rounded-lg border-border/80 hover:border-primary/50"
-                        >
-                          Ir al {formatearDiaCorto(nextAvailableDate)}
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  {dayAppointmentsLoading && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="size-3 animate-spin" />
-                      <span>Consultando disponibilidad...</span>
-                    </div>
-                  )}
-                </>
+                <div className="h-64 animate-pulse rounded-xl bg-muted/30" aria-hidden="true" />
               )}
             </div>
 
-            {/* Duración de la sesión */}
-            <div className="space-y-1.5 pt-2 border-t border-border/50">
-              <span className="text-xs font-medium text-muted-foreground block">
-                Duración de la sesión:
-              </span>
-              {isMinorPatient ? (
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary text-xs font-semibold text-primary">
-                  <Clock className="size-3.5" />
-                  30 minutos (menor de edad)
+            {/* Horarios del día elegido: ocupa toda la altura del calendario */}
+            <div className="@container flex min-w-0 flex-col gap-4 border-t border-border/50 pt-6 md:border-t-0 md:border-l md:pt-0 md:pl-6">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <Clock className="size-4 text-primary" />
+                  {selectedDateEfectiva
+                    ? <span>{DAYS_NAMES[selectedDateEfectiva.getDay()]}, {selectedDateEfectiva.getDate()} de {MONTH_NAMES[selectedDateEfectiva.getMonth()]}</span>
+                    : <span>Horarios disponibles</span>}
                 </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2">
-                  {DURATION_OPTIONS.map((mins) => (
-                    <button
-                      key={mins}
-                      type="button"
-                      onClick={() => setDurationMinutes(mins)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                        durationMinutes === mins
-                          ? "bg-primary/10 border-primary text-primary font-semibold"
-                          : "bg-card border-border/70 text-foreground hover:bg-muted/50"
-                      }`}
-                    >
-                      {mins} minutos {mins === 50 && "(Estándar)"}
-                    </button>
-                  ))}
-                </div>
-              )}
+                {selectedDateEfectiva && (
+                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${estadoFechaEstilo.chip}`}>
+                    <span className={`size-1.5 rounded-full ${estadoFechaEstilo.punto}`} />
+                    {estadoFechaEtiqueta}
+                  </span>
+                )}
+              </div>
+
+              {/* Los horarios se estiran a lo alto del calendario: sin hueco entre ellos y la duración */}
+              <div className="flex min-h-0 flex-1 flex-col gap-1.5">
+                {!selectedDateEfectiva ? (
+                  <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 p-6 text-center text-xs text-muted-foreground">
+                    <CalendarIcon className="size-5" />
+                    Elige un día en el calendario para ver sus horarios.
+                  </div>
+                ) : (
+                  <>
+                    {!dayAppointmentsLoading && horasLibres > 0 && (
+                      <span className="text-xs font-medium text-muted-foreground block">
+                        Selecciona una franja horaria disponible:
+                      </span>
+                    )}
+                    {availableHours.length > 0 && (
+                      <div className={`grid grid-cols-2 gap-2 @sm:grid-cols-3 @lg:grid-cols-4 @xl:grid-cols-5 ${availableHours.length > 4 ? "flex-1 auto-rows-fr" : "content-start"}`}>
+                        {availableHours.map((hourStr) => {
+                          const slot = slotAvailability[hourStr]
+                          const isSelected = selectedHourEfectivo === hourStr
+                          const isAvailable = slot?.available ?? true
+
+                          return (
+                            <button
+                              key={hourStr}
+                              type="button"
+                              disabled={!isAvailable || dayAppointmentsLoading}
+                              onClick={() => setSelectedHour(hourStr)}
+                              className={`min-h-16 p-2.5 rounded-xl border text-xs font-medium transition-all text-center flex flex-col items-center justify-center gap-1 ${
+                                isSelected
+                                  ? "bg-primary text-primary-foreground border-primary shadow-xs font-semibold"
+                                  : isAvailable
+                                  ? "bg-card hover:bg-muted/40 text-foreground border-border/70 hover:border-primary/40"
+                                  : "bg-muted/40 text-muted-foreground/50 border-border/40 cursor-not-allowed line-through"
+                              }`}
+                              title={!isAvailable ? `Ocupado por ${slot?.conflictWith}` : "Disponible"}
+                            >
+                              <span className="text-sm font-bold">{hourStr}</span>
+                              <span
+                                className={`text-[10px] flex items-center gap-1 ${
+                                  isSelected
+                                    ? "text-primary-foreground"
+                                    : isAvailable
+                                    ? "text-primary"
+                                    : "text-muted-foreground/60"
+                                }`}
+                              >
+                                <span
+                                  className={`size-1.5 rounded-full ${
+                                    isSelected ? "bg-primary-foreground" : isAvailable ? "bg-primary" : "bg-destructive/60"
+                                  }`}
+                                />
+                                {isAvailable ? "Disponible" : "Ocupado"}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {horasLibres === 0 && !dayAppointmentsLoading && (
+                      <div className="p-3 rounded-xl bg-muted/40 border border-border/50 text-xs text-muted-foreground space-y-2">
+                        <p>
+                          {estadoDeFecha === "sin-horario"
+                            ? `El profesional no atiende el ${formatearDiaCorto(selectedDateEfectiva)}.`
+                            : `Sin horarios disponibles para el ${formatearDiaCorto(selectedDateEfectiva)}.`}
+                        </p>
+                        {nextAvailableDate && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedDate(nextAvailableDate)
+                              setSelectedHour("")
+                            }}
+                            className="h-8 px-2.5 text-xs rounded-lg border-border/80 hover:border-primary/50"
+                          >
+                            Ir al {formatearDiaCorto(nextAvailableDate)}
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    {dayAppointmentsLoading && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="size-3 animate-spin" />
+                        <span>Consultando disponibilidad...</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Duración de la sesión */}
+              <div className="space-y-1.5 pt-3 border-t border-border/50">
+                <span className="text-xs font-medium text-muted-foreground block">
+                  Duración de la sesión:
+                </span>
+                {isMinorPatient ? (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary text-xs font-semibold text-primary">
+                    <Clock className="size-3.5" />
+                    30 minutos (menor de edad)
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {DURATION_OPTIONS.map((mins) => (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => setDurationMinutes(mins)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                          durationMinutes === mins
+                            ? "bg-primary/10 border-primary text-primary font-semibold"
+                            : "bg-card border-border/70 text-foreground hover:bg-muted/50"
+                        }`}
+                      >
+                        {mins} minutos {mins === 50 && "(Estándar)"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -1316,7 +1325,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
               <FileText className="size-4 text-primary" />
-              <span>{isPatient ? "3." : "4."} Modalidad y Motivo de Consulta</span>
+              <span>{isPatient ? "2." : "3."} Modalidad y Motivo de Consulta</span>
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
               Define el formato de atención y el objetivo de la cita.

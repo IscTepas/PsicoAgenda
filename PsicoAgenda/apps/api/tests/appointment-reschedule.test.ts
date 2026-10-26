@@ -106,7 +106,7 @@ describe("rescheduleAppointmentRequest", () => {
 
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     expect(prismaMock.pagos_honorarios.deleteMany).toHaveBeenCalledWith({
-      where: { cita_id: APPOINTMENT_ID },
+      where: { cita_id: APPOINTMENT_ID, estado: "PENDIENTE" },
     });
 
     const cancel = lastCallArg(prismaMock.citas.updateMany) as {

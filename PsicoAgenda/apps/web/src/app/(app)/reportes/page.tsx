@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { AppointmentStatus, AttendanceStatus, type Appointment } from "@psicoagenda/shared"
+import { appointmentService, patientService } from "@/services"
 import Link from "next/link"
 import {
   CalendarDays,
@@ -17,30 +20,39 @@ import {
   Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
+} from "@/components/motion/select"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Table, type TableColumn } from "@/components/motion/table"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { PageHeader } from "../components/page-header"
+import { DateRangePickerDropdown, type DateRangePreset } from "@/components/motion/date-range-picker"
+
+const isoDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+
+/** Atajos del período, calculados con la fecha local de hoy. */
+function reportPresets(): DateRangePreset[] {
+  const today = new Date()
+  const y = today.getFullYear()
+  const m = today.getMonth()
+  return [
+    { label: "Este mes", value: { from: isoDate(new Date(y, m, 1)), to: isoDate(new Date(y, m + 1, 0)) } },
+    { label: "Mes pasado", value: { from: isoDate(new Date(y, m - 1, 1)), to: isoDate(new Date(y, m, 0)) } },
+    { label: "Últimos 30 días", value: { from: isoDate(new Date(y, m, today.getDate() - 29)), to: isoDate(today) } },
+    { label: "Este año", value: { from: isoDate(new Date(y, 0, 1)), to: isoDate(new Date(y, 11, 31)) } },
+  ]
+}
 
 export type ReportAppointment = {
   id: string
@@ -51,176 +63,53 @@ export type ReportAppointment = {
   status: "attended" | "cancelled" | "no_show" | "pending"
   fee: number
   modality: "in_person" | "virtual"
-  serviceType: "individual" | "pareja" | "evaluacion" | "seguimiento"
+  serviceType: NonNullable<Appointment["sessionType"]>
   reason: string
 }
 
-const SERVICE_TYPE_LABELS: Record<ReportAppointment["serviceType"], string> = {
-  individual: "Terapia Individual",
-  pareja: "Terapia de Pareja",
-  evaluacion: "Evaluación Inicial",
-  seguimiento: "Seguimiento",
+const REPORT_STATUS: Record<ReportAppointment["status"], { label: string; dot: string; order: number }> = {
+  attended: { label: "Asistida", dot: "bg-primary", order: 0 },
+  pending: { label: "Programada", dot: "bg-amber-500", order: 1 },
+  no_show: { label: "Inasistencia", dot: "bg-muted-foreground/50", order: 2 },
+  cancelled: { label: "Cancelada", dot: "bg-destructive", order: 3 },
 }
 
-// Datos realistas del consultorio para el período actual
-const INITIAL_RECORDS: ReportAppointment[] = [
-  {
-    id: "rep-1",
-    date: "2026-09-02",
-    time: "10:00",
-    patientId: "patient-1",
-    patientName: "María López",
-    status: "attended",
-    fee: 800,
-    modality: "in_person",
-    serviceType: "individual",
-    reason: "Sesión 1 - Técnicas de relajación",
-  },
-  {
-    id: "rep-2",
-    date: "2026-09-04",
-    time: "12:00",
-    patientId: "patient-2",
-    patientName: "Luis Hernández",
-    status: "attended",
-    fee: 850,
-    modality: "virtual",
-    serviceType: "evaluacion",
-    reason: "Evaluación inicial y encuadre",
-  },
-  {
-    id: "rep-3",
-    date: "2026-09-08",
-    time: "16:00",
-    patientId: "patient-3",
-    patientName: "Sofía Martínez",
-    status: "attended",
-    fee: 900,
-    modality: "in_person",
-    serviceType: "individual",
-    reason: "Terapia infanto-juvenil",
-  },
-  {
-    id: "rep-4",
-    date: "2026-09-09",
-    time: "11:00",
-    patientId: "patient-1",
-    patientName: "María López",
-    status: "attended",
-    fee: 800,
-    modality: "in_person",
-    serviceType: "seguimiento",
-    reason: "Reestructuración cognitiva",
-  },
-  {
-    id: "rep-5",
-    date: "2026-09-11",
-    time: "17:00",
-    patientId: "patient-2",
-    patientName: "Luis Hernández",
-    status: "cancelled",
-    fee: 0,
-    modality: "virtual",
-    serviceType: "seguimiento",
-    reason: "Cancelación con aviso previo por trabajo",
-  },
-  {
-    id: "rep-6",
-    date: "2026-09-15",
-    time: "10:00",
-    patientId: "patient-3",
-    patientName: "Sofía Martínez",
-    status: "attended",
-    fee: 900,
-    modality: "in_person",
-    serviceType: "individual",
-    reason: "Manejo emocional y juego guiado",
-  },
-  {
-    id: "rep-7",
-    date: "2026-09-16",
-    time: "11:30",
-    patientId: "patient-1",
-    patientName: "María López",
-    status: "attended",
-    fee: 800,
-    modality: "in_person",
-    serviceType: "seguimiento",
-    reason: "Revisión de tareas conductuales",
-  },
-  {
-    id: "rep-8",
-    date: "2026-09-18",
-    time: "13:00",
-    patientId: "patient-2",
-    patientName: "Luis Hernández",
-    status: "attended",
-    fee: 850,
-    modality: "virtual",
-    serviceType: "seguimiento",
-    reason: "Estrategias de afrontamiento",
-  },
-  {
-    id: "rep-9",
-    date: "2026-09-22",
-    time: "16:00",
-    patientId: "patient-3",
-    patientName: "Sofía Martínez",
-    status: "no_show",
-    fee: 0,
-    modality: "in_person",
-    serviceType: "individual",
-    reason: "Inasistencia por enfermedad escolar",
-  },
-  {
-    id: "rep-10",
-    date: "2026-09-23",
-    time: "10:00",
-    patientId: "patient-1",
-    patientName: "María López",
-    status: "attended",
-    fee: 800,
-    modality: "in_person",
-    serviceType: "seguimiento",
-    reason: "Seguimiento clínico semanal",
-  },
-  {
-    id: "rep-11",
-    date: "2026-09-25",
-    time: "12:00",
-    patientId: "patient-2",
-    patientName: "Luis Hernández",
-    status: "attended",
-    fee: 850,
-    modality: "virtual",
-    serviceType: "seguimiento",
-    reason: "Avances en regulación del estrés",
-  },
-  {
-    id: "rep-12",
-    date: "2026-09-29",
-    time: "16:00",
-    patientId: "patient-3",
-    patientName: "Sofía Martínez",
-    status: "attended",
-    fee: 900,
-    modality: "in_person",
-    serviceType: "seguimiento",
-    reason: "Cierre de módulo conductual",
-  },
-  {
-    id: "rep-13",
-    date: "2026-09-30",
-    time: "11:00",
-    patientId: "patient-1",
-    patientName: "María López",
-    status: "attended",
-    fee: 800,
-    modality: "in_person",
-    serviceType: "evaluacion",
-    reason: "Evaluación de progreso terapéutico",
-  },
-]
+const REPORT_ROW_HEIGHT = 56
+
+const SERVICE_TYPE_LABELS: Record<ReportAppointment["serviceType"], string> = {
+  initial: "Consulta inicial",
+  individual: "Terapia individual",
+  couple: "Terapia de pareja",
+  family: "Terapia familiar",
+}
+
+const pad = (n: number) => String(n).padStart(2, "0")
+
+/** Cita de la API → fila del reporte (fecha y hora en la zona local). */
+function toReportRow(apt: Appointment, patientName: string): ReportAppointment {
+  const start = new Date(apt.startTime)
+  const status: ReportAppointment["status"] =
+    apt.status === AppointmentStatus.CANCELLED
+      ? "cancelled"
+      : apt.status === AppointmentStatus.NO_SHOW || apt.attendanceStatus === AttendanceStatus.NO_SHOW
+        ? "no_show"
+        : apt.status === AppointmentStatus.COMPLETED || apt.attendanceStatus === AttendanceStatus.ATTENDED
+          ? "attended"
+          : "pending"
+  return {
+    id: apt.id,
+    date: isoDate(start),
+    time: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
+    patientId: apt.patientId,
+    patientName,
+    status,
+    // Una cita cancelada no genera honorario.
+    fee: status === "cancelled" ? 0 : (apt.price ?? 0),
+    modality: apt.modality === "virtual" ? "virtual" : "in_person",
+    serviceType: apt.sessionType ?? "individual",
+    reason: apt.reason || "Sin motivo registrado",
+  }
+}
 
 function getInitials(name: string): string {
   const parts = name.trim().split(" ")
@@ -247,7 +136,7 @@ function statusLabel(status: ReportAppointment["status"]): string {
     case "no_show":
       return "Inasistencia"
     default:
-      return "Pendiente"
+      return "Programada"
   }
 }
 
@@ -264,41 +153,65 @@ function formatDate(dateStr: string, timeStr?: string): string {
 
 export default function ReportsPage() {
   // Filtros activos
-  const [fromDate, setFromDate] = useState("2026-09-01")
-  const [toDate, setToDate] = useState("2026-09-30")
-  const [statusFilter, setStatusFilter] = useState<"all" | "attended" | "cancelled" | "no_show">("all")
+  const [defaultRange] = useState(() => reportPresets()[0].value)
+  const [fromDate, setFromDate] = useState(defaultRange.from)
+  const [toDate, setToDate] = useState(defaultRange.to ?? defaultRange.from)
+  const [statusFilter, setStatusFilter] = useState<"all" | ReportAppointment["status"]>("all")
   const [serviceTypeFilter, setServiceTypeFilter] = useState<"all" | ReportAppointment["serviceType"]>("all")
 
   // Estado aplicado (se confirma al hacer clic en "Generar Reporte")
   const [appliedFilters, setAppliedFilters] = useState({
-    fromDate: "2026-09-01",
-    toDate: "2026-09-30",
-    status: "all" as "all" | "attended" | "cancelled" | "no_show",
+    fromDate: defaultRange.from,
+    toDate: defaultRange.to ?? defaultRange.from,
+    status: "all" as "all" | ReportAppointment["status"],
     serviceType: "all" as "all" | ReportAppointment["serviceType"],
   })
 
   const [notification, setNotification] = useState<string | null>(null)
-  const [isGenerating, setIsGenerating] = useState(false)
+
+  // Datos reales: citas del período aplicado y nombres de los pacientes.
+  const appointmentsQuery = useQuery({
+    queryKey: ["reports", "appointments", appliedFilters.fromDate, appliedFilters.toDate],
+    queryFn: () =>
+      appointmentService.list({
+        from: new Date(`${appliedFilters.fromDate}T00:00:00`),
+        to: new Date(`${appliedFilters.toDate}T23:59:59.999`),
+        limit: 200,
+      }),
+  })
+  const { data: patients = [] } = useQuery({
+    queryKey: ["patients", "list", 100],
+    queryFn: () => patientService.list({ limit: 100 }),
+    staleTime: 60_000,
+  })
+  const isGenerating = appointmentsQuery.isFetching
+  const records = useMemo(() => {
+    const names = new Map(patients.map((p) => [p.id, p.name]))
+    return (appointmentsQuery.data ?? []).map((apt) => toReportRow(apt, names.get(apt.patientId) ?? "Paciente"))
+  }, [appointmentsQuery.data, patients])
+
+  // El selector de rango no deja el fin antes del inicio; solo falta avisar si quedó a medias.
+  const rangeError = fromDate && !toDate ? "Elige también la fecha final del período." : null
+  const presets = useMemo(() => reportPresets(), [])
 
   // Ejecución de filtro
   const handleGenerateReport = () => {
-    setIsGenerating(true)
-    setTimeout(() => {
-      setAppliedFilters({
-        fromDate,
-        toDate,
-        status: statusFilter,
-        serviceType: serviceTypeFilter,
-      })
-      setIsGenerating(false)
-      setNotification("Reporte generado con los criterios seleccionados.")
-      setTimeout(() => setNotification(null), 3000)
-    }, 250)
+    if (rangeError) return
+    setAppliedFilters({
+      fromDate,
+      toDate,
+      status: statusFilter,
+      serviceType: serviceTypeFilter,
+    })
+    // Mismo período: se vuelve a pedir a la API para reflejar cambios recientes.
+    if (fromDate === appliedFilters.fromDate && toDate === appliedFilters.toDate) void appointmentsQuery.refetch()
+    setNotification("Reporte generado con los criterios seleccionados.")
+    setTimeout(() => setNotification(null), 3000)
   }
 
   // Filtrado reactivo de registros
   const filteredRecords = useMemo(() => {
-    return INITIAL_RECORDS.filter((item) => {
+    return records.filter((item) => {
       // Filtro de fecha
       if (appliedFilters.fromDate && item.date < appliedFilters.fromDate) return false
       if (appliedFilters.toDate && item.date > appliedFilters.toDate) return false
@@ -311,7 +224,7 @@ export default function ReportsPage() {
 
       return true
     })
-  }, [appliedFilters])
+  }, [appliedFilters, records])
 
   // Cálculo de KPIs
   const totalConsultations = filteredRecords.length
@@ -364,6 +277,82 @@ export default function ReportsPage() {
     setNotification("Vista de impresión / PDF generada.")
     setTimeout(() => setNotification(null), 3500)
   }
+
+  const reportColumns: TableColumn<ReportAppointment>[] = [
+    {
+      key: "date",
+      header: "Fecha",
+      sortable: true,
+      width: "170px",
+      sortValue: (item) => `${item.date} ${item.time}`,
+      cell: (item) => (
+        <div className="flex flex-col text-xs tabular-nums">
+          <span className="font-medium text-foreground">{formatDate(item.date)}</span>
+          <span className="text-[11px] text-muted-foreground">
+            {item.time} hrs · {item.modality === "in_person" ? "Presencial" : "Virtual"}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: "patientName",
+      header: "Paciente",
+      sortable: true,
+      width: "32%",
+      sortValue: (item) => item.patientName.toLocaleLowerCase("es"),
+      cell: (item) => (
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Avatar size="sm" className="size-7 shrink-0 border border-border/40">
+            <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">
+              {getInitials(item.patientName)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <Link
+              href={`/pacientes/${item.patientId}`}
+              className="block truncate text-xs font-semibold text-foreground transition-colors hover:text-primary hover:underline"
+            >
+              {item.patientName}
+            </Link>
+            <span className="block truncate text-[11px] text-muted-foreground">{item.reason}</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "serviceType",
+      header: "Servicio",
+      sortable: true,
+      sortValue: (item) => SERVICE_TYPE_LABELS[item.serviceType],
+      cell: (item) => <span className="text-xs text-foreground">{SERVICE_TYPE_LABELS[item.serviceType]}</span>,
+    },
+    {
+      key: "status",
+      header: "Estado",
+      sortable: true,
+      width: "130px",
+      sortValue: (item) => REPORT_STATUS[item.status].order,
+      cell: (item) => (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-medium text-foreground/80">
+          <span className={`size-1.5 rounded-full ${REPORT_STATUS[item.status].dot}`} aria-hidden="true" />
+          {REPORT_STATUS[item.status].label}
+        </span>
+      ),
+    },
+    {
+      key: "fee",
+      header: "Honorario",
+      sortable: true,
+      align: "right",
+      width: "120px",
+      sortValue: (item) => item.fee,
+      cell: (item) => (
+        <span className={`text-xs tabular-nums ${item.fee > 0 ? "font-semibold text-foreground" : "text-muted-foreground"}`}>
+          {formatCurrency(item.fee)}
+        </span>
+      ),
+    },
+  ]
 
   return (
     <div className="space-y-6">
@@ -429,30 +418,30 @@ export default function ReportsPage() {
         </div>
 
         <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 items-end">
-          {/* Selector Fecha Desde */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-foreground">
-              Fecha Desde
-            </label>
-            <Input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="rounded-xl border-border/60 text-xs h-9 bg-background focus-visible:ring-primary/40"
+          {/* Período: un solo selector de rango (desde – hasta) con atajos */}
+          <div className="relative space-y-1.5 sm:col-span-2">
+            <span id="report-range-label" className="block text-xs font-medium text-foreground">
+              Período
+            </span>
+            <DateRangePickerDropdown
+              label="Período del reporte"
+              value={fromDate ? { from: fromDate, to: toDate || undefined } : null}
+              onValueChange={(range) => {
+                setFromDate(range?.from ?? "")
+                setToDate(range?.to ?? "")
+              }}
+              presets={presets}
+              closeOnSelect
+              placeholder="Elige el período"
+              // El contenedor del componente es inline: se fuerza a ocupar toda la columna.
+              className="flex w-full"
+              triggerClassName="h-9 w-full justify-between rounded-xl border-border/60 bg-background text-xs"
             />
-          </div>
-
-          {/* Selector Fecha Hasta */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-foreground">
-              Fecha Hasta
-            </label>
-            <Input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="rounded-xl border-border/60 text-xs h-9 bg-background focus-visible:ring-primary/40"
-            />
+            {rangeError && (
+              <p role="alert" className="absolute inset-x-0 top-full mt-1 text-[11px] leading-snug text-destructive">
+                {rangeError}
+              </p>
+            )}
           </div>
 
           {/* Selector Estado de Cita */}
@@ -473,6 +462,9 @@ export default function ReportsPage() {
                 </SelectItem>
                 <SelectItem value="attended" className="text-xs">
                   Asistidas
+                </SelectItem>
+                <SelectItem value="pending" className="text-xs">
+                  Programadas
                 </SelectItem>
                 <SelectItem value="cancelled" className="text-xs">
                   Canceladas
@@ -515,7 +507,7 @@ export default function ReportsPage() {
           <div>
             <Button
               onClick={handleGenerateReport}
-              disabled={isGenerating}
+              disabled={isGenerating || Boolean(rangeError)}
               className="w-full rounded-xl bg-primary text-primary-foreground text-xs font-medium h-9 shadow-xs hover:bg-primary/90 active:scale-[0.98] transition-all gap-1.5"
             >
               <RefreshCw className={`size-3.5 ${isGenerating ? "animate-spin" : ""}`} />
@@ -619,122 +611,32 @@ export default function ReportsPage() {
             </p>
           </div>
           <span className="text-xs text-muted-foreground tabular-nums">
-            Mostrando {filteredRecords.length} de {INITIAL_RECORDS.length} citas
+            Mostrando {filteredRecords.length} de {records.length} citas
           </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader className="bg-muted/20">
-              <TableRow className="border-border/40 hover:bg-transparent">
-                <TableHead className="font-semibold text-xs text-muted-foreground py-3 pl-5">
-                  Fecha
-                </TableHead>
-                <TableHead className="font-semibold text-xs text-muted-foreground py-3">
-                  Paciente
-                </TableHead>
-                <TableHead className="font-semibold text-xs text-muted-foreground py-3">
-                  Estado
-                </TableHead>
-                <TableHead className="font-semibold text-xs text-muted-foreground py-3 text-right pr-5">
-                  Honorario
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRecords.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={4}
-                    className="h-44 text-center text-sm text-muted-foreground"
-                  >
-                    <div className="flex flex-col items-center justify-center gap-2">
-                      <FileBarChart className="size-8 text-muted-foreground/50" />
-                      <p className="font-medium text-foreground">
-                        No se encontraron consultas para este criterio
-                      </p>
-                      <p className="text-xs text-muted-foreground max-w-sm">
-                        Prueba ampliando el rango de fechas o seleccionando &ldquo;Todas las citas&rdquo; en el estado.
-                      </p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredRecords.map((item) => (
-                  <TableRow
-                    key={item.id}
-                    className="border-border/40 hover:bg-muted/30 transition-colors"
-                  >
-                    {/* Columna: Fecha */}
-                    <TableCell className="py-3.5 pl-5 font-medium text-xs tabular-nums text-foreground">
-                      <div className="flex flex-col">
-                        <span>{formatDate(item.date)}</span>
-                        <span className="text-[11px] text-muted-foreground/75">
-                          {item.time} hrs •{" "}
-                          {item.modality === "in_person" ? "Presencial" : "Virtual"}
-                        </span>
-                      </div>
-                    </TableCell>
-
-                    {/* Columna: Paciente */}
-                    <TableCell className="py-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <Avatar size="sm" className="size-7 border border-border/40">
-                          <AvatarFallback className="text-[10px] font-semibold bg-primary/10 text-primary">
-                            {getInitials(item.patientName)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex flex-col">
-                          <Link
-                            href={`/pacientes/${item.patientId}`}
-                            className="text-xs font-semibold text-foreground hover:text-primary hover:underline transition-colors"
-                          >
-                            {item.patientName}
-                          </Link>
-                          <span className="text-[11px] text-muted-foreground/75 truncate max-w-xs">
-                            {item.reason}
-                          </span>
-                        </div>
-                      </div>
-                    </TableCell>
-
-                    {/* Columna: Estado */}
-                    <TableCell className="py-3.5">
-                      {item.status === "attended" ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-medium text-foreground/80">
-                          <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
-                          Asistida
-                        </span>
-                      ) : item.status === "cancelled" ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-medium text-foreground/80">
-                          <span className="size-1.5 rounded-full bg-destructive" aria-hidden="true" />
-                          Cancelada
-                        </span>
-                      ) : item.status === "no_show" ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-medium text-foreground/80">
-                          <span className="size-1.5 rounded-full bg-muted-foreground/50" aria-hidden="true" />
-                          Inasistencia
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-medium text-foreground/80">
-                          <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
-                          Pendiente
-                        </span>
-                      )}
-                    </TableCell>
-
-                    {/* Columna: Honorario */}
-                    <TableCell className="py-3.5 pr-5 text-right font-medium text-xs tabular-nums text-foreground">
-                      <span className={item.fee > 0 ? "font-semibold" : "text-muted-foreground"}>
-                        {formatCurrency(item.fee)}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+        {filteredRecords.length === 0 ? (
+          <div className="flex h-44 flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted-foreground">
+            <FileBarChart className="size-8 text-muted-foreground/50" />
+            <p className="font-medium text-foreground">No se encontraron consultas para este criterio</p>
+            <p className="max-w-sm text-xs text-muted-foreground">
+              Prueba ampliando el rango de fechas o seleccionando &ldquo;Todas las citas&rdquo; en el estado.
+            </p>
+          </div>
+        ) : (
+          // Misma tabla que Pacientes: ordena por encabezado, ancho ajustable y crece con sus filas.
+          <Table
+            data={filteredRecords}
+            columns={reportColumns}
+            getRowId={(item) => item.id}
+            defaultSort={{ key: "date", direction: "desc" }}
+            resizable
+            rowHeight={REPORT_ROW_HEIGHT}
+            height="auto"
+            overscan={filteredRecords.length}
+            className="rounded-none border-0 bg-card"
+          />
+        )}
 
         {/* PIE DE TABLA CON TOTALES ACUMULADOS */}
         {filteredRecords.length > 0 && (

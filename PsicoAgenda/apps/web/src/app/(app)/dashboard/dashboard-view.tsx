@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
   Bell,
   CalendarPlus,
   CheckCircle2,
-  ChevronLeft,
   ChevronRight,
   FileText,
   MapPin,
@@ -26,7 +26,13 @@ import {
   type PatientProfile,
   type PsychologistProfile,
 } from "@psicoagenda/shared"
+import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs"
+import { Calendar } from "@/components/arc/calendar/calendar"
+import { NotificationStack } from "@/components/motion/notification-stack"
+import { PRACTICE } from "@/app/home-content"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
+import { useToast } from "@/components/toast-provider"
 import {
   Dialog,
   DialogContent,
@@ -140,63 +146,77 @@ function ModalityLabel({ modality }: { modality: AppointmentModality }) {
   )
 }
 
+/**
+ * Campana del inicio: abre debajo una pila animada con los títulos de los avisos
+ * sin leer (o de los recientes si todo está leído) que se despliega hacia abajo;
+ * "Ver todas" lleva a Notificaciones.
+ */
 function NotificationsButton({ className }: { className?: string }) {
-  const [count, setCount] = useState(0)
-
-  // La campana muestra los avisos del sistema que aún no se leen.
-  useEffect(() => {
-    let cancelled = false
-    notificationService
-      .list()
-      .then((rows) => {
-        if (!cancelled) setCount(rows.filter((n) => !n.readAt).length)
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const { data: notifications = [] } = useQuery({
+    queryKey: ["notifications", "bell"],
+    queryFn: () => notificationService.list(undefined, 20),
+    staleTime: 30_000,
+  })
+  const unread = notifications.filter((n) => !n.readAt)
+  const items = unread.length > 0 ? unread : notifications.slice(0, 3)
+  const count = unread.length
 
   return (
-    <Link
-      href="/notificaciones"
-      className={cn(
-        "relative inline-flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.97]",
-        className
-      )}
-      aria-label={`Notificaciones (${count} sin leer)`}
-      title="Notificaciones"
-    >
-      <Bell className="size-[18px]" />
-      {count > 0 && (
-        <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground ring-2 ring-background">
-          {count}
-        </span>
-      )}
-    </Link>
-  )
-}
-
-function ActionNotice({ message, onClose }: { message: string; onClose: () => void }) {
-  return (
-    <div
-      role="status"
-      className="flex items-center justify-between gap-3 rounded-xl bg-primary/10 px-4 py-3 text-sm text-foreground animate-in fade-in slide-in-from-top-1 duration-200"
-    >
-      <span className="flex items-center gap-2.5">
-        <CheckCircle2 className="size-4 shrink-0 text-primary" />
-        {message}
-      </span>
-      <button
-        type="button"
-        onClick={onClose}
-        className="shrink-0 rounded-md px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/10"
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "relative inline-flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.97] data-[state=open]:bg-muted data-[state=open]:text-foreground",
+            className
+          )}
+          aria-label={`Notificaciones (${count} sin leer)`}
+          title="Notificaciones"
+        >
+          <Bell className="size-[18px]" />
+          {count > 0 && (
+            <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground ring-2 ring-background">
+              {count}
+            </span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="w-max max-w-[min(18rem,calc(100vw-2rem))] border-0 bg-transparent p-0 shadow-none"
       >
-        Cerrar
-      </button>
-    </div>
+        {items.length > 0 ? (
+          <NotificationStack
+            direction="down"
+            // Solo el título de cada aviso; el detalle está en Notificaciones.
+            items={items.map((n) => ({ id: n.id, title: <span title={n.subject}>{n.subject}</span> }))}
+            maxVisible={3}
+            showCount={false}
+            collapsedLabel="Ver todas"
+            expandedLabel="Ver todas"
+            onViewAll={() => {
+              setOpen(false)
+              router.push("/notificaciones")
+            }}
+            // Ancho según el texto (con tope en el panel), no un ancho fijo.
+            className="w-max max-w-full"
+            // Todas las tarjetas del mismo alto: título en una línea (con "…" si es largo) y relleno compacto.
+            classNames={{ card: "px-3.5", content: "py-2.5", title: "truncate text-[13px]" }}
+          />
+        ) : (
+          <div className="flex items-center gap-2 rounded-3xl bg-muted px-5 py-6 text-sm font-medium text-muted-foreground">
+            <Bell className="size-4" aria-hidden="true" />
+            Estás al día: no tienes avisos.
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
+
 
 /** Indicador "en vivo": late solo mientras una sesión está en curso. */
 function LiveDot({ pulsing }: { pulsing: boolean }) {
@@ -335,7 +355,7 @@ type SessionUser = ReturnType<typeof useSession>["user"]
 function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const [agendaFilter, setAgendaFilter] = useState<AgendaFilter>("all")
   const [activeSessionAppointment, setActiveSessionAppointment] = useState<Appointment | null>(null)
-  const [actionNotice, setActionNotice] = useState<string | null>(null)
+  const { toast } = useToast()
   // Una respuesta a la vez: evita aceptar dos veces con doble clic.
   const [answeringRequestId, setAnsweringRequestId] = useState<string | null>(null)
   const listRef = useRef<HTMLElement>(null)
@@ -366,7 +386,11 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
 
   const { data: pendingRequests = [], refetch: refetchRequests } = useQuery({
     queryKey: ["appointment-requests", AppointmentRequestStatus.PENDING],
-    queryFn: () => appointmentRequestService.list(AppointmentRequestStatus.PENDING),
+    // Solo las que aún pueden aceptarse: las de fechas pasadas ya no aplican.
+    queryFn: async () =>
+      (await appointmentRequestService.list(AppointmentRequestStatus.PENDING)).filter(
+        (r) => new Date(r.startTime).getTime() > Date.now(),
+      ),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   })
@@ -449,52 +473,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
         })
       )
 
-  // Mini-calendario mensual: cálculo de días de la cuadrícula
-  const monthDays = useMemo(() => {
-    const year = calendarMonth.getFullYear()
-    const month = calendarMonth.getMonth()
-    const firstDay = new Date(year, month, 1)
-    const lastDay = new Date(year, month + 1, 0)
-
-    // Lunes como inicio (0=Lu ... 6=Do)
-    const startDayIndex = (firstDay.getDay() + 6) % 7
-    const prevMonthLastDay = new Date(year, month, 0).getDate()
-
-    const buildDay = (d: Date, isCurrentMonth: boolean) => ({
-      date: d,
-      isCurrentMonth,
-      hasAppointments: appointments.some(
-        (a) => a.status !== AppointmentStatus.CANCELLED && isSameDay(new Date(a.startTime), d)
-      ),
-      isToday: isSameDay(d, today),
-      isSelected: isSameDay(d, selectedCalendarDate),
-    })
-
-    const days: ReturnType<typeof buildDay>[] = []
-
-    for (let i = startDayIndex - 1; i >= 0; i--) {
-      days.push(buildDay(new Date(year, month - 1, prevMonthLastDay - i), false))
-    }
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      days.push(buildDay(new Date(year, month, i), true))
-    }
-    // Rellenar días del mes siguiente hasta completar múltiplo de 7
-    const remaining = (7 - (days.length % 7)) % 7
-    for (let i = 1; i <= remaining; i++) {
-      days.push(buildDay(new Date(year, month + 1, i), false))
-    }
-
-    return days
-  }, [calendarMonth, appointments, today, selectedCalendarDate])
-
-  const handlePrevMonth = () => {
-    setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
-  }
-
-  const handleNextMonth = () => {
-    setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
-  }
-
   const selectDay = (day: Date) => {
     setSelectedCalendarDate(day)
     setCalendarMonth(new Date(day.getFullYear(), day.getMonth(), 1))
@@ -512,9 +490,8 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
     scrollToList()
   }
 
-  const showNotice = (message: string) => {
-    setActionNotice(message)
-    setTimeout(() => setActionNotice(null), 3500)
+  const showNotice = (message: string, status: "success" | "error" = "success") => {
+    toast({ title: message, status })
   }
 
   const handleRegisterAttendance = async (aptId: string) => {
@@ -524,7 +501,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
       setActiveSessionAppointment(null)
       showNotice("Asistencia registrada. La sesión quedó como completada.")
     } catch {
-      showNotice("No se pudo registrar la asistencia. Intenta de nuevo.")
+      showNotice("No se pudo registrar la asistencia. Intenta de nuevo.", "error")
     }
   }
 
@@ -536,7 +513,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
       const name = patientById.get(appointments.find((a) => a.id === aptId)?.patientId ?? "")?.name
       showNotice(name ? `Cita con ${name} confirmada.` : "Cita confirmada.")
     } catch {
-      showNotice("No se pudo confirmar la cita. Intenta de nuevo.")
+      showNotice("No se pudo confirmar la cita. Intenta de nuevo.", "error")
     }
   }
 
@@ -557,15 +534,11 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
       showNotice(accept ? `Cita${who} agendada y confirmada.` : `Solicitud${who} rechazada.`)
     } catch (error) {
       await refetchRequests()
-      showNotice(error instanceof Error ? error.message : "No se pudo responder la solicitud.")
+      showNotice(error instanceof Error ? error.message : "No se pudo responder la solicitud.", "error")
     } finally {
       setAnsweringRequestId(null)
     }
   }
-
-  const formattedMonth = capitalize(
-    calendarMonth.toLocaleDateString("es-MX", { month: "long", year: "numeric" })
-  )
 
   const formattedTodayHeader = capitalize(
     today.toLocaleDateString("es-MX", {
@@ -620,9 +593,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
         </div>
       </header>
 
-      {actionNotice && (
-        <ActionNotice message={actionNotice} onClose={() => setActionNotice(null)} />
-      )}
 
       {/* TU DÍA: qué sigue + la jornada completa de un vistazo */}
       <section aria-label="Tu día" className="@container overflow-hidden rounded-2xl border border-border bg-card">
@@ -810,26 +780,22 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
               )}
             </div>
 
-            {/* Control segmentado: la selección se marca con superficie, no con color */}
-            <div className="inline-flex self-start rounded-xl bg-muted p-1 @lg:self-auto">
-              {filters.map((filter) => (
-                <button
-                  key={filter.value}
-                  type="button"
-                  onClick={() => setAgendaFilter(filter.value)}
-                  aria-pressed={agendaFilter === filter.value}
-                  className={cn(
-                    "whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150",
-                    agendaFilter === filter.value
-                      ? "bg-card text-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {filter.label}
-                  <span className="ml-1.5 tabular-nums text-muted-foreground">{filter.count}</span>
-                </button>
-              ))}
-            </div>
+            {/* Control segmentado: el indicador se desliza a la opción elegida */}
+            <Tabs
+              value={agendaFilter}
+              onValueChange={(next) => setAgendaFilter(next as AgendaFilter)}
+              variant="segment"
+              className="self-start @lg:self-auto"
+            >
+              <TabsList aria-label="Filtrar citas del día" className="bg-muted p-1">
+                {filters.map((filter) => (
+                  <TabsTrigger key={filter.value} value={filter.value} className="px-3 py-1.5 text-xs">
+                    {filter.label}
+                    <span className="ml-1.5 tabular-nums opacity-70">{filter.count}</span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-border bg-card">
@@ -935,69 +901,19 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
         <div className="grid content-start gap-6 sm:grid-cols-2 xl:grid-cols-1">
           {/* Mini-calendario: tocar un día muestra sus citas en la lista */}
           <aside className="space-y-4 rounded-2xl border border-border bg-card p-5">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold tracking-tight text-foreground">{formattedMonth}</span>
-              <div className="flex items-center">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={handlePrevMonth}
-                  aria-label="Mes anterior"
-                  className="text-muted-foreground"
-                >
-                  <ChevronLeft />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={handleNextMonth}
-                  aria-label="Mes siguiente"
-                  className="text-muted-foreground"
-                >
-                  <ChevronRight />
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-7 text-center text-[11px] font-medium text-muted-foreground">
-              {["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"].map((d) => (
-                <span key={d}>{d}</span>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-7 gap-y-1 text-center">
-              {monthDays.map((item, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => selectDay(item.date)}
-                  aria-label={item.date.toLocaleDateString("es-MX", { day: "numeric", month: "long" })}
-                  aria-current={item.isToday ? "date" : undefined}
-                  aria-pressed={item.isSelected}
-                  className={cn(
-                    "relative mx-auto flex size-8 items-center justify-center rounded-full text-xs tabular-nums transition-colors active:scale-95",
-                    !item.isCurrentMonth && "text-muted-foreground/40",
-                    item.isCurrentMonth && !item.isToday && "text-foreground hover:bg-muted",
-                    item.isSelected && !item.isToday && "bg-primary/10 font-semibold text-primary hover:bg-primary/15",
-                    item.isToday && "bg-primary font-semibold text-primary-foreground",
-                    item.isToday && !item.isSelected && "ring-2 ring-primary/30 ring-offset-2 ring-offset-card"
-                  )}
-                >
-                  {item.date.getDate()}
-                  {item.hasAppointments && (
-                    <span
-                      className={cn(
-                        "absolute bottom-0.5 size-1 rounded-full",
-                        item.isToday ? "bg-primary-foreground" : "bg-primary"
-                      )}
-                      aria-hidden="true"
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
+            <Calendar
+              className="w-full"
+              value={selectedCalendarDate}
+              month={calendarMonth}
+              onMonthChange={setCalendarMonth}
+              onChange={selectDay}
+              hasMarker={(day) =>
+                appointments.some(
+                  (a) => a.status !== AppointmentStatus.CANCELLED && isSameDay(new Date(a.startTime), day),
+                )
+              }
+              showToday
+            />
 
             <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
@@ -1189,7 +1105,7 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
   const [requests, setRequests] = useState<AppointmentRequest[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null)
+  const { toast } = useToast()
   const now = useNow()
   const hydrated = useHydrated()
 
@@ -1275,8 +1191,9 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
     if (!clock) return []
     return requests.filter(
       (r) =>
-        r.status === AppointmentRequestStatus.PENDING ||
-        (r.status === AppointmentRequestStatus.REJECTED && new Date(r.startTime) > clock),
+        // Una solicitud cuya fecha ya pasó no tiene nada que esperar: no se muestra.
+        (r.status === AppointmentRequestStatus.PENDING || r.status === AppointmentRequestStatus.REJECTED) &&
+        new Date(r.startTime) > clock,
     )
   }, [requests, clock])
 
@@ -1284,11 +1201,9 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
     try {
       const updated = await appointmentRequestService.cancel(requestId)
       setRequests((prev) => prev.map((r) => (r.id === requestId ? updated : r)))
-      setFeedbackNotice("Retiraste tu solicitud.")
+      toast({ title: "Retiraste tu solicitud.", status: "success" })
     } catch (error) {
-      setFeedbackNotice(error instanceof Error ? error.message : "No se pudo retirar la solicitud.")
-    } finally {
-      setTimeout(() => setFeedbackNotice(null), 4000)
+      toast({ title: error instanceof Error ? error.message : "No se pudo retirar la solicitud.", status: "error" })
     }
   }
 
@@ -1299,12 +1214,15 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
       const updated = await appointmentService.cancel(aptId, finalReason)
       setAppointments((prev) => prev.map((apt) => (apt.id === aptId ? updated : apt)))
       setCancelModalOpen(false)
-      setFeedbackNotice("Tu cita fue cancelada y tu psicólogo/a ya fue notificado/a.")
+      toast({
+        title: "Cita cancelada",
+        description: "Tu psicólogo/a ya fue notificado/a.",
+        status: "success",
+      })
     } catch (error) {
-      setFeedbackNotice(error instanceof Error ? error.message : "No se pudo cancelar la cita.")
+      toast({ title: error instanceof Error ? error.message : "No se pudo cancelar la cita.", status: "error" })
     } finally {
       setIsCancelling(false)
-      setTimeout(() => setFeedbackNotice(null), 4000)
     }
   }
 
@@ -1379,9 +1297,6 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
         </div>
       </header>
 
-      {feedbackNotice && (
-        <ActionNotice message={feedbackNotice} onClose={() => setFeedbackNotice(null)} />
-      )}
 
       {/* Solicitudes: lo que pediste y todavía no es cita */}
       {openRequests.length > 0 && (
@@ -1467,7 +1382,7 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
               <dd className="text-xs leading-relaxed text-muted-foreground">
                 {nextAppointment.modality === AppointmentModality.VIRTUAL
                   ? "El enlace se habilita antes de la hora."
-                  : "Paseo de la Reforma #450, Piso 3, Consultorio 3B, CDMX."}
+                  : PRACTICE.address}
               </dd>
             </div>
 
@@ -1619,7 +1534,8 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
               <DialogTitle className="text-lg font-semibold tracking-tight">Reagendar cita</DialogTitle>
               <DialogDescription>
                 Tu cita actual es el {formatHeroDate(nextAppointment.startTime).toLowerCase()} a las{" "}
-                {formatAppointmentTime(new Date(nextAppointment.startTime))}. Podrás elegir un nuevo
+                {/* La hora ya termina en "p.m.": sin punto extra. */}
+                {formatAppointmentTime(new Date(nextAppointment.startTime)).replace(/\.$/, "")}. Podrás elegir un nuevo
                 horario según la disponibilidad de {psychologist?.name ?? "tu psicólogo/a"}.
               </DialogDescription>
             </DialogHeader>
@@ -1643,7 +1559,7 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
             <DialogHeader>
               <DialogTitle className="text-lg font-semibold tracking-tight">Cancelar cita</DialogTitle>
               <DialogDescription>
-                {formatHeroDate(nextAppointment.startTime)} · {formatAppointmentTime(new Date(nextAppointment.startTime))}.
+                {formatHeroDate(nextAppointment.startTime)} · {formatAppointmentTime(new Date(nextAppointment.startTime)).replace(/\.$/, "")}.
                 Cuéntanos el motivo para avisar a tu psicólogo/a y liberar el espacio.
               </DialogDescription>
             </DialogHeader>

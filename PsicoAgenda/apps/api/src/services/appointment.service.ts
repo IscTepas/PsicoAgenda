@@ -152,6 +152,13 @@ const toAttendanceStatus = (status: estado_cita): AttendanceStatus | undefined =
   }
 };
 
+const SESSION_TYPES: Record<tipo_sesion, NonNullable<Appointment["sessionType"]>> = {
+  [tipo_sesion.CONSULTA_INICIAL]: "initial",
+  [tipo_sesion.INDIVIDUAL]: "individual",
+  [tipo_sesion.PAREJA]: "couple",
+  [tipo_sesion.FAMILIAR]: "family",
+};
+
 const ACTIVE_STATUSES: estado_cita[] = [
   estado_cita.PENDIENTE,
   estado_cita.CONFIRMADA,
@@ -186,6 +193,7 @@ export const toAppointment = (row: AppointmentRow): Appointment => {
     status: toSharedStatus(row.estado),
     modality: toSharedModality(row.modalidad),
     attendanceStatus: toAttendanceStatus(row.estado),
+    sessionType: SESSION_TYPES[row.tipo_sesion],
     reason: row.motivo ?? undefined,
     notes: row.notas_internas ?? undefined,
     // `precio` es el snapshot de la tarifa; `payment` es el estado de cobro.
@@ -457,8 +465,9 @@ export async function createAppointment(
         durationMinutes: input.durationMinutes,
         modality: input.modality,
         reason: input.reason,
-        // La cita nace PENDIENTE: el profesional debe confirmarla manualmente.
-        status: estado_cita.PENDIENTE,
+        // Si la agenda el propio profesional ya está confirmada; si la pide el
+        // paciente (ruta antigua), queda PENDIENTE hasta que la confirme.
+        status: auth.role === UserRole.PATIENT ? estado_cita.PENDIENTE : estado_cita.CONFIRMADA,
       }),
     );
 
@@ -673,10 +682,11 @@ export async function cancelAppointment(
   }
 
   // El CHECK `ck_citas_cancelacion` exige motivo y marca de cancelación juntos. La
-  // fila de honorarios se borra en la misma transacción: el enum no tiene estado
-  // "cancelado", así que cancelar no debe dejar una deuda pendiente colgando.
+  // fila de honorarios PENDIENTE se borra en la misma transacción: el enum no tiene
+  // estado "cancelado", así que cancelar no debe dejar una deuda colgando. Un pago ya
+  // cobrado o condonado se conserva: es constancia de dinero real.
   const updated = await prisma.$transaction(async (tx) => {
-    await tx.pagos_honorarios.deleteMany({ where: { cita_id: id } });
+    await tx.pagos_honorarios.deleteMany({ where: { cita_id: id, estado: estado_pago.PENDIENTE } });
 
     return tx.citas.update({
       where: { id },

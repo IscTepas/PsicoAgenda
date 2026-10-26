@@ -4,38 +4,19 @@ import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import {
-  Search,
-  X,
-  CalendarCheck,
-  ChevronRight,
-  Clock,
-  UserX,
-} from "lucide-react"
+import { Search, X, ChevronRight, UserX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Table, type TableColumn } from "@/components/motion/table"
 import { PageHeader } from "../components/page-header"
 import { useSession } from "@/lib/use-session"
 import {
   UserRole,
   AppointmentStatus,
   AttendanceStatus,
-  type Appointment,
-  type Patient,
 } from "@psicoagenda/shared"
 import { appointmentService, patientService } from "@/services"
 
-type FilterChip = "todos" | "recientes" | "proxima-cita" | "inactivos"
-type SortOption = "alfabetico" | "ultima-sesion"
 
 function getInitials(name: string): string {
   const parts = name.trim().split(" ")
@@ -43,6 +24,15 @@ function getInitials(name: string): string {
     return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
   }
   return (name[0] ?? "P").toUpperCase()
+}
+
+function ageFrom(birth: Date, today: Date): number {
+  let age = today.getFullYear() - birth.getFullYear()
+  const beforeBirthday =
+    today.getMonth() < birth.getMonth() ||
+    (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())
+  if (beforeBirthday) age -= 1
+  return age
 }
 
 function formatDate(date: Date): string {
@@ -65,8 +55,6 @@ export default function PantallaBusquedaPaciente() {
       : UserRole.PSYCHOLOGIST)
 
   const [searchQuery, setSearchQuery] = useState("")
-  const [activeChip, setActiveChip] = useState<FilterChip>("todos")
-  const [sortBy, setSortBy] = useState<SortOption>("alfabetico")
 
   const { data: patientsRaw = [], isLoading: loadingP, error: errP } = useQuery({
     queryKey: ["patients", "directory", 100],
@@ -79,7 +67,7 @@ export default function PantallaBusquedaPaciente() {
     queryKey: ["appointments", "patients-enrich", "90d"],
     queryFn: () => {
       const from = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-      return appointmentService.list({ from, limit: 500 })
+      return appointmentService.list({ from, limit: 200 }) // 200 es el máximo que valida la API
     },
     staleTime: 30_000,
     refetchOnWindowFocus: false,
@@ -116,25 +104,11 @@ export default function PantallaBusquedaPaciente() {
         )
         .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0]
 
-      // Inactividad: sin consultas en los últimos 30 días o sin consultas
-      const daysSinceLastSession = latestAttended
-        ? Math.floor(
-            (now.getTime() - new Date(latestAttended.startTime).getTime()) /
-              (1000 * 60 * 60 * 24)
-          )
-        : 999
-
-      const isInactive = !latestAttended || daysSinceLastSession > 30
-
       return {
         ...patient,
         latestAttended,
         upcomingApt,
-        daysSinceLastSession,
-        isInactive,
-        effectiveDate: latestAttended
-          ? new Date(latestAttended.startTime).getTime()
-          : new Date(patient.createdAt).getTime(),
+        age: patient.birthDate ? ageFrom(new Date(patient.birthDate), now) : null,
       }
     })
   }, [patients, appointments])
@@ -153,28 +127,99 @@ export default function PantallaBusquedaPaciente() {
           patient.email.toLowerCase().includes(query) ||
           (patient.phone && patient.phone.toLowerCase().includes(query))
 
-        if (!matchesQuery) return false
-
-        // Filtro por Chips / Tags
-        if (activeChip === "recientes") {
-          return !!patient.latestAttended
-        }
-        if (activeChip === "proxima-cita") {
-          return !!patient.upcomingApt
-        }
-        if (activeChip === "inactivos") {
-          return patient.isInactive && !patient.upcomingApt
-        }
-
-        return true
+        return matchesQuery
       })
-      .sort((a, b) => {
-        if (sortBy === "ultima-sesion") {
-          return b.effectiveDate - a.effectiveDate
-        }
-        return a.name.localeCompare(b.name, "es", { sensitivity: "base" })
-      })
-  }, [enrichedPatients, searchQuery, activeChip, sortBy])
+  }, [enrichedPatients, searchQuery])
+
+  type PatientRow = (typeof enrichedPatients)[number]
+  const columns: TableColumn<PatientRow>[] = [
+    {
+      key: "name",
+      header: "Paciente",
+      sortable: true,
+      width: "26%",
+      sortValue: (p) => p.name.toLocaleLowerCase("es"),
+      cell: (p) => (
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-xs font-bold text-primary">
+            {getInitials(p.name)}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
+            <p className="truncate text-xs text-muted-foreground">{p.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "age",
+      header: "Edad",
+      sortable: true,
+      width: "120px",
+      sortValue: (p) => p.age ?? (p.isMinor ? 0 : 999),
+      cell: (p) => (
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-0.5 text-[11px] font-medium text-foreground/80">
+          <span className={p.isMinor ? "size-1.5 rounded-full bg-amber-500" : "size-1.5 rounded-full bg-primary"} />
+          {p.isMinor ? "Menor" : "Adulto"}
+          {p.age !== null && <span className="tabular-nums text-muted-foreground">· {p.age}</span>}
+        </span>
+      ),
+    },
+    {
+      key: "contact",
+      header: "Contacto",
+      width: "15%",
+      cell: (p) => (
+        <div className="min-w-0">
+          <p className="truncate text-xs tabular-nums text-foreground">{p.phone || "—"}</p>
+          {p.isMinor && p.legalGuardian && (
+            <p className="truncate text-[11px] text-muted-foreground">Tutor: {p.legalGuardian.name}</p>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "lastSession",
+      header: "Última consulta",
+      sortable: true,
+      sortValue: (p) => (p.latestAttended ? new Date(p.latestAttended.startTime).getTime() : 0),
+      cell: (p) =>
+        p.latestAttended ? (
+          <span className="text-xs text-foreground">{formatDate(new Date(p.latestAttended.startTime))}</span>
+        ) : (
+          <span className="text-xs text-muted-foreground">Sin consultas</span>
+        ),
+    },
+    {
+      key: "nextAppointment",
+      header: "Próxima cita",
+      sortable: true,
+      // Sin cita va al final al ordenar de la más cercana a la más lejana.
+      sortValue: (p) => (p.upcomingApt ? new Date(p.upcomingApt.startTime).getTime() : Number.MAX_SAFE_INTEGER),
+      cell: (p) =>
+        p.upcomingApt ? (
+          <span className="text-xs font-medium text-primary">{formatDate(new Date(p.upcomingApt.startTime))}</span>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
+    },
+    {
+      key: "actions",
+      header: <span className="sr-only">Acciones</span>,
+      align: "right",
+      width: "140px",
+      cell: (p) => (
+        <Link
+          href={`/pacientes/${p.id}`}
+          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/10"
+        >
+          Ver expediente
+          <ChevronRight className="size-3.5" />
+        </Link>
+      ),
+    },
+  ]
+  const ROW_HEIGHT = 56
 
   if (!isLoading && effectiveRole === UserRole.PATIENT) {
     router.replace("/dashboard")
@@ -226,160 +271,22 @@ export default function PantallaBusquedaPaciente() {
         </div>
       </div>
 
-      {/* FILTROS RÁPIDOS Y ORDENAMIENTO */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        <Button
-          variant={activeChip === "todos" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setActiveChip("todos")}
-          className={
-            activeChip === "todos"
-              ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
-              : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
-          }
-        >
-          Todos ({enrichedPatients.length})
-        </Button>
-
-        <Button
-          variant={activeChip === "recientes" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setActiveChip("recientes")}
-          className={
-            activeChip === "recientes"
-              ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
-              : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
-          }
-        >
-          Recientes
-        </Button>
-
-        <Button
-          variant={activeChip === "proxima-cita" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setActiveChip("proxima-cita")}
-          className={
-            activeChip === "proxima-cita"
-              ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
-              : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
-          }
-        >
-          Con cita próxima
-        </Button>
-
-        <Button
-          variant={activeChip === "inactivos" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setActiveChip("inactivos")}
-          className={
-            activeChip === "inactivos"
-              ? "bg-primary text-primary-foreground hover:bg-primary/90 text-xs rounded-xl h-8"
-              : "text-xs rounded-xl h-8 border-border/70 text-muted-foreground hover:text-foreground"
-          }
-        >
-          Inactivos
-        </Button>
-      </div>
-
-        <Select value={sortBy} onValueChange={(val) => setSortBy(val as SortOption)}>
-          <SelectTrigger className="h-8 rounded-xl text-xs border-border/70 w-full sm:w-56 shrink-0">
-            <SelectValue placeholder="Ordenar por" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="alfabetico">Ordenar: Alfabético</SelectItem>
-            <SelectItem value="ultima-sesion">Ordenar: Última sesión registrada</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       {/* LISTA DE RESULTADOS (DATA GRID / TARJETAS) */}
       {isDataLoading ? null : filteredPatients.length > 0 ? (
-        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredPatients.map((patient) => {
-            const hasAttended = !!patient.latestAttended
-            const hasUpcoming = !!patient.upcomingApt
-
-            return (
-              <Card
-                key={patient.id}
-                className="border-border/70 hover:border-primary/40 transition-all shadow-2xs hover:shadow-xs rounded-2xl flex flex-col justify-between overflow-hidden bg-card"
-              >
-                <CardContent className="p-5 flex flex-col justify-between h-full space-y-4">
-                  {/* Top card: Avatar + Info */}
-                  <div className="flex items-start gap-3.5">
-                    <div className="size-11 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center font-bold text-sm shrink-0">
-                      {getInitials(patient.name)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3 className="font-semibold text-sm sm:text-base text-foreground truncate">
-                          {patient.name}
-                        </h3>
-                        {patient.isMinor && (
-                          <Badge
-                            variant="secondary"
-                            className="text-[10px] px-1.5 py-0 h-4 bg-muted text-muted-foreground"
-                          >
-                            Menor
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {patient.email}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground/80 font-mono mt-0.5">
-                        ID: {patient.id}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Metadatos: Última consulta & Estado */}
-                  <div className="pt-2 border-t border-border/40 space-y-1.5 text-xs">
-                    <div className="flex items-center justify-between text-muted-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <Clock className="size-3.5" />
-                        Última consulta:
-                      </span>
-                      <span className="font-medium text-foreground">
-                        {hasAttended
-                          ? formatDate(new Date(patient.latestAttended!.startTime))
-                          : "Sin consultas previas"}
-                      </span>
-                    </div>
-
-                    {hasUpcoming && (
-                      <div className="flex items-center justify-between text-primary">
-                        <span className="flex items-center gap-1.5 text-[11px]">
-                          <CalendarCheck className="size-3.5" />
-                          Próxima cita:
-                        </span>
-                        <span className="font-medium text-[11px]">
-                          {formatDate(new Date(patient.upcomingApt!.startTime))}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Botón de acción rápida: Ver Expediente */}
-                  <div className="pt-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full justify-between h-9 rounded-xl text-xs font-semibold hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-colors"
-                      asChild
-                    >
-                      <Link href={`/pacientes/${patient.id}`}>
-                        <span>Ver Historial Clínico</span>
-                        <ChevronRight className="size-3.5" />
-                      </Link>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+        // Tabla: clic en un encabezado ordena; arrastrar su borde cambia el ancho.
+        <Table
+          data={filteredPatients}
+          columns={columns}
+          getRowId={(p) => p.id}
+          defaultSort={{ key: "name", direction: "asc" }}
+          resizable
+          rowHeight={ROW_HEIGHT}
+          // Crece con sus filas: la página hace el scroll (renderiza todas, son pocas).
+          height="auto"
+          overscan={filteredPatients.length}
+          emptyState="No hay pacientes con este filtro."
+          className="rounded-2xl border border-border/70 bg-card shadow-2xs"
+        />
       ) : (
         /* ESTADO VACÍO (EMPTY STATE) */
         <div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-8 sm:p-12 text-center space-y-4">
