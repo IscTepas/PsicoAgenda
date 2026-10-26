@@ -7,7 +7,7 @@ import {
   type AppointmentRequest,
 } from "@psicoagenda/shared";
 import type { Prisma } from "@/generated/prisma/client";
-import { estado_cita, estado_solicitud } from "@/generated/prisma/enums";
+import { estado_cita, estado_pago, estado_solicitud } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/app-error";
 import type { AuthenticatedUser } from "@/utils/jwt";
@@ -248,9 +248,9 @@ export async function rescheduleAppointmentRequest(
 
   try {
     const created = await prisma.$transaction(async (tx) => {
-      // Mismo tratamiento que cancelAppointment: el honorario no sobrevive a una
-      // cita cancelada.
-      await tx.pagos_honorarios.deleteMany({ where: { cita_id: current.id } });
+      // Mismo tratamiento que cancelAppointment: se borra solo el honorario pendiente;
+      // un pago ya cobrado se conserva como constancia.
+      await tx.pagos_honorarios.deleteMany({ where: { cita_id: current.id, estado: estado_pago.PENDIENTE } });
 
       const cancelled = await tx.citas.updateMany({
         where: { id: current.id, estado: { not: estado_cita.CANCELADA } },

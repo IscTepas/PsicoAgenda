@@ -49,7 +49,7 @@ const TIMEZONE_OPTIONS = TIMEZONES.map((value) => ({ value, label: TIMEZONE_LABE
 
 // La BD guarda "UTC" por defecto y no está en la lista: el Select quedaría vacío y la API lo rechaza.
 function toKnownTimezone(value: string | null | undefined): string {
-  return TIMEZONE_OPTIONS.find((tz) => tz.value === value)?.value ?? "America/Mexico_City"
+  return TIMEZONE_OPTIONS.find((tz) => tz.value === value)?.value ?? "America/Mazatlan" // la del consultorio
 }
 
 function getInitials(name: string): string {
@@ -84,7 +84,7 @@ export function PantallaPerfilUsuario() {
   const [avatarImage, setAvatarImage] = useState<string | null>(null)
 
   // 3. Preferencias (Zona horaria y tema de interfaz)
-  const [timezone, setTimezone] = useState<string>("America/Mexico_City")
+  const [timezone, setTimezone] = useState<string>("America/Mazatlan")
   const { mode, palette, setMode, setPalette, reset } = useThemePreference()
 
   // Estados de retroalimentación

@@ -386,7 +386,11 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
 
   const { data: pendingRequests = [], refetch: refetchRequests } = useQuery({
     queryKey: ["appointment-requests", AppointmentRequestStatus.PENDING],
-    queryFn: () => appointmentRequestService.list(AppointmentRequestStatus.PENDING),
+    // Solo las que aún pueden aceptarse: las de fechas pasadas ya no aplican.
+    queryFn: async () =>
+      (await appointmentRequestService.list(AppointmentRequestStatus.PENDING)).filter(
+        (r) => new Date(r.startTime).getTime() > Date.now(),
+      ),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   })
@@ -1187,8 +1191,9 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
     if (!clock) return []
     return requests.filter(
       (r) =>
-        r.status === AppointmentRequestStatus.PENDING ||
-        (r.status === AppointmentRequestStatus.REJECTED && new Date(r.startTime) > clock),
+        // Una solicitud cuya fecha ya pasó no tiene nada que esperar: no se muestra.
+        (r.status === AppointmentRequestStatus.PENDING || r.status === AppointmentRequestStatus.REJECTED) &&
+        new Date(r.startTime) > clock,
     )
   }, [requests, clock])
 
@@ -1529,7 +1534,8 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
               <DialogTitle className="text-lg font-semibold tracking-tight">Reagendar cita</DialogTitle>
               <DialogDescription>
                 Tu cita actual es el {formatHeroDate(nextAppointment.startTime).toLowerCase()} a las{" "}
-                {formatAppointmentTime(new Date(nextAppointment.startTime))}. Podrás elegir un nuevo
+                {/* La hora ya termina en "p.m.": sin punto extra. */}
+                {formatAppointmentTime(new Date(nextAppointment.startTime)).replace(/\.$/, "")}. Podrás elegir un nuevo
                 horario según la disponibilidad de {psychologist?.name ?? "tu psicólogo/a"}.
               </DialogDescription>
             </DialogHeader>
@@ -1553,7 +1559,7 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
             <DialogHeader>
               <DialogTitle className="text-lg font-semibold tracking-tight">Cancelar cita</DialogTitle>
               <DialogDescription>
-                {formatHeroDate(nextAppointment.startTime)} · {formatAppointmentTime(new Date(nextAppointment.startTime))}.
+                {formatHeroDate(nextAppointment.startTime)} · {formatAppointmentTime(new Date(nextAppointment.startTime)).replace(/\.$/, "")}.
                 Cuéntanos el motivo para avisar a tu psicólogo/a y liberar el espacio.
               </DialogDescription>
             </DialogHeader>

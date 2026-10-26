@@ -108,7 +108,6 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
   const [homework, setHomework] = React.useState<string>("")
   const [formError, setFormError] = React.useState<string>("")
   const [isSaving, setIsSaving] = React.useState<boolean>(false)
-  const [hasDraft, setHasDraft] = React.useState<boolean>(false)
   const [copiedPhone, setCopiedPhone] = React.useState<boolean>(false)
   const [successToast, setSuccessToast] = React.useState<string | null>(null)
 
@@ -174,72 +173,28 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
     return `${formatShortDate(now)} — ${formatAppointmentTime(now)} hrs (Sesión #${logs.length + 1})`
   }, [editingLog, associatedAppointment, logs])
 
-  // Borrador de bitácora: permite guardar una entrada a medio escribir y
-  // reanudarla después sin perderla, sin "sellarla" todavía en el expediente.
-  const draftKey = (key: string) => `psicoagenda-bitacora-draft-${patientId}-${key}`
-
-  type BitacoraDraft = {
-    sessionType: string
-    sessionNotes: string
-    interventions: string
-    homework: string
-  }
-
-  const readDraft = (key: string): BitacoraDraft | null => {
-    if (typeof window === "undefined") return null
-    try {
-      const raw = window.localStorage.getItem(draftKey(key))
-      return raw ? (JSON.parse(raw) as BitacoraDraft) : null
-    } catch {
-      return null
-    }
-  }
-
-  const clearDraft = (key: string) => {
-    if (typeof window === "undefined") return
-    window.localStorage.removeItem(draftKey(key))
-  }
-
   // Open modal for a new log entry
   const handleOpenNewLog = (aptId?: string) => {
-    const resolvedAptId = aptId || appointments[0]?.id || "nueva"
-    const draft = readDraft(resolvedAptId)
-
     setEditingLog(null)
     setSelectedAppointmentId(aptId || appointments[0]?.id || "")
-    setSessionType(draft?.sessionType ?? "Seguimiento terapéutico")
-    setSessionNotes(draft?.sessionNotes ?? "")
-    setInterventions(draft?.interventions ?? "")
-    setHomework(draft?.homework ?? "")
+    setSessionType("Seguimiento terapéutico")
+    setSessionNotes("")
+    setInterventions("")
+    setHomework("")
     setFormError("")
-    setHasDraft(!!draft)
     setIsModalOpen(true)
   }
 
   // Open modal to edit an existing entry
   const handleOpenEditLog = (log: SessionLogEntry) => {
-    const draft = readDraft(log.id)
-
     setEditingLog(log)
     setSelectedAppointmentId(log.appointmentId || "")
-    setSessionType(draft?.sessionType ?? log.sessionType)
-    setSessionNotes(draft?.sessionNotes ?? log.notes)
-    setInterventions(draft?.interventions ?? (log.interventions || ""))
-    setHomework(draft?.homework ?? (log.homework || ""))
+    setSessionType(log.sessionType)
+    setSessionNotes(log.notes)
+    setInterventions(log.interventions || "")
+    setHomework(log.homework || "")
     setFormError("")
-    setHasDraft(!!draft)
     setIsModalOpen(true)
-  }
-
-  const handleSaveDraft = () => {
-    const key = editingLog?.id || selectedAppointmentId || "nueva"
-    window.localStorage.setItem(
-      draftKey(key),
-      JSON.stringify({ sessionType, sessionNotes, interventions, homework } satisfies BitacoraDraft),
-    )
-    setHasDraft(true)
-    setSuccessToast("Borrador guardado. Puedes cerrar y continuar más tarde.")
-    setTimeout(() => setSuccessToast(null), 4000)
   }
 
   // Quick insertion helpers for structured SOAP / clinical notes
@@ -284,9 +239,6 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
         setSuccessToast("Nueva nota de sesión registrada en la bitácora clínica.")
       }
 
-      // Al sellar la entrada (nueva o editada) el borrador pendiente ya no aplica.
-      clearDraft(editingLog?.id || selectedAppointmentId || "nueva")
-      setHasDraft(false)
       setIsModalOpen(false)
       setTimeout(() => setSuccessToast(null), 3500)
     } catch (error) {
@@ -864,12 +816,6 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
               <DialogDescription className="text-xs text-muted-foreground">
                 Documenta las observaciones, evolución y acuerdos terapéuticos para el expediente del paciente.
               </DialogDescription>
-              {hasDraft && (
-                <div className="flex items-center gap-1.5 text-[11px] font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1.5 w-fit">
-                  <Bookmark className="size-3.5" />
-                  Reanudando un borrador guardado anteriormente
-                </div>
-              )}
             </DialogHeader>
 
             {formError && (
@@ -994,17 +940,6 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
                 className="h-9 rounded-xl border-border/80 text-xs"
               >
                 Cancelar
-              </Button>
-
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleSaveDraft}
-                disabled={!sessionNotes.trim() && !interventions.trim() && !homework.trim()}
-                className="h-9 rounded-xl border-border/80 text-xs gap-1.5 sm:mr-auto"
-              >
-                <Bookmark className="size-3.5" />
-                Guardar borrador
               </Button>
 
               <Button

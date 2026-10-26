@@ -67,7 +67,7 @@ export default function PantallaBusquedaPaciente() {
     queryKey: ["appointments", "patients-enrich", "90d"],
     queryFn: () => {
       const from = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-      return appointmentService.list({ from, limit: 500 })
+      return appointmentService.list({ from, limit: 200 }) // 200 es el máximo que valida la API
     },
     staleTime: 30_000,
     refetchOnWindowFocus: false,

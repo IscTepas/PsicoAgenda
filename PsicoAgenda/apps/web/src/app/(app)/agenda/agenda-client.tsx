@@ -301,7 +301,10 @@ export function AgendaClient() {
   // Appointments today for header stats
   const today = React.useMemo(() => new Date(), [])
   const todayAppointments = React.useMemo(() => {
-    return baseAppointments.filter((apt) => isSameDay(apt.startTime, today))
+    // Las canceladas ya no son citas "programadas para hoy".
+    return baseAppointments.filter(
+      (apt) => isSameDay(apt.startTime, today) && apt.status !== AppointmentStatus.CANCELLED,
+    )
   }, [baseAppointments, today])
 
   // Filtered appointments according to status & search query
@@ -339,9 +342,14 @@ export function AgendaClient() {
     const startOfToday = new Date(today)
     startOfToday.setHours(0, 0, 0, 0)
     return filteredAppointments
-      .filter((apt) => apt.startTime >= startOfToday)
+      // Próximas = por realizar: sin canceladas, salvo que se filtre justo por canceladas.
+      .filter(
+        (apt) =>
+          apt.startTime >= startOfToday &&
+          (selectedStatus === AppointmentStatus.CANCELLED || apt.status !== AppointmentStatus.CANCELLED),
+      )
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
-  }, [filteredAppointments, today])
+  }, [filteredAppointments, today, selectedStatus])
 
   // Counts by status
   const counts = React.useMemo(() => {
@@ -556,11 +564,13 @@ export function AgendaClient() {
           <p className="text-sm text-muted-foreground">
             {isPatient ? (
               <>
-                Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span> programadas para hoy. Consulta tus sesiones programadas.
+                Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span>{" "}
+                {todayAppointments.length === 1 ? "programada" : "programadas"} para hoy. Consulta tus sesiones programadas.
               </>
             ) : (
               <>
-                Tienes <span className="font-medium text-foreground">{todayAppointments.length} citas</span> programadas para hoy. Consulta y administra tus sesiones clínicas.
+                Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span>{" "}
+                {todayAppointments.length === 1 ? "programada" : "programadas"} para hoy. Consulta y administra tus sesiones clínicas.
               </>
             )}
           </p>

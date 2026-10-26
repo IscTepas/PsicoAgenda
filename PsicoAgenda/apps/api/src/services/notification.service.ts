@@ -245,7 +245,7 @@ export function canalesDelEvento(
 }
 
 // shortcut: las cuentas nuevas nacen con zona "UTC"; se asume la del consultorio hasta que el perfil la pida.
-const ZONA_POR_DEFECTO = "America/Mexico_City";
+const ZONA_POR_DEFECTO = "America/Mazatlan"; // la del consultorio (Tepic, Nay.)
 
 const formatearHorario = (fecha: Date, zona: string) => {
   const timeZone = zona && zona !== "UTC" ? zona : ZONA_POR_DEFECTO;

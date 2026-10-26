@@ -157,6 +157,9 @@ export interface LegalGuardian {
   createdAt: Date;
 }
 
+/** Tipo de sesión de la cita (citas.tipo_sesion). */
+export type AppointmentSessionType = "initial" | "individual" | "couple" | "family";
+
 export interface Appointment {
   id: string;
   psychologistId: string;
@@ -166,6 +169,7 @@ export interface Appointment {
   status: AppointmentStatus;
   modality: AppointmentModality;
   attendanceStatus?: AttendanceStatus;
+  sessionType?: AppointmentSessionType;
   reason?: string;
   notes?: string;
   price?: number;

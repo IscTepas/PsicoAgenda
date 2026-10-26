@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { AppointmentStatus, AttendanceStatus, type Appointment } from "@psicoagenda/shared"
+import { appointmentService, patientService } from "@/services"
 import Link from "next/link"
 import {
   CalendarDays,
@@ -60,13 +63,13 @@ export type ReportAppointment = {
   status: "attended" | "cancelled" | "no_show" | "pending"
   fee: number
   modality: "in_person" | "virtual"
-  serviceType: "individual" | "pareja" | "evaluacion" | "seguimiento"
+  serviceType: NonNullable<Appointment["sessionType"]>
   reason: string
 }
 
 const REPORT_STATUS: Record<ReportAppointment["status"], { label: string; dot: string; order: number }> = {
   attended: { label: "Asistida", dot: "bg-primary", order: 0 },
-  pending: { label: "Pendiente", dot: "bg-amber-500", order: 1 },
+  pending: { label: "Programada", dot: "bg-amber-500", order: 1 },
   no_show: { label: "Inasistencia", dot: "bg-muted-foreground/50", order: 2 },
   cancelled: { label: "Cancelada", dot: "bg-destructive", order: 3 },
 }
@@ -74,171 +77,39 @@ const REPORT_STATUS: Record<ReportAppointment["status"], { label: string; dot: s
 const REPORT_ROW_HEIGHT = 56
 
 const SERVICE_TYPE_LABELS: Record<ReportAppointment["serviceType"], string> = {
-  individual: "Terapia Individual",
-  pareja: "Terapia de Pareja",
-  evaluacion: "Evaluación Inicial",
-  seguimiento: "Seguimiento",
+  initial: "Consulta inicial",
+  individual: "Terapia individual",
+  couple: "Terapia de pareja",
+  family: "Terapia familiar",
 }
 
-// Datos realistas del consultorio para el período actual
-const INITIAL_RECORDS: ReportAppointment[] = [
-  {
-    id: "rep-1",
-    date: "2026-09-02",
-    time: "10:00",
-    patientId: "patient-1",
-    patientName: "María López",
-    status: "attended",
-    fee: 800,
-    modality: "in_person",
-    serviceType: "individual",
-    reason: "Sesión 1 - Técnicas de relajación",
-  },
-  {
-    id: "rep-2",
-    date: "2026-09-04",
-    time: "12:00",
-    patientId: "patient-2",
-    patientName: "Luis Hernández",
-    status: "attended",
-    fee: 850,
-    modality: "virtual",
-    serviceType: "evaluacion",
-    reason: "Evaluación inicial y encuadre",
-  },
-  {
-    id: "rep-3",
-    date: "2026-09-08",
-    time: "16:00",
-    patientId: "patient-3",
-    patientName: "Sofía Martínez",
-    status: "attended",
-    fee: 900,
-    modality: "in_person",
-    serviceType: "individual",
-    reason: "Terapia infanto-juvenil",
-  },
-  {
-    id: "rep-4",
-    date: "2026-09-09",
-    time: "11:00",
-    patientId: "patient-1",
-    patientName: "María López",
-    status: "attended",
-    fee: 800,
-    modality: "in_person",
-    serviceType: "seguimiento",
-    reason: "Reestructuración cognitiva",
-  },
-  {
-    id: "rep-5",
-    date: "2026-09-11",
-    time: "17:00",
-    patientId: "patient-2",
-    patientName: "Luis Hernández",
-    status: "cancelled",
-    fee: 0,
-    modality: "virtual",
-    serviceType: "seguimiento",
-    reason: "Cancelación con aviso previo por trabajo",
-  },
-  {
-    id: "rep-6",
-    date: "2026-09-15",
-    time: "10:00",
-    patientId: "patient-3",
-    patientName: "Sofía Martínez",
-    status: "attended",
-    fee: 900,
-    modality: "in_person",
-    serviceType: "individual",
-    reason: "Manejo emocional y juego guiado",
-  },
-  {
-    id: "rep-7",
-    date: "2026-09-16",
-    time: "11:30",
-    patientId: "patient-1",
-    patientName: "María López",
-    status: "attended",
-    fee: 800,
-    modality: "in_person",
-    serviceType: "seguimiento",
-    reason: "Revisión de tareas conductuales",
-  },
-  {
-    id: "rep-8",
-    date: "2026-09-18",
-    time: "13:00",
-    patientId: "patient-2",
-    patientName: "Luis Hernández",
-    status: "attended",
-    fee: 850,
-    modality: "virtual",
-    serviceType: "seguimiento",
-    reason: "Estrategias de afrontamiento",
-  },
-  {
-    id: "rep-9",
-    date: "2026-09-22",
-    time: "16:00",
-    patientId: "patient-3",
-    patientName: "Sofía Martínez",
-    status: "no_show",
-    fee: 0,
-    modality: "in_person",
-    serviceType: "individual",
-    reason: "Inasistencia por enfermedad escolar",
-  },
-  {
-    id: "rep-10",
-    date: "2026-09-23",
-    time: "10:00",
-    patientId: "patient-1",
-    patientName: "María López",
-    status: "attended",
-    fee: 800,
-    modality: "in_person",
-    serviceType: "seguimiento",
-    reason: "Seguimiento clínico semanal",
-  },
-  {
-    id: "rep-11",
-    date: "2026-09-25",
-    time: "12:00",
-    patientId: "patient-2",
-    patientName: "Luis Hernández",
-    status: "attended",
-    fee: 850,
-    modality: "virtual",
-    serviceType: "seguimiento",
-    reason: "Avances en regulación del estrés",
-  },
-  {
-    id: "rep-12",
-    date: "2026-09-29",
-    time: "16:00",
-    patientId: "patient-3",
-    patientName: "Sofía Martínez",
-    status: "attended",
-    fee: 900,
-    modality: "in_person",
-    serviceType: "seguimiento",
-    reason: "Cierre de módulo conductual",
-  },
-  {
-    id: "rep-13",
-    date: "2026-09-30",
-    time: "11:00",
-    patientId: "patient-1",
-    patientName: "María López",
-    status: "attended",
-    fee: 800,
-    modality: "in_person",
-    serviceType: "evaluacion",
-    reason: "Evaluación de progreso terapéutico",
-  },
-]
+const pad = (n: number) => String(n).padStart(2, "0")
+
+/** Cita de la API → fila del reporte (fecha y hora en la zona local). */
+function toReportRow(apt: Appointment, patientName: string): ReportAppointment {
+  const start = new Date(apt.startTime)
+  const status: ReportAppointment["status"] =
+    apt.status === AppointmentStatus.CANCELLED
+      ? "cancelled"
+      : apt.status === AppointmentStatus.NO_SHOW || apt.attendanceStatus === AttendanceStatus.NO_SHOW
+        ? "no_show"
+        : apt.status === AppointmentStatus.COMPLETED || apt.attendanceStatus === AttendanceStatus.ATTENDED
+          ? "attended"
+          : "pending"
+  return {
+    id: apt.id,
+    date: isoDate(start),
+    time: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
+    patientId: apt.patientId,
+    patientName,
+    status,
+    // Una cita cancelada no genera honorario.
+    fee: status === "cancelled" ? 0 : (apt.price ?? 0),
+    modality: apt.modality === "virtual" ? "virtual" : "in_person",
+    serviceType: apt.sessionType ?? "individual",
+    reason: apt.reason || "Sin motivo registrado",
+  }
+}
 
 function getInitials(name: string): string {
   const parts = name.trim().split(" ")
@@ -265,7 +136,7 @@ function statusLabel(status: ReportAppointment["status"]): string {
     case "no_show":
       return "Inasistencia"
     default:
-      return "Pendiente"
+      return "Programada"
   }
 }
 
@@ -282,21 +153,42 @@ function formatDate(dateStr: string, timeStr?: string): string {
 
 export default function ReportsPage() {
   // Filtros activos
-  const [fromDate, setFromDate] = useState("2026-09-01")
-  const [toDate, setToDate] = useState("2026-09-30")
-  const [statusFilter, setStatusFilter] = useState<"all" | "attended" | "cancelled" | "no_show">("all")
+  const [defaultRange] = useState(() => reportPresets()[0].value)
+  const [fromDate, setFromDate] = useState(defaultRange.from)
+  const [toDate, setToDate] = useState(defaultRange.to ?? defaultRange.from)
+  const [statusFilter, setStatusFilter] = useState<"all" | ReportAppointment["status"]>("all")
   const [serviceTypeFilter, setServiceTypeFilter] = useState<"all" | ReportAppointment["serviceType"]>("all")
 
   // Estado aplicado (se confirma al hacer clic en "Generar Reporte")
   const [appliedFilters, setAppliedFilters] = useState({
-    fromDate: "2026-09-01",
-    toDate: "2026-09-30",
-    status: "all" as "all" | "attended" | "cancelled" | "no_show",
+    fromDate: defaultRange.from,
+    toDate: defaultRange.to ?? defaultRange.from,
+    status: "all" as "all" | ReportAppointment["status"],
     serviceType: "all" as "all" | ReportAppointment["serviceType"],
   })
 
   const [notification, setNotification] = useState<string | null>(null)
-  const [isGenerating, setIsGenerating] = useState(false)
+
+  // Datos reales: citas del período aplicado y nombres de los pacientes.
+  const appointmentsQuery = useQuery({
+    queryKey: ["reports", "appointments", appliedFilters.fromDate, appliedFilters.toDate],
+    queryFn: () =>
+      appointmentService.list({
+        from: new Date(`${appliedFilters.fromDate}T00:00:00`),
+        to: new Date(`${appliedFilters.toDate}T23:59:59.999`),
+        limit: 200,
+      }),
+  })
+  const { data: patients = [] } = useQuery({
+    queryKey: ["patients", "list", 100],
+    queryFn: () => patientService.list({ limit: 100 }),
+    staleTime: 60_000,
+  })
+  const isGenerating = appointmentsQuery.isFetching
+  const records = useMemo(() => {
+    const names = new Map(patients.map((p) => [p.id, p.name]))
+    return (appointmentsQuery.data ?? []).map((apt) => toReportRow(apt, names.get(apt.patientId) ?? "Paciente"))
+  }, [appointmentsQuery.data, patients])
 
   // El selector de rango no deja el fin antes del inicio; solo falta avisar si quedó a medias.
   const rangeError = fromDate && !toDate ? "Elige también la fecha final del período." : null
@@ -305,23 +197,21 @@ export default function ReportsPage() {
   // Ejecución de filtro
   const handleGenerateReport = () => {
     if (rangeError) return
-    setIsGenerating(true)
-    setTimeout(() => {
-      setAppliedFilters({
-        fromDate,
-        toDate,
-        status: statusFilter,
-        serviceType: serviceTypeFilter,
-      })
-      setIsGenerating(false)
-      setNotification("Reporte generado con los criterios seleccionados.")
-      setTimeout(() => setNotification(null), 3000)
-    }, 250)
+    setAppliedFilters({
+      fromDate,
+      toDate,
+      status: statusFilter,
+      serviceType: serviceTypeFilter,
+    })
+    // Mismo período: se vuelve a pedir a la API para reflejar cambios recientes.
+    if (fromDate === appliedFilters.fromDate && toDate === appliedFilters.toDate) void appointmentsQuery.refetch()
+    setNotification("Reporte generado con los criterios seleccionados.")
+    setTimeout(() => setNotification(null), 3000)
   }
 
   // Filtrado reactivo de registros
   const filteredRecords = useMemo(() => {
-    return INITIAL_RECORDS.filter((item) => {
+    return records.filter((item) => {
       // Filtro de fecha
       if (appliedFilters.fromDate && item.date < appliedFilters.fromDate) return false
       if (appliedFilters.toDate && item.date > appliedFilters.toDate) return false
@@ -334,7 +224,7 @@ export default function ReportsPage() {
 
       return true
     })
-  }, [appliedFilters])
+  }, [appliedFilters, records])
 
   // Cálculo de KPIs
   const totalConsultations = filteredRecords.length
@@ -573,6 +463,9 @@ export default function ReportsPage() {
                 <SelectItem value="attended" className="text-xs">
                   Asistidas
                 </SelectItem>
+                <SelectItem value="pending" className="text-xs">
+                  Programadas
+                </SelectItem>
                 <SelectItem value="cancelled" className="text-xs">
                   Canceladas
                 </SelectItem>
@@ -718,7 +611,7 @@ export default function ReportsPage() {
             </p>
           </div>
           <span className="text-xs text-muted-foreground tabular-nums">
-            Mostrando {filteredRecords.length} de {INITIAL_RECORDS.length} citas
+            Mostrando {filteredRecords.length} de {records.length} citas
           </span>
         </div>
 
