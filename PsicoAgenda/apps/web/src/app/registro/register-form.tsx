@@ -56,6 +56,7 @@ import {
   type DatosRegistro,
 } from "@/services/registro.service"
 import { TelefonoInput } from "@/components/telefono-input"
+import { WheelDatePicker } from "@/components/wheel-date-picker"
 
 /**
  * Valor del item "Selecciona una opción" de los desplegables. Es un centinela
@@ -818,11 +819,23 @@ export function RegisterForm() {
                     <FormField
                       control={form.control}
                       name="birthDate"
-                      render={({ field }) => (
+                      render={({ field, fieldState }) => (
                         <FormItem>
                           <FormLabel>Fecha de nacimiento</FormLabel>
                           <FormControl>
-                            <Input type="date" {...field} />
+                            {/* Ruedas día/mes/año; abre cerca de la edad esperada según "¿Para quién es la cuenta?" */}
+                            <WheelDatePicker
+                              value={field.value ?? ""}
+                              onChange={(fecha) => {
+                                field.onChange(fecha)
+                                field.onBlur()
+                              }}
+                              defaultYear={new Date().getFullYear() - (watchParaMenor === "si" ? 10 : 30)}
+                              fromYear={new Date().getFullYear() - 110}
+                              toYear={new Date().getFullYear()}
+                              placeholder="Elige tu fecha"
+                              invalid={Boolean(fieldState.error)}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

@@ -17,7 +17,6 @@ import {
   Check,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -41,6 +40,10 @@ import {
 } from "@/components/ui/table"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { PageHeader } from "../components/page-header"
+import { WheelDatePicker } from "@/components/wheel-date-picker"
+
+// Rango de las ruedas de fecha del período: diez años atrás y uno adelante.
+const THIS_YEAR = new Date().getFullYear()
 
 export type ReportAppointment = {
   id: string
@@ -280,8 +283,14 @@ export default function ReportsPage() {
   const [notification, setNotification] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
 
+  // "AAAA-MM-DD" se compara bien como texto: el fin no puede quedar antes del inicio.
+  const rangeError = fromDate && toDate && toDate < fromDate
+    ? "La fecha final no puede ser anterior a la fecha inicial."
+    : null
+
   // Ejecución de filtro
   const handleGenerateReport = () => {
+    if (rangeError) return
     setIsGenerating(true)
     setTimeout(() => {
       setAppliedFilters({
@@ -431,28 +440,41 @@ export default function ReportsPage() {
         <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 items-end">
           {/* Selector Fecha Desde */}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-foreground">
+            <label htmlFor="report-from" className="text-xs font-medium text-foreground">
               Fecha Desde
             </label>
-            <Input
-              type="date"
+            <WheelDatePicker
+              id="report-from"
               value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="rounded-xl border-border/60 text-xs h-9 bg-background focus-visible:ring-primary/40"
+              onChange={setFromDate}
+              defaultYear={THIS_YEAR}
+              fromYear={THIS_YEAR - 10}
+              toYear={THIS_YEAR + 1}
+              className="h-9 border-border/60 bg-background text-xs"
             />
           </div>
 
           {/* Selector Fecha Hasta */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-foreground">
+          <div className="relative space-y-1.5">
+            <label htmlFor="report-to" className="text-xs font-medium text-foreground">
               Fecha Hasta
             </label>
-            <Input
-              type="date"
+            <WheelDatePicker
+              id="report-to"
               value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="rounded-xl border-border/60 text-xs h-9 bg-background focus-visible:ring-primary/40"
+              onChange={setToDate}
+              defaultYear={THIS_YEAR}
+              fromYear={THIS_YEAR - 10}
+              toYear={THIS_YEAR + 1}
+              className="h-9 border-border/60 bg-background text-xs"
+              invalid={Boolean(rangeError)}
+              aria-describedby={rangeError ? "report-range-error" : undefined}
             />
+            {rangeError && (
+              <p id="report-range-error" role="alert" className="absolute inset-x-0 top-full mt-1 text-[11px] leading-snug text-destructive">
+                {rangeError}
+              </p>
+            )}
           </div>
 
           {/* Selector Estado de Cita */}
@@ -515,7 +537,7 @@ export default function ReportsPage() {
           <div>
             <Button
               onClick={handleGenerateReport}
-              disabled={isGenerating}
+              disabled={isGenerating || Boolean(rangeError)}
               className="w-full rounded-xl bg-primary text-primary-foreground text-xs font-medium h-9 shadow-xs hover:bg-primary/90 active:scale-[0.98] transition-all gap-1.5"
             >
               <RefreshCw className={`size-3.5 ${isGenerating ? "animate-spin" : ""}`} />

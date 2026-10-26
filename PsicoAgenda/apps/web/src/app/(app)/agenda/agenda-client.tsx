@@ -36,8 +36,9 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Calendar } from "@/components/ui/calendar"
+import { Calendar } from "@/components/arc/calendar/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs"
 import {
   Card,
   CardContent,
@@ -66,6 +67,13 @@ import { formatAppointmentTime, formatShortDate } from "@/lib/format"
 import { appointmentService, patientService } from "@/services"
 
 type CalendarView = "mes" | "semana" | "dia"
+
+const STATUS_FILTERS = [
+  { value: "ALL", label: "Todas", dot: null },
+  { value: AppointmentStatus.CONFIRMED, label: "Confirmadas", dot: "bg-primary ring-1 ring-primary-foreground/70" },
+  { value: AppointmentStatus.PENDING, label: "Pendientes", dot: "bg-amber-400" },
+  { value: AppointmentStatus.CANCELLED, label: "Canceladas", dot: "bg-rose-400" },
+] as const
 
 interface StatusConfig {
   label: string
@@ -490,88 +498,21 @@ export function AgendaClient() {
       {/* 2. BARRA DE HERRAMIENTAS: Filtros rápidos, Navegación de Fecha y Selector de Vista (Mes/Semana/Día) */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between bg-card p-4 rounded-2xl border border-border/60 shadow-2xs">
         {/* Filtros Rápidos por Estado */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
+        <div className="flex min-w-0 items-center gap-1.5">
           <span className="text-xs font-medium text-muted-foreground mr-1 shrink-0 hidden sm:inline">
             Filtrar:
           </span>
-          <button
-            type="button"
-            onClick={() => setSelectedStatus("ALL")}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              selectedStatus === "ALL"
-                ? "bg-primary text-primary-foreground shadow-2xs"
-                : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
-            }`}
-          >
-            <span>Todas</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                selectedStatus === "ALL" ? "bg-white/20 text-white" : "bg-background text-muted-foreground"
-              }`}
-            >
-              {counts.ALL}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSelectedStatus(AppointmentStatus.CONFIRMED)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              selectedStatus === AppointmentStatus.CONFIRMED
-                ? "bg-primary text-primary-foreground shadow-2xs"
-                : "bg-primary/[0.06] text-primary border border-primary/20 hover:bg-primary/10"
-            }`}
-          >
-            <span className={`size-2 rounded-full inline-block ${selectedStatus === AppointmentStatus.CONFIRMED ? "bg-primary-foreground/70" : "bg-primary"}`} />
-            <span>Confirmadas</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                selectedStatus === AppointmentStatus.CONFIRMED ? "bg-white/20 text-white" : "bg-primary/15 text-primary"
-              }`}
-            >
-              {counts[AppointmentStatus.CONFIRMED]}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSelectedStatus(AppointmentStatus.PENDING)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              selectedStatus === AppointmentStatus.PENDING
-                ? "bg-amber-600 text-white shadow-2xs"
-                : "bg-amber-50/70 text-amber-800 border border-amber-200/80 hover:bg-amber-100/70 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/60"
-            }`}
-          >
-            <span className="size-2 rounded-full bg-amber-400 inline-block" />
-            <span>Pendientes</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                selectedStatus === AppointmentStatus.PENDING ? "bg-white/20 text-white" : "bg-amber-100 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200"
-              }`}
-            >
-              {counts[AppointmentStatus.PENDING]}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSelectedStatus(AppointmentStatus.CANCELLED)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              selectedStatus === AppointmentStatus.CANCELLED
-                ? "bg-rose-600 text-white shadow-2xs"
-                : "bg-rose-50/70 text-rose-800 border border-rose-200/80 hover:bg-rose-100/70 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-800/60"
-            }`}
-          >
-            <span className="size-2 rounded-full bg-rose-400 inline-block" />
-            <span>Canceladas</span>
-            <span
-              className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                selectedStatus === AppointmentStatus.CANCELLED ? "bg-white/20 text-white" : "bg-rose-100 text-rose-900 dark:bg-rose-900/60 dark:text-rose-200"
-              }`}
-            >
-              {counts[AppointmentStatus.CANCELLED]}
-            </span>
-          </button>
+          <Tabs value={selectedStatus} onValueChange={setSelectedStatus} variant="pill">
+            <TabsList aria-label="Filtrar por estado" className="border border-border/60 bg-muted/40" wrapperClassName="w-auto">
+              {STATUS_FILTERS.map((filter) => (
+                <TabsTrigger key={filter.value} value={filter.value} className="gap-1.5 px-3 text-xs">
+                  {filter.dot && <span className={`size-2 rounded-full ${filter.dot}`} aria-hidden="true" />}
+                  {filter.label}
+                  <span className="tabular-nums opacity-70">{counts[filter.value]}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         </div>
 
         {/* Controles de Navegación y Pestañas de Vista */}
@@ -621,56 +562,28 @@ export function AgendaClient() {
                   <ChevronDown className="size-3.5 text-muted-foreground transition-transform duration-200 [[data-state=open]_&]:rotate-180" aria-hidden="true" />
                 </button>
               </PopoverTrigger>
-              <PopoverContent align="end">
+              <PopoverContent align="end" className="w-80 p-4">
                 <Calendar
-                  key={currentDate.toDateString()}
-                  selected={currentDate}
+                  value={currentDate}
                   hasMarker={(day) => baseAppointments.some((apt) => isSameDay(apt.startTime, day))}
-                  onSelect={(day) => {
+                  onChange={(day) => {
                     setCurrentDate(day)
                     setDatePickerOpen(false)
                   }}
+                  showToday
                 />
               </PopoverContent>
             </Popover>
           </div>
 
-          {/* Pestañas de alternancia: Mes / Semana / Día */}
-          <div className="inline-flex items-center rounded-xl bg-muted/70 p-1 border border-border/40">
-            <button
-              type="button"
-              onClick={() => setView("dia")}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                view === "dia"
-                  ? "bg-card text-foreground shadow-2xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Día
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("semana")}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                view === "semana"
-                  ? "bg-card text-foreground shadow-2xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Semana
-            </button>
-            <button
-              type="button"
-              onClick={() => setView("mes")}
-              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                view === "mes"
-                  ? "bg-card text-foreground shadow-2xs font-semibold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Mes
-            </button>
-          </div>
+          {/* Pestañas de alternancia: Día / Semana / Mes */}
+          <Tabs value={view} onValueChange={(next) => setView(next as CalendarView)} variant="segment">
+            <TabsList aria-label="Vista del calendario" className="border border-border/40 bg-muted/70">
+              <TabsTrigger value="dia" className="px-3 py-1 text-xs">Día</TabsTrigger>
+              <TabsTrigger value="semana" className="px-3 py-1 text-xs">Semana</TabsTrigger>
+              <TabsTrigger value="mes" className="px-3 py-1 text-xs">Mes</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
       </div>
 

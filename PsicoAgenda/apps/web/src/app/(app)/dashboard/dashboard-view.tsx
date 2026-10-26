@@ -7,7 +7,6 @@ import {
   Bell,
   CalendarPlus,
   CheckCircle2,
-  ChevronLeft,
   ChevronRight,
   FileText,
   MapPin,
@@ -26,6 +25,8 @@ import {
   type PatientProfile,
   type PsychologistProfile,
 } from "@psicoagenda/shared"
+import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs"
+import { Calendar } from "@/components/arc/calendar/calendar"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -449,52 +450,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
         })
       )
 
-  // Mini-calendario mensual: cálculo de días de la cuadrícula
-  const monthDays = useMemo(() => {
-    const year = calendarMonth.getFullYear()
-    const month = calendarMonth.getMonth()
-    const firstDay = new Date(year, month, 1)
-    const lastDay = new Date(year, month + 1, 0)
-
-    // Lunes como inicio (0=Lu ... 6=Do)
-    const startDayIndex = (firstDay.getDay() + 6) % 7
-    const prevMonthLastDay = new Date(year, month, 0).getDate()
-
-    const buildDay = (d: Date, isCurrentMonth: boolean) => ({
-      date: d,
-      isCurrentMonth,
-      hasAppointments: appointments.some(
-        (a) => a.status !== AppointmentStatus.CANCELLED && isSameDay(new Date(a.startTime), d)
-      ),
-      isToday: isSameDay(d, today),
-      isSelected: isSameDay(d, selectedCalendarDate),
-    })
-
-    const days: ReturnType<typeof buildDay>[] = []
-
-    for (let i = startDayIndex - 1; i >= 0; i--) {
-      days.push(buildDay(new Date(year, month - 1, prevMonthLastDay - i), false))
-    }
-    for (let i = 1; i <= lastDay.getDate(); i++) {
-      days.push(buildDay(new Date(year, month, i), true))
-    }
-    // Rellenar días del mes siguiente hasta completar múltiplo de 7
-    const remaining = (7 - (days.length % 7)) % 7
-    for (let i = 1; i <= remaining; i++) {
-      days.push(buildDay(new Date(year, month + 1, i), false))
-    }
-
-    return days
-  }, [calendarMonth, appointments, today, selectedCalendarDate])
-
-  const handlePrevMonth = () => {
-    setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
-  }
-
-  const handleNextMonth = () => {
-    setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
-  }
-
   const selectDay = (day: Date) => {
     setSelectedCalendarDate(day)
     setCalendarMonth(new Date(day.getFullYear(), day.getMonth(), 1))
@@ -562,10 +517,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
       setAnsweringRequestId(null)
     }
   }
-
-  const formattedMonth = capitalize(
-    calendarMonth.toLocaleDateString("es-MX", { month: "long", year: "numeric" })
-  )
 
   const formattedTodayHeader = capitalize(
     today.toLocaleDateString("es-MX", {
@@ -810,26 +761,22 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
               )}
             </div>
 
-            {/* Control segmentado: la selección se marca con superficie, no con color */}
-            <div className="inline-flex self-start rounded-xl bg-muted p-1 @lg:self-auto">
-              {filters.map((filter) => (
-                <button
-                  key={filter.value}
-                  type="button"
-                  onClick={() => setAgendaFilter(filter.value)}
-                  aria-pressed={agendaFilter === filter.value}
-                  className={cn(
-                    "whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-150",
-                    agendaFilter === filter.value
-                      ? "bg-card text-foreground shadow-xs"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {filter.label}
-                  <span className="ml-1.5 tabular-nums text-muted-foreground">{filter.count}</span>
-                </button>
-              ))}
-            </div>
+            {/* Control segmentado: el indicador se desliza a la opción elegida */}
+            <Tabs
+              value={agendaFilter}
+              onValueChange={(next) => setAgendaFilter(next as AgendaFilter)}
+              variant="segment"
+              className="self-start @lg:self-auto"
+            >
+              <TabsList aria-label="Filtrar citas del día" className="bg-muted p-1">
+                {filters.map((filter) => (
+                  <TabsTrigger key={filter.value} value={filter.value} className="px-3 py-1.5 text-xs">
+                    {filter.label}
+                    <span className="ml-1.5 tabular-nums opacity-70">{filter.count}</span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-border bg-card">
@@ -935,69 +882,19 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
         <div className="grid content-start gap-6 sm:grid-cols-2 xl:grid-cols-1">
           {/* Mini-calendario: tocar un día muestra sus citas en la lista */}
           <aside className="space-y-4 rounded-2xl border border-border bg-card p-5">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold tracking-tight text-foreground">{formattedMonth}</span>
-              <div className="flex items-center">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={handlePrevMonth}
-                  aria-label="Mes anterior"
-                  className="text-muted-foreground"
-                >
-                  <ChevronLeft />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={handleNextMonth}
-                  aria-label="Mes siguiente"
-                  className="text-muted-foreground"
-                >
-                  <ChevronRight />
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-7 text-center text-[11px] font-medium text-muted-foreground">
-              {["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"].map((d) => (
-                <span key={d}>{d}</span>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-7 gap-y-1 text-center">
-              {monthDays.map((item, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => selectDay(item.date)}
-                  aria-label={item.date.toLocaleDateString("es-MX", { day: "numeric", month: "long" })}
-                  aria-current={item.isToday ? "date" : undefined}
-                  aria-pressed={item.isSelected}
-                  className={cn(
-                    "relative mx-auto flex size-8 items-center justify-center rounded-full text-xs tabular-nums transition-colors active:scale-95",
-                    !item.isCurrentMonth && "text-muted-foreground/40",
-                    item.isCurrentMonth && !item.isToday && "text-foreground hover:bg-muted",
-                    item.isSelected && !item.isToday && "bg-primary/10 font-semibold text-primary hover:bg-primary/15",
-                    item.isToday && "bg-primary font-semibold text-primary-foreground",
-                    item.isToday && !item.isSelected && "ring-2 ring-primary/30 ring-offset-2 ring-offset-card"
-                  )}
-                >
-                  {item.date.getDate()}
-                  {item.hasAppointments && (
-                    <span
-                      className={cn(
-                        "absolute bottom-0.5 size-1 rounded-full",
-                        item.isToday ? "bg-primary-foreground" : "bg-primary"
-                      )}
-                      aria-hidden="true"
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
+            <Calendar
+              className="w-full"
+              value={selectedCalendarDate}
+              month={calendarMonth}
+              onMonthChange={setCalendarMonth}
+              onChange={selectDay}
+              hasMarker={(day) =>
+                appointments.some(
+                  (a) => a.status !== AppointmentStatus.CANCELLED && isSameDay(new Date(a.startTime), day),
+                )
+              }
+              showToday
+            />
 
             <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">

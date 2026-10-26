@@ -47,7 +47,7 @@ import {
   patientService,
   psychologistService,
 } from "@/services"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/motion/tabs"
 import {
   Card,
   CardContent,
@@ -546,17 +546,15 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
       {/* 3. NAVEGACIÓN INTERNA (PESTAÑAS) */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-2">
-          <TabsList className="bg-muted/70 p-1 rounded-xl">
-            <TabsTrigger value="datos" className="rounded-lg text-xs font-semibold">
+          {/* El indicador (color primario) se desliza entre pestañas; la lista hace scroll si no cabe. */}
+          <TabsList className="border border-border/60" wrapperClassName="min-w-0 max-w-full">
+            <TabsTrigger value="datos" className="text-xs font-semibold">
               Información General y Antecedentes
             </TabsTrigger>
-            <TabsTrigger value="bitacora" className="rounded-lg text-xs font-semibold flex items-center gap-1.5">
-              <span>Bitácora de Sesiones</span>
-              <span className="size-5 rounded-full bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center">
-                {logs.length}
-              </span>
+            <TabsTrigger value="bitacora" className="text-xs font-semibold">
+              Bitácora de Sesiones ({logs.length})
             </TabsTrigger>
-            <TabsTrigger value="citas" className="rounded-lg text-xs font-semibold">
+            <TabsTrigger value="citas" className="text-xs font-semibold">
               Historial de Citas ({appointments.length})
             </TabsTrigger>
           </TabsList>

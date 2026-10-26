@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Check, Contrast, Monitor, Moon, RotateCcw, Sun } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -52,35 +53,27 @@ export function ThemePicker({
 
   return (
     <div className="space-y-3">
-      {/* Modo: un solo contenedor, activo con fondo primario */}
-      <div
-        role="group"
-        aria-label="Modo de luminosidad"
-        className="inline-flex w-full rounded-xl border border-border/70 bg-muted/40 p-1"
-      >
-        {THEME_MODES.map((opcion) => {
-          const Icono = ICONOS[opcion.value];
-          const activo = mode === opcion.value;
-
-          return (
-            <button
-              key={opcion.value}
-              type="button"
-              onClick={() => onModeChange(opcion.value)}
-              aria-pressed={activo}
-              className={cn(
-                "flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg text-xs font-medium transition-all",
-                activo
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-background/70 hover:text-foreground"
-              )}
-            >
-              <Icono className="size-3.5" />
-              {opcion.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Modo: control segmentado; el indicador primario se desliza a la opción activa */}
+      <Tabs value={mode} onValueChange={(next) => onModeChange(next as ThemeMode)} variant="segment">
+        <TabsList
+          aria-label="Modo de luminosidad"
+          className="w-full rounded-xl border border-border/70 bg-muted/40 p-1 [&>div]:flex-1"
+        >
+          {THEME_MODES.map((opcion) => {
+            const Icono = ICONOS[opcion.value];
+            return (
+              <TabsTrigger
+                key={opcion.value}
+                value={opcion.value}
+                icon={<Icono className="size-3.5" />}
+                className="h-8 w-full text-xs"
+              >
+                {opcion.label}
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </Tabs>
 
       {/* Paletas estéticas: 3×2 exacta */}
       <div
