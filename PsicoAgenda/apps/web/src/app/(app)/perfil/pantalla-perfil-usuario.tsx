@@ -42,6 +42,7 @@ const TIMEZONE_LABELS: Record<(typeof TIMEZONES)[number], string> = {
   "America/Tijuana": "Tijuana",
   "America/Cancun": "Cancún",
   "America/Hermosillo": "Hermosillo",
+  "America/Mazatlan": "Tepic / Mazatlán (Nayarit, Sinaloa)",
 }
 
 const TIMEZONE_OPTIONS = TIMEZONES.map((value) => ({ value, label: TIMEZONE_LABELS[value] }))

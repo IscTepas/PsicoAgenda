@@ -79,6 +79,15 @@ const avisoDeSolicitud = (
   modalidad: row.modalidad,
 });
 
+/** Si hay exactamente una psicóloga, se la asigna al paciente y devuelve su id; si no, null. */
+async function assignSolePsychologist(patientId: string): Promise<string | null> {
+  const psychologists = await prisma.psicologos.findMany({ select: { id: true }, take: 2 });
+  if (psychologists.length !== 1) return null;
+  const psychologistId = psychologists[0]!.id;
+  await prisma.pacientes.update({ where: { id: patientId }, data: { psicologo_id: psychologistId } });
+  return psychologistId;
+}
+
 const toAppointmentRequest = (row: RequestRow): AppointmentRequest => ({
   id: row.id,
   patientId: row.paciente_id,
@@ -133,6 +142,11 @@ export async function createAppointmentRequest(
     select: { id: true, psicologo_id: true },
   });
 
+  // Red de seguridad: el registro ya asigna a la única psicóloga, pero un paciente
+  // que haya quedado sin ella la recibe aquí en vez de no poder solicitar cita.
+  if (!patient.psicologo_id) {
+    patient.psicologo_id = await assignSolePsychologist(patientId);
+  }
   if (!patient.psicologo_id) {
     throw AppError.badRequest("Aún no tienes un psicólogo asignado");
   }

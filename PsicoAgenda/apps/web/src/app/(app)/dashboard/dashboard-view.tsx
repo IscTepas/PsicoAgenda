@@ -29,6 +29,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs"
 import { Calendar } from "@/components/arc/calendar/calendar"
 import { NotificationStack } from "@/components/motion/notification-stack"
+import { PRACTICE } from "@/app/home-content"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/toast-provider"
@@ -1376,7 +1377,7 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
               <dd className="text-xs leading-relaxed text-muted-foreground">
                 {nextAppointment.modality === AppointmentModality.VIRTUAL
                   ? "El enlace se habilita antes de la hora."
-                  : "Paseo de la Reforma #450, Piso 3, Consultorio 3B, CDMX."}
+                  : PRACTICE.address}
               </dd>
             </div>
 

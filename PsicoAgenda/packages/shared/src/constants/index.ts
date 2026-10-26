@@ -33,4 +33,6 @@ export const TIMEZONES = [
   "America/Tijuana",
   "America/Cancun",
   "America/Hermosillo",
+  // Nayarit (Tepic) y Sinaloa: hora del Pacífico de México.
+  "America/Mazatlan",
 ] as const;

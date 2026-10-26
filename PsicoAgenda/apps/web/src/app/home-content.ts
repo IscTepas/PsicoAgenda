@@ -11,21 +11,25 @@ export type WeeklyHours = {
 }
 
 export const PRACTICE = {
-  // EJEMPLO
-  psychologist: "Dra. Ana García",
-  // EJEMPLO
-  specialty: "Psicología clínica",
-  // EJEMPLO
-  approach: "Terapia cognitivo-conductual",
-  // EJEMPLO
-  address: "Paseo de la Reforma #450, Piso 3, Consultorio 3B, CDMX",
-  // EJEMPLO
-  phoneDisplay: "55 0000 0000",
-  // EJEMPLO: número con lada internacional, solo dígitos
-  phoneE164: "525500000000",
-  // EJEMPLO
-  email: "consultorio@example.com",
-  timeZone: "America/Mexico_City",
+  psychologist: "Claudia Amaro",
+  /** Nombre completo, para la cédula profesional. */
+  fullName: "Claudia Lucero Amaro Navarrete",
+  specialty: "Terapia psicológica humanista y biodescodificación",
+  approach: "Terapia humanista y biodescodificación",
+  licenseNumber: "5340355",
+  yearsOfExperience: 10,
+  bio: "Ven, biodescodifica y sana tu cuerpo y mente, porque si sanas tú, sanamos todos y todas.",
+  address:
+    "Av. Francisco I. Madero 153 Pte., Col. Amado Nervo, entre Luis Urbina y Sor Juana, Tepic, Nay. Dentro del Instituto Yoga para la Salud.",
+  /** Búsqueda para el mapa y "Cómo llegar": sin las referencias, que confunden al buscador. */
+  mapQuery: "Av. Francisco I. Madero 153 Pte, Amado Nervo, Tepic, Nayarit",
+  phoneDisplay: "311 128 4689",
+  // Lada internacional + número, solo dígitos (WhatsApp y llamadas).
+  phoneE164: "523111284689",
+  // Solo se muestra en la página de inicio; no se usa para enviar correos.
+  email: "amaronavarrete@gmail.com",
+  // Nayarit (Tepic) usa la hora del Pacífico de México.
+  timeZone: "America/Mazatlan",
   // EJEMPLO
   hours: [
     { day: 1, opens: "09:00", closes: "20:00" },
@@ -42,6 +46,8 @@ export const PRACTICE = {
 // Filas de la ficha del consultorio.
 export const FACTS: { label: string; value: string | string[] }[] = [
   { label: "Enfoque", value: PRACTICE.approach },
+  { label: "Experiencia", value: `${PRACTICE.yearsOfExperience} años` },
+  { label: "Cédula profesional", value: [PRACTICE.licenseNumber, PRACTICE.fullName] },
   { label: "Modalidad", value: "En consultorio o en línea por videollamada" },
   { label: "Duración", value: "Sesiones de 45 a 60 minutos" },
   { label: "Horario", value: PRACTICE.hoursSummary },
