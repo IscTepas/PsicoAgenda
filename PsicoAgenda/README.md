@@ -411,8 +411,13 @@ así que van separados:
 | Región de funciones | la más cercana al usuario | **la misma del proyecto Supabase** |
 
 La API se sirve como una sola función de Express (entry `apps/api/server.mjs`,
-que importa `dist/app.js` ya compilado). El build lo hace `npm run build`
-(`tsc -b` + `tsc-alias`).
+que importa `dist/create-app.js` ya compilado). El build lo hace
+`npm run vercel-build` (`prisma generate` + `tsc -b` + `tsc-alias`).
+
+`server.mjs` importa `express` de forma directa a propósito: el detector del
+preset lee **el texto** del entry y no sigue el grafo de imports. Sin ese import,
+el build falla con `No entrypoint found which imports express` aunque la app use
+Express por dentro.
 
 ### Variables de entorno de la API
 
