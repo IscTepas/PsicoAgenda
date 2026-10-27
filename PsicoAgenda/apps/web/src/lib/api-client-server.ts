@@ -1,8 +1,5 @@
-import { DEFAULT_API_PORT } from "@psicoagenda/shared";
 import { createClient } from "@/lib/supabase/server";
-import { ApiError, type RequestOptions } from "@/lib/api-client";
-
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${DEFAULT_API_PORT}`;
+import { API_URL, ApiError, type RequestOptions } from "@/lib/api-client";
 
 const API_PREFIX = "/api";
 
@@ -57,4 +54,4 @@ export async function apiFetchServer<T>(path: string, options: RequestOptions = 
   return payload as T;
 }
 
-export { ApiError };
+export { API_URL, ApiError };

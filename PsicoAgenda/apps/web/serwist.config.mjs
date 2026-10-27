@@ -15,6 +15,10 @@ import { serwist } from "@serwist/next/config";
 export default serwist({
   swSrc: "src/app/sw.ts",
   swDest: "public/sw.js",
-  // La página offline se precachea a mano porque la genera Next, no el glob de assets.
-  additionalPrecacheEntries: [{ url: "/offline", revision: "1" }],
+  // Sin `additionalPrecacheEntries`: el manifiesto de páginas ya incluye
+  // `/offline` con su hash de contenido, y añadirlo a mano creaba una segunda
+  // entrada con `revision: "1"`. Workbox rechaza dos revisiones distintas para
+  // la misma URL (`add-to-cache-list-conflicting-entries`) al construir el
+  // precache, y ese throw en la evaluación del módulo se ve en el navegador
+  // como "ServiceWorker script evaluation failed".
 });

@@ -1,6 +1,17 @@
 import { DEFAULT_API_PORT } from "@psicoagenda/shared";
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${DEFAULT_API_PORT}`;
+/**
+ * URL base del API, normalizada sin barra final.
+ *
+ * La barra final no es cosmética: `${API_URL}${"/api/..."}` produce `//api/...`
+ * y Vercel responde 308 a esa ruta. En un preflight CORS un redirect es fatal
+ * ("Redirect is not allowed for a preflight request"), así que el navegador
+ * bloquea la llamada aunque el API esté sano. Si alguien pega la variable en
+ * Vercel con barra final, este `replace` lo absorbe.
+ */
+export const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${DEFAULT_API_PORT}`
+).replace(/\/+$/, "");
 
 const API_PREFIX = "/api";
 
