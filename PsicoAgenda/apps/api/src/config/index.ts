@@ -45,12 +45,31 @@ export const config = {
   /** URL del proyecto Supabase. De ahí se deriva el JWKS y el `issuer` de los tokens. */
   supabaseUrl: requiredInProduction("SUPABASE_URL", process.env.SUPABASE_URL).replace(/\/+$/, ""),
   /**
-   * Tamaño máximo del pool de conexiones. `pg` abre 10 por defecto y Supavisor en
-   * modo sesión tiene un "Pool Size" acotado por combinación base-de-datos+rol:
-   * con más de una instancia de la API el límite se agota con facilidad.
+   * Tamaño máximo del pool de conexiones. `pg` abre 10 por defecto y Supavisor
+   * tiene un "Pool Size" acotado por combinación base-de-datos+rol: con más de
+   * una instancia de la API el límite se agota con facilidad.
+   *
+   * En serverless (Vercel) cada instancia abre su propio pool: usar 1 y apuntar
+   * `DATABASE_URL` al puerto 6543 (modo transacción), no al 5432 (sesión).
    */
   databasePoolMax: toPort(process.env.DATABASE_POOL_MAX, 5),
-  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
+  /**
+   * Orígenes permitidos por CORS, separados por comas. Cada entrada admite `*`
+   * como comodín (`https://psicoagenda-web-*.vercel.app`), de modo que los
+   * preview deployments pueden autenticarse sin abrir la API a cualquier origen.
+   */
+  corsOrigins: (process.env.CORS_ORIGIN ?? "http://localhost:3000")
+    .split(",")
+    .map((origen) => origen.trim())
+    .filter(Boolean),
+  /**
+   * Secreto del cron externo que dispara el despacho de notificaciones.
+   *
+   * No entra en `requiredInProduction` a propósito: si faltara, tumbaríamos el
+   * arranque completo de la API por una tarea programada. En su lugar el
+   * endpoint falla cerrado (503) cuando el secreto no está configurado.
+   */
+  cronSecret: process.env.CRON_SECRET ?? "",
 
   /**
    * Mailer de registro (SMTP de Gmail con contraseña de aplicación). La API es

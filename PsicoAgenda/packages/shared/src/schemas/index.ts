@@ -1,6 +1,10 @@
 import { z } from "zod";
-import { TIMEZONES } from "../constants";
-import { AppointmentRequestStatus, AppointmentStatus, PaymentStatus } from "../types";
+import { TIMEZONES } from "../constants/index.js";
+import {
+  AppointmentRequestStatus,
+  AppointmentStatus,
+  PaymentStatus,
+} from "../types/index.js";
 
 export const emailSchema = z.string().email("Correo electrónico inválido");
 

@@ -1,7 +1,21 @@
-import { createApp } from "@/app";
+import { createApp } from "@/create-app";
 import { config } from "@/config";
 import { disconnectPrisma } from "@/lib/prisma";
 import { iniciarDespachador } from "@/services/notification.service";
+
+/**
+ * Servidor de proceso largo: desarrollo local y cualquier hosting que corra
+ * `node dist/dev-server.js` (Railway, Render, una VM).
+ *
+ * NO se usa en Vercel. Allí el entry es `server.mjs`, que exporta la app sin
+ * `listen` y sin despachador: en serverless no hay proceso que viva entre
+ * peticiones, así que el barrido de notificaciones lo dispara un cron externo
+ * contra `POST /api/internal/despachar` (ver README, "Despliegue").
+ *
+ * El nombre del archivo importa: Vercel detecta `app|index|server` en la raíz o
+ * bajo `src/` para el modo Express zero-config, y `dev-server` queda fuera de
+ * esa lista a propósito, para que no elija este entry por error.
+ */
 
 const app = createApp();
 

@@ -1,14 +1,21 @@
 import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 import { MAX_INTENTOS_CODIGO } from "@psicoagenda/shared";
+import {
+  cacheRegistro,
+  vaciarCacheRegistro,
+  type CacheStore,
+} from "@/services/codigo-cache.repo";
 import { AppError } from "@/utils/app-error";
 
 /**
- * Códigos de registro de usuario: solo viven en la memoria del proceso, nunca
- * en la base de datos. La BD queda limpia por construcción: no hay tabla
- * temporal ni cron, y cada entrada lleva su propio vencimiento a los 10 minutos.
+ * Códigos de registro de usuario: no tocan la tabla de usuarios ni viajan al
+ * cliente. Solo se persiste el hash SHA-256 del código, de modo que un volcado
+ * de la base no permite recuperar el código de 6 dígitos.
  *
- * Solo se persiste el hash SHA-256 del código: aunque el proceso se volcara, el
- * código de 6 dígitos no es recuperable.
+ * El almacén vive detrás de `CacheStore` (`codigo-cache.repo.ts`) y hoy es la
+ * tabla `cache_registro` en Postgres. Antes era un `Map` del proceso, que dejó
+ * de valer al pasar a serverless: con varias instancias, la verificación podía
+ * caer en una lambda que nunca vio el código.
  */
 
 /** Ventana de vida de un código: 10 minutos. */
@@ -23,65 +30,16 @@ export const MAX_SOLICITUDES_POR_IP = 5;
 export const RATE_VENTANA_SECONDS = 600;
 
 // ---------------------------------------------------------------------------
-// Cache: Map en memoria del proceso. Los códigos mueren con el proceso (tras
-// un reinicio hay que pedir otro) y la API asume UNA sola instancia: con
-// varias, una verificación puede caer en un proceso que no conoce el código.
+// Cache: tabla `cache_registro`. Cada entrada lleva su propio vencimiento, así
+// que no hace falta un cron aparte para expirar (el barrido del despacho borra
+// las vencidas una vez por vuelta, y el `get` lo hace de forma perezosa).
 // ---------------------------------------------------------------------------
 
-interface CacheStore {
-  get(key: string): Promise<string | null>;
-  set(key: string, value: string, ttlSeconds: number): Promise<void>;
-  del(...keys: string[]): Promise<void>;
-  /** Incrementa un contador; si la clave es nueva la crea con TTL. */
-  incr(key: string, ttlSeconds: number): Promise<number>;
-}
-
-const memoria = new Map<string, { valor: string; expiraEn: number }>();
-
-const cacheMemoria: CacheStore = {
-  // Devuelven promesas (y no valores sueltos) para cumplir `CacheStore` sin
-  // marcar los métodos como `async`: aquí no hay nada que esperar.
-  get(key) {
-    const entry = memoria.get(key);
-    if (!entry) return Promise.resolve(null);
-    if (Date.now() >= entry.expiraEn) {
-      memoria.delete(key);
-      return Promise.resolve(null);
-    }
-    return Promise.resolve(entry.valor);
-  },
-  set(key, value, ttlSeconds) {
-    // Barrido perezoso para que el Map no crezca con claves ya vencidas.
-    for (const [k, v] of memoria) {
-      if (Date.now() >= v.expiraEn) memoria.delete(k);
-    }
-    memoria.set(key, { valor: value, expiraEn: Date.now() + ttlSeconds * 1000 });
-    return Promise.resolve();
-  },
-  del(...keys) {
-    for (const key of keys) memoria.delete(key);
-    return Promise.resolve();
-  },
-  incr(key, ttlSeconds) {
-    const entry = memoria.get(key);
-    if (!entry || Date.now() >= entry.expiraEn) {
-      memoria.set(key, { valor: "1", expiraEn: Date.now() + ttlSeconds * 1000 });
-      return Promise.resolve(1);
-    }
-    // La clave ya existe y no venció: se conserva su vencimiento original
-    // (ventana fija) en lugar de relanzarla.
-    const siguiente = Number(entry.valor) + 1;
-    memoria.set(key, { valor: String(siguiente), expiraEn: entry.expiraEn });
-    return Promise.resolve(siguiente);
-  },
-};
-
 /**
- * Único almacén de códigos. La indirección se mantiene a propósito: si algún
- * día hacen falta varias instancias, reemplazar este punto por un Redis
- * externo es el único cambio de este módulo.
+ * Único punto de acceso al almacén. La indirección se mantiene a propósito:
+ * cambiar de Postgres a Redis es tocar solo `codigo-cache.repo.ts`.
  */
-const obtenerCache = (): CacheStore => cacheMemoria;
+const obtenerCache = (): CacheStore => cacheRegistro;
 
 // ---------------------------------------------------------------------------
 // Claves y utilidades
@@ -201,8 +159,7 @@ export async function consumirCodigo(email: string): Promise<void> {
   );
 }
 
-/** Vuelve limpia la cache en memoria (solo para pruebas con fallback local). */
+/** Vacía el almacén (solo para pruebas, que lo sustituyen por uno en memoria). */
 export function limpiarCacheRegistro(): Promise<void> {
-  memoria.clear();
-  return Promise.resolve();
+  return vaciarCacheRegistro();
 }

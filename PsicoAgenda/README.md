@@ -395,7 +395,64 @@ Debe devolver: `7 passed, 0 failed`, una capacidad por cada fila de la tabla de 
 | `npm run prisma:migrate` | Ejecuta `migrate dev` (solo para migraciones nuevas; con la baseline escrita a mano reporta drift) |
 | `npm run prisma:migrate:deploy --workspace=apps/api` | Aplica solo las migraciones pendientes (publicación) |
 
-## Flujo de trabajo con OpenSpec
+## Despliegue
+
+Frontend en Vercel; API en Vercel con Supabase como base de datos y Auth.
+
+### Dos proyectos, no uno
+
+`apps/api` monta todo bajo `/api/*` y el Next de `apps/web` también usa `/api/*`,
+así que van separados:
+
+| | Web | API |
+|---|---|---|
+| Root Directory | `PsicoAgenda/apps/web` | `PsicoAgenda/apps/api` |
+| Dominio | `psicoagenda.vercel.app` | `psicoagenda-api.vercel.app` |
+| Región de funciones | la más cercana al usuario | **la misma del proyecto Supabase** |
+
+La API se sirve como una sola función de Express (entry `apps/api/server.mjs`,
+que importa `dist/app.js` ya compilado). El build lo hace `npm run build`
+(`tsc -b` + `tsc-alias`).
+
+### Variables de entorno de la API
+
+Las de `apps/api/.env.example`. En producción, además:
+
+- `DATABASE_URL` en **puerto 6543** (Supavisor, modo transacción) y
+  `DATABASE_POOL_MAX=1`: cada instancia de Vercel abre su propio pool.
+- `CORS_ORIGIN` con el dominio del frontend; admite lista separada por comas y
+  `*` como comodín (`https://psicoagenda-web-*.vercel.app`) para los previews.
+- `CRON_SECRET`: sin él, `POST /api/internal/despachar` responde 503.
+
+### Migraciones
+
+Vercel no tiene pre-deploy: se aplican a mano antes de desplegar.
+
+```bash
+npm run prisma:migrate:deploy --workspace=apps/api
+npx prisma db execute --file apps/api/prisma/supabase/grants.sql
+```
+
+### Notificaciones: el `setInterval` no existe en serverless
+
+En un proceso de larga vida (`npm run dev`, Railway, una VM) los avisos los
+dispara `iniciarDespachador()` cada minuto. En Vercel no hay proceso que viva
+entre peticiones, así que el barrido lo llama un cron externo:
+
+```bash
+curl -X POST https://psicoagenda-api.vercel.app/api/internal/despachar \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+El endpoint es idempotente con ejecuciones solapadas (reclamo optimista en la
+tabla `notificaciones`). Mientras el cron no esté configurado, los recordatorios
+se acumulan en `PENDIENTE` y salen todos en el primer barrido. La
+configuración del cron vive en el ticket `TICKET-2026-10-27-cron-externo.md`.
+
+Los códigos de registro viven en la tabla `cache_registro` y no en la memoria del
+proceso, exactamente por la misma razón: con varias instancias, la verificación
+puede caer en una lambda que nunca vio el código.
+
 
 El desarrollo se gestiona con cambios propuestos antes de tocar código:
 

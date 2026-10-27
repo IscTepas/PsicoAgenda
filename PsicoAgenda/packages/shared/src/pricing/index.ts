@@ -1,4 +1,4 @@
-import { AppointmentModality } from "../types";
+import { AppointmentModality } from "../types/index.js";
 
 export interface PricingInput {
   isMinor: boolean;

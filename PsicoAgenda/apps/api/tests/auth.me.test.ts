@@ -12,7 +12,7 @@ vi.mock("@/lib/prisma", () => ({
   disconnectPrisma: vi.fn(),
 }));
 
-const { createApp } = await import("@/app");
+const { createApp } = await import("@/create-app");
 
 const app = createApp();
 

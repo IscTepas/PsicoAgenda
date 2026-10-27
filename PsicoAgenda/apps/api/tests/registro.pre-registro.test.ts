@@ -10,14 +10,27 @@ const { enviarCodigoRegistro, fetchMock } = vi.hoisted(() => {
 
 // El mailer nunca sale a la red: se verifica que el código se le entrega.
 vi.mock("@/services/mailer.service", () => ({ enviarCodigoRegistro }));
-// La base de datos no participa en el pre-registro.
+// La base de datos de negocio no participa en el pre-registro.
 vi.mock("@/lib/prisma", () => ({ prisma: {}, disconnectPrisma: vi.fn() }));
+
+// Los códigos de registro viven en Postgres (`cache_registro`). En pruebas se
+// sustituye el repositorio por un Map en memoria para no necesitar base de datos.
+vi.mock("@/services/codigo-cache.repo", async () => {
+  const { crearCacheEnMemoria } = await import("./helpers/cache-en-memoria");
+  const { cacheRegistro, vaciar } = crearCacheEnMemoria();
+
+  return {
+    cacheRegistro,
+    vaciarCacheRegistro: () => Promise.resolve(vaciar()),
+    limpiarCacheRegistroVencida: () => Promise.resolve(0),
+  };
+});
 
 // La consulta de "correo ya registrado" usa `fetch` contra el admin de GoTrue:
 // se intercepta.
 vi.stubGlobal("fetch", fetchMock);
 
-const { createApp } = await import("@/app");
+const { createApp } = await import("@/create-app");
 const { limpiarCacheRegistro } = await import("@/services/codigo.service");
 const { AppError } = await import("@/utils/app-error");
 

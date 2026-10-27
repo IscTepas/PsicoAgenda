@@ -12,6 +12,7 @@ import {
   limpiarCacheRegistro,
   verificarCodigo,
 } from "@/services/codigo.service";
+import { cacheRegistro } from "@/services/codigo-cache.repo";
 
 // `generar6Digitos` usa `randomInt`: se envuelve para poder encadenar códigos
 // deterministas y que ninguna prueba dependa de un azar de 1 entre 10^6.
@@ -20,20 +21,21 @@ vi.mock("node:crypto", async (importOriginal) => {
   return { ...actual, randomInt: vi.fn(actual.randomInt) };
 });
 
-// Invariante de la capacidad: la BD no participa en absoluto. Cualquier acceso
-// a Prisma (propiedad, método o consulta) revienta cada prueba del archivo.
-const { prisma } = vi.hoisted(() => ({
-  prisma: new Proxy(
-    {},
-    {
-      get(_target, propiedad) {
-        throw new Error(`La base de datos no debe tocarse (acceso a "${String(propiedad)}")`);
-      },
-    },
-  ),
-}));
+// El servicio habla con el almacén a través de `CacheStore`, no con Prisma. La
+// suite sustituye el repositorio por un Map en memoria: así sigue corriendo sin
+// base de datos ni red, y el TTL se puede mover con `vi.setSystemTime` igual que
+// antes. La implementación real (tabla `cache_registro`) se verifica aparte, en
+// el checklist de despliegue, porque necesita Postgres.
+vi.mock("@/services/codigo-cache.repo", async () => {
+  const { crearCacheEnMemoria } = await import("./helpers/cache-en-memoria");
+  const { cacheRegistro, vaciar } = crearCacheEnMemoria();
 
-vi.mock("@/lib/prisma", () => ({ prisma, disconnectPrisma: vi.fn() }));
+  return {
+    cacheRegistro,
+    vaciarCacheRegistro: () => Promise.resolve(vaciar()),
+    limpiarCacheRegistroVencida: () => Promise.resolve(0),
+  };
+});
 
 const EMAIL = "persona@ejemplo.com";
 const OTRO_CODIGO = "111111";
@@ -190,16 +192,25 @@ describe("limitarSolicitudesPorIp", () => {
 });
 
 describe("almacenamiento", () => {
-  it("ejecuta el flujo completo sin tocar la base de datos", async () => {
+  it("ejecuta el flujo completo a través de CacheStore", async () => {
     const [codigo] = secuenciaDeCodigos(42);
 
-    // Si el servicio llegara a importar o consultar Prisma, el proxy del mock
-    // lanza y esta prueba falla.
     await limitarSolicitudesPorIp("203.0.113.7");
     await generarCodigo(EMAIL);
     await verificarCodigo(EMAIL, codigo);
     await consumirCodigo(EMAIL);
 
     await expect(verificarCodigo(EMAIL, codigo)).rejects.toMatchObject({ code: "CODIGO_EXPIRADO" });
+  });
+
+  it("no guarda el código en claro en el almacén", async () => {
+    const [codigo] = secuenciaDeCodigos(42);
+    await generarCodigo(EMAIL);
+
+    // El `get` va por la misma clave que usa el servicio; lo que se guarda es el
+    // SHA-256, no el código que viaja por correo.
+    const guardado = await cacheRegistro.get(`registro:cod:${EMAIL}`);
+    expect(guardado).not.toBe(codigo);
+    expect(guardado).toMatch(/^[a-f0-9]{64}$/);
   });
 });

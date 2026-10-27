@@ -14,7 +14,20 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: {}, disconnectPrisma: vi.fn() }));
 
-const { createApp } = await import("@/app");
+// Los códigos de registro viven en Postgres (`cache_registro`). En pruebas se
+// sustituye el repositorio por un Map en memoria para no necesitar base de datos.
+vi.mock("@/services/codigo-cache.repo", async () => {
+  const { crearCacheEnMemoria } = await import("./helpers/cache-en-memoria");
+  const { cacheRegistro, vaciar } = crearCacheEnMemoria();
+
+  return {
+    cacheRegistro,
+    vaciarCacheRegistro: () => Promise.resolve(vaciar()),
+    limpiarCacheRegistroVencida: () => Promise.resolve(0),
+  };
+});
+
+const { createApp } = await import("@/create-app");
 const { generarCodigo, limpiarCacheRegistro } = await import("@/services/codigo.service");
 
 const app = createApp();

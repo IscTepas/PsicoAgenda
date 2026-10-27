@@ -417,6 +417,32 @@ async function cancelarRecordatorios(citaId: string) {
 }
 
 /**
+ * Entrega en segundo plano sin que la respuesta HTTP la corte.
+ *
+ * En un proceso de larga vida basta con `void despacharPendientes()`. En Vercel
+ * la función se congela en cuanto responde, así que el envío se quedaría a medias
+ * y el aviso esperaría al siguiente barrido del cron. `waitUntil` le dice a la
+ * plataforma que mantenga la invocación viva hasta que la promesa termine.
+ *
+ * La importación es dinámica y condicionada a `VERCEL` para que el paquete no se
+ * cargue en desarrollo ni en las pruebas, donde no hay contexto de petición.
+ */
+function despacharEnSegundoPlano(): void {
+  const trabajo = despacharPendientes()
+    .then(() => undefined)
+    .catch(() => undefined);
+
+  if (!process.env.VERCEL) {
+    void trabajo;
+    return;
+  }
+
+  void import("@vercel/functions")
+    .then(({ waitUntil }) => waitUntil(trabajo))
+    .catch(() => void trabajo);
+}
+
+/**
  * Registra el aviso de un evento por cada canal que aplique y lo despacha.
  * Nunca lanza: un aviso que falla no debe tumbar la operación que ya se
  * guardó (la cita existe aunque el correo no salga).
@@ -455,7 +481,7 @@ export async function notificar(evento: EventoCita, aviso: CitaAviso): Promise<v
     return;
   }
 
-  void despacharPendientes();
+  despacharEnSegundoPlano();
 }
 
 // ---------------------------------------------------------------------------

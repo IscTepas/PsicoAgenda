@@ -12,6 +12,22 @@ datasource db {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This table contains exclusion constraints and requires additional setup for migrations. Visit https://pris.ly/d/exclusion-constraints for more info.
+/// Estado efímero del registro de usuarios: código de verificación hasheado,
+/// intentos fallidos, cooldown de reenvío y límite de solicitudes por IP.
+///
+/// Vive en la base y no en la memoria del proceso porque en serverless cada
+/// petición puede caer en una instancia distinta: el código que se generó en una
+/// tiene que poder verificarse en otra. Las filas vencidas se borran de forma
+/// perezosa al leerlas y en cada barrido del cron.
+model cache_registro {
+  clave          String   @id
+  valor          String
+  expira_en      DateTime @db.Timestamptz(3)
+  actualizado_en DateTime @default(now()) @updatedAt @db.Timestamptz(3)
+
+  @@index([expira_en])
+}
+
 model citas {
   id                 String              @id @db.Uuid
   psicologo_id       String              @db.Uuid
