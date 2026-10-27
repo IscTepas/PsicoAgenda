@@ -1,17 +1,11 @@
-import { DEFAULT_API_PORT } from "@psicoagenda/shared";
+import { API_URL, API_URL_CONFIGURADA } from "@/lib/api-url";
 
 /**
- * URL base del API, normalizada sin barra final.
- *
- * La barra final no es cosmética: `${API_URL}${"/api/..."}` produce `//api/...`
- * y Vercel responde 308 a esa ruta. En un preflight CORS un redirect es fatal
- * ("Redirect is not allowed for a preflight request"), así que el navegador
- * bloquea la llamada aunque el API esté sano. Si alguien pega la variable en
- * Vercel con barra final, este `replace` lo absorbe.
+ * URL base del API, normalizada en `lib/api-url.ts` (sin barra final, con
+ * esquema y en https si el host es público). Se reexporta aquí porque este
+ * módulo es el punto de entrada del cliente en el resto de la aplicación.
  */
-export const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${DEFAULT_API_PORT}`
-).replace(/\/+$/, "");
+export { API_URL };
 
 const API_PREFIX = "/api";
 
@@ -22,7 +16,7 @@ function buildApiUrl(path: string): string {
   // En el navegador preferimos rutas relativas para que Next.js las reescriba al
   // backend mediante `rewrites`. Esto evita problemas de CORS y de puertos en
   // desarrollo. En SSR (Server Components) necesitamos la URL absoluta.
-  if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_API_URL) {
+  if (typeof window !== "undefined" && !API_URL_CONFIGURADA) {
     return normalizedPath;
   }
 

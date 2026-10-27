@@ -2,10 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_API_PORT } from "@psicoagenda/shared";
 
 /**
- * El `//` en la URL del API no es cosmético: `${API_URL}/api/...` con barra final
- * produce `//api/...`, Vercel responde 308 a esa ruta y el navegador rechaza el
- * preflight CORS ("Redirect is not allowed for a preflight request"). Pasó en
- * producción con `NEXT_PUBLIC_API_URL=https://.../`.
+ * La URL del API se escribe a mano en Vercel y de ahí viaja a tres sitios: el
+ * bundle del cliente, el `rewrite` de `next.config.ts` y el build. Dos errores
+ * reales ya rompieron el despliegue:
+ *
+ *  - barra final (`https://.../`): produce `//api/...`, Vercel responde 308 y el
+ *    preflight CORS muere con "Redirect is not allowed for a preflight request";
+ *  - host sin esquema (`api.vercel.app`): Next rechaza el rewrite y el build
+ *    falla con "`destination` does not start with `/`, `http://`, or `https://`".
  *
  * Estas pruebas fijan la normalización para que no vuelva a colarse.
  */
@@ -47,7 +51,65 @@ describe("API_URL", () => {
     await expect(cargarApiUrl("http://localhost:4000/")).resolves.toBe("http://localhost:4000");
   });
 
-  it("cae al API local cuando la variable no está definida", async () => {
+  it("añade https a un host sin esquema", async () => {
+    // Es el caso que tumbó el build: `NEXT_PUBLIC_API_URL=psico-agenda-api.vercel.app`.
+    await expect(cargarApiUrl("psico-agenda-api.vercel.app")).resolves.toBe(
+      "https://psico-agenda-api.vercel.app",
+    );
+  });
+
+  it("añade https y quita la barra final a la vez", async () => {
+    await expect(cargarApiUrl("psico-agenda-api.vercel.app/")).resolves.toBe(
+      "https://psico-agenda-api.vercel.app",
+    );
+  });
+
+  it("añade http a un host local sin esquema", async () => {
+    await expect(cargarApiUrl("localhost:4000")).resolves.toBe("http://localhost:4000");
+    await expect(cargarApiUrl("127.0.0.1:4000")).resolves.toBe("http://127.0.0.1:4000");
+  });
+
+  it("respeta un https explícito en localhost", async () => {
+    await expect(cargarApiUrl("https://localhost:4000")).resolves.toBe("https://localhost:4000");
+  });
+
+  it("sube a https un host público escrito con http (Mixed Content)", async () => {
+    // Con http:// el build pasaba, pero el navegador bloqueaba la petición
+    // desde la página https.
+    await expect(cargarApiUrl("http://psico-agenda-api.vercel.app")).resolves.toBe(
+      "https://psico-agenda-api.vercel.app",
+    );
+  });
+
+  it("ignora espacios alrededor del valor", async () => {
+    await expect(cargarApiUrl("  https://api.ejemplo.com  ")).resolves.toBe(
+      "https://api.ejemplo.com",
+    );
+  });
+
+  it("cae al API local cuando la variable no está definida o está vacía", async () => {
     await expect(cargarApiUrl(undefined)).resolves.toBe(`http://localhost:${DEFAULT_API_PORT}`);
+    await expect(cargarApiUrl("")).resolves.toBe(`http://localhost:${DEFAULT_API_PORT}`);
+    await expect(cargarApiUrl("   ")).resolves.toBe(`http://localhost:${DEFAULT_API_PORT}`);
+  });
+
+  it("nunca deja un destino de rewrite inválido ni una URL insegura", async () => {
+    // Next exige que el `destination` empiece por `/`, `http://` o `https://`;
+    // y desde una página https un `http://` público lo bloquea el navegador.
+    for (const valor of [
+      undefined,
+      "",
+      "psico-agenda-api.vercel.app",
+      "https://psico-agenda-api.vercel.app/",
+      "http://psico-agenda-api.vercel.app",
+      "http://localhost:4000",
+    ]) {
+      const url = await cargarApiUrl(valor);
+      expect(url).toMatch(/^(https?:\/\/|\/)/);
+      if (!url.includes("localhost") && !url.includes("127.0.0.1")) {
+        expect(url).toMatch(/^https:\/\//);
+      }
+    }
   });
 });
+

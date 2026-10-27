@@ -1,11 +1,5 @@
 import type { NextConfig } from "next";
-
-const DEFAULT_API_PORT = 4000;
-// Sin barra final: `${API_URL}/api/:path*` con barra final generaría `//api/...`.
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? `http://localhost:${DEFAULT_API_PORT}`).replace(
-  /\/+$/,
-  "",
-);
+import { API_URL } from "./src/lib/api-url";
 
 const nextConfig: NextConfig = {
   // Oculta el indicador flotante de desarrollo (el círculo con "N").
