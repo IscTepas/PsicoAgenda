@@ -33,6 +33,7 @@ import {
   Bell,
   BarChart3,
   Settings,
+  ListChecks,
   type LucideIcon,
 } from "lucide-react"
 
@@ -42,6 +43,7 @@ const ICONS_BY_HREF: Record<string, LucideIcon> = {
   "/pacientes": Users,
   "/notificaciones": Bell,
   "/reportes": BarChart3,
+  "/motivos": ListChecks,
   "/perfil": Settings,
 }
 

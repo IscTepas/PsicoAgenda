@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { enviarCodigoRegistro } from "@/services/mailer.service";
+import { enviarCodigoRegistro, enviarEnlaceRecuperacion } from "@/services/mailer.service";
 
 const { config, sendMail } = vi.hoisted(() => ({
   config: {
@@ -94,5 +94,20 @@ describe("enviarCodigoRegistro", () => {
       code: "MAILER_NO_CONFIGURADO",
     });
     expect(sendMail).not.toHaveBeenCalled();
+  });
+});
+
+describe("enviarEnlaceRecuperacion", () => {
+  it("manda el enlace (no un código) desde el remitente propio", async () => {
+    const enlace = "https://psicoagenda.app/recuperar/nueva?token=abc";
+
+    await enviarEnlaceRecuperacion(EMAIL, enlace, 30);
+
+    const mensaje = mensajeEnviado();
+    expect(mensaje.from).toContain("salida@psicoagenda.app");
+    expect(mensaje.to).toBe(EMAIL);
+    expect(mensaje.text).toContain(enlace);
+    expect(mensaje.html).toContain(`href="${enlace}"`);
+    expect(mensaje.text).not.toMatch(/código/i);
   });
 });

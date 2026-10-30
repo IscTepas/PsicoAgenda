@@ -3,6 +3,7 @@ import type {
   LegalGuardian,
   Patient,
   PatientProfile,
+  TutoredPatient,
 } from "@psicoagenda/shared"
 import { apiFetch } from "@/lib/api-client"
 
@@ -19,13 +20,20 @@ interface SerializedGuardian extends Omit<LegalGuardian, "createdAt"> {
 }
 
 interface SerializedPatient
-  extends Omit<Patient, "birthDate" | "createdAt" | "updatedAt" | "emergencyContact" | "legalGuardian"> {
+  extends Omit<
+    Patient,
+    "birthDate" | "createdAt" | "updatedAt" | "emergencyContact" | "legalGuardian" | "guardians" | "guardianshipEndedAt"
+  > {
   birthDate?: string
   createdAt: string
   updatedAt: string
   emergencyContact?: SerializedContact
   legalGuardian?: SerializedGuardian
+  guardians?: SerializedGuardian[]
+  guardianshipEndedAt?: string
 }
+
+const reviveGuardian = (raw: SerializedGuardian): LegalGuardian => ({ ...raw, createdAt: new Date(raw.createdAt) })
 
 function revivePatient(raw: SerializedPatient): Patient {
   return {
@@ -36,9 +44,9 @@ function revivePatient(raw: SerializedPatient): Patient {
     emergencyContact: raw.emergencyContact
       ? { ...raw.emergencyContact, createdAt: new Date(raw.emergencyContact.createdAt) }
       : undefined,
-    legalGuardian: raw.legalGuardian
-      ? { ...raw.legalGuardian, createdAt: new Date(raw.legalGuardian.createdAt) }
-      : undefined,
+    legalGuardian: raw.legalGuardian ? reviveGuardian(raw.legalGuardian) : undefined,
+    guardians: raw.guardians?.map(reviveGuardian),
+    guardianshipEndedAt: raw.guardianshipEndedAt ? new Date(raw.guardianshipEndedAt) : undefined,
   }
 }
 
@@ -109,4 +117,42 @@ export const patientService = {
         body: payload,
       }),
     ),
+
+  /** Menores que tutela la cuenta (para pedir citas a su nombre). */
+  listTutored: (): Promise<TutoredPatient[]> => apiFetch<TutoredPatient[]>("/patients/me/tutelados"),
+}
+
+export interface AddGuardianPayload {
+  email?: string
+  name?: string
+  phone?: string
+  relationship?: string
+  isPrimary?: boolean
+}
+
+/** Tutores de un paciente; los gestiona el psicólogo tratante desde el expediente. */
+export const guardianService = {
+  list: async (patientId: string): Promise<LegalGuardian[]> =>
+    (await apiFetch<SerializedGuardian[]>(`/patients/${patientId}/tutores`)).map(reviveGuardian),
+  add: async (patientId: string, payload: AddGuardianPayload): Promise<LegalGuardian[]> =>
+    (await apiFetch<SerializedGuardian[]>(`/patients/${patientId}/tutores`, { method: "POST", body: payload })).map(
+      reviveGuardian,
+    ),
+  setPrimary: async (patientId: string, tutorId: string): Promise<LegalGuardian[]> =>
+    (
+      await apiFetch<SerializedGuardian[]>(`/patients/${patientId}/tutores/${tutorId}/principal`, { method: "POST" })
+    ).map(reviveGuardian),
+  remove: async (
+    patientId: string,
+    tutorId: string,
+    options: { nuevoPrincipalId?: string; sinPrincipal?: boolean } = {},
+  ): Promise<LegalGuardian[]> => {
+    const query = new URLSearchParams()
+    if (options.nuevoPrincipalId) query.set("nuevoPrincipalId", options.nuevoPrincipalId)
+    if (options.sinPrincipal) query.set("sinPrincipal", "true")
+    const q = query.toString() ? `?${query}` : ""
+    return (
+      await apiFetch<SerializedGuardian[]>(`/patients/${patientId}/tutores/${tutorId}${q}`, { method: "DELETE" })
+    ).map(reviveGuardian)
+  },
 }

@@ -31,6 +31,8 @@ Se reutiliza el programador externo que ya dispara el despacho de notificaciones
 
 **Alternativa descartada:** GitHub Actions programado. Funciona, pero suma un sistema y sus límites de minutos; se deja como respaldo si el cron externo deja de ser viable.
 
+**Actualización 2026-10-29:** el despacho de notificaciones terminó en GitHub Actions, así que la copia también vive ahí (`.github/workflows/copia-de-seguridad.yml`); el criterio de «un solo programador» se mantiene.
+
 ### 3. La prueba de restauración es parte del entregable
 
 Una copia que nunca se restauró no es una copia: es una hipótesis. La tarea de restauración se ejecuta contra el entorno aislado y se mide.

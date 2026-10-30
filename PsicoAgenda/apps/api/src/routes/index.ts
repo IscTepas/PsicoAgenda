@@ -8,6 +8,7 @@ import appointmentRequestsRouter from "@/routes/appointment-request.routes";
 import psychologistsRouter from "@/routes/psychologist.routes";
 import notificationsRouter from "@/routes/notification.routes";
 import logEntriesRouter from "@/routes/log-entry.routes";
+import consultationReasonsRouter from "@/routes/consultation-reason.routes";
 
 const router = Router();
 
@@ -20,5 +21,6 @@ router.use("/appointment-requests", appointmentRequestsRouter);
 router.use("/psychologists", psychologistsRouter);
 router.use("/notifications", notificationsRouter);
 router.use("/log-entries", logEntriesRouter);
+router.use("/motivos-consulta", consultationReasonsRouter);
 
 export { router as apiRouter };

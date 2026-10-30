@@ -28,6 +28,10 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 vi.mock("@/services/notification.service", () => ({ notificar }));
+vi.mock("@/services/guardianship.service", async () => {
+  const { tutelaSinVinculos } = await import("./helpers/tutela-sin-vinculos");
+  return tutelaSinVinculos(prismaMock.pacientes);
+});
 
 const { rescheduleAppointmentRequest } = await import("@/services/appointment-request.service");
 

@@ -18,7 +18,7 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/client"
+import { mensajeDeRecuperacion, recuperacionService } from "@/services/recuperacion.service"
 import { ArrowUpRight, Loader2, MailCheck } from "lucide-react"
 
 const recoverSchema = z.object({
@@ -27,7 +27,7 @@ const recoverSchema = z.object({
 
 type RecoverValues = z.infer<typeof recoverSchema>
 
-// Supabase limita el reenvío del correo de recuperación a uno por minuto.
+// Pausa entre reenvíos; la API además limita a 3 enlaces por correo cada 15 minutos.
 const RESEND_COOLDOWN_SECONDS = 60
 
 // Atajo a la bandeja del proveedor más común según el dominio del correo.
@@ -59,7 +59,6 @@ export function RecoverForm() {
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(0)
   const [resent, setResent] = useState(false)
-  const configured = isSupabaseConfigured()
 
   const form = useForm<RecoverValues>({
     resolver: zodResolver(recoverSchema),
@@ -77,21 +76,15 @@ export function RecoverForm() {
     setError(null)
     setIsPending(true)
 
-    // Supabase no revela si el correo existe: siempre resuelve con éxito para
-    // no permitir enumerar cuentas registradas a partir de este formulario.
-    const { error: resetError } = await createClient().auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/recuperar/nueva`,
-    })
-
-    setIsPending(false)
-
-    if (resetError) {
-      setError(
-        resetError.status === 429
-          ? "Ya enviamos un enlace hace poco. Espera un minuto antes de pedir otro."
-          : "No se pudo enviar el enlace. Inténtalo de nuevo.",
-      )
+    // La API responde igual exista o no el correo, para no permitir enumerar
+    // cuentas registradas a partir de este formulario.
+    try {
+      await recuperacionService.solicitar(email)
+    } catch (err) {
+      setError(mensajeDeRecuperacion(err))
       return false
+    } finally {
+      setIsPending(false)
     }
 
     setSecondsLeft(RESEND_COOLDOWN_SECONDS)
@@ -228,16 +221,6 @@ export function RecoverForm() {
         </Alert>
       ) : null}
 
-      {!configured ? (
-        <Alert variant="destructive" className="rounded-xl">
-          <AlertDescription>
-            Faltan <code>NEXT_PUBLIC_SUPABASE_URL</code> y{" "}
-            <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> en{" "}
-            <code>apps/web/.env</code>.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <FormField
@@ -264,7 +247,7 @@ export function RecoverForm() {
             type="submit"
             size="lg"
             className="h-11 w-full rounded-xl text-sm font-semibold"
-            disabled={isPending || !configured}
+            disabled={isPending}
           >
             {isPending ? (
               <>

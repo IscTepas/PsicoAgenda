@@ -87,6 +87,44 @@ export async function enviarCorreoNotificacion(params: {
 }
 
 /**
+ * Enlace de recuperación de contraseña. Lanza si no sale; quien llama decide
+ * (la API lo traga para no revelar qué correos tienen cuenta).
+ */
+export async function enviarEnlaceRecuperacion(
+  email: string,
+  enlace: string,
+  minutos: number,
+): Promise<void> {
+  await enviarCorreoNotificacion({
+    to: email,
+    subject: `${APP_NAME}: restablece tu contraseña`,
+    text: [
+      `Para crear una contraseña nueva en ${APP_NAME}, abre este enlace:`,
+      enlace,
+      "",
+      `Funciona una sola vez y caduca en ${minutos} minutos. Si no lo pediste, ignora este mensaje:`,
+      "tu contraseña actual sigue igual.",
+    ].join("\n"),
+    html: `
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; color: #1f2937;">
+      <h1 style="font-size: 20px; margin-bottom: 8px;">${APP_NAME}</h1>
+      <p style="font-size: 15px;">Pediste restablecer tu contraseña. Toca el botón para crear una nueva:</p>
+      <p style="text-align: center; margin: 24px 0;">
+        <a href="${enlace}" style="display: inline-block; background: #1f2937; color: #ffffff;
+           text-decoration: none; font-weight: bold; border-radius: 8px; padding: 12px 24px;">
+          Crear contraseña nueva
+        </a>
+      </p>
+      <p style="font-size: 13px; color: #6b7280;">
+        Funciona una sola vez y caduca en ${minutos} minutos. Si no lo pediste, ignora este
+        mensaje: tu contraseña actual sigue igual.
+      </p>
+    </div>
+  `,
+  });
+}
+
+/**
  * Envía el código de 6 dígitos a la persona que se registró.
  *
  * Lanza `AppError(503)` si el correo no pudo salir; quien llama decide si

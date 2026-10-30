@@ -33,6 +33,11 @@ export const NAV_ITEMS: NavItem[] = [
     roles: [UserRole.PSYCHOLOGIST, UserRole.ADMIN],
   },
   {
+    href: "/motivos",
+    label: "Motivos",
+    roles: [UserRole.ADMIN],
+  },
+  {
     href: "/perfil",
     label: "Perfil",
     roles: [UserRole.PSYCHOLOGIST, UserRole.PATIENT, UserRole.ADMIN],

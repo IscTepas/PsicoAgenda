@@ -37,6 +37,15 @@ const requiredForRegistro = (name: string, value: string | undefined): string =>
   return "";
 };
 
+// Vercel pone NODE_ENV=production también en los previews: sin este candado, una
+// DATABASE_URL definida "para todos los entornos" haría que un preview escriba en la
+// base real. `ENTORNO_BD=preview` se define solo junto a las variables del proyecto aislado.
+if (process.env.VERCEL_ENV === "preview" && process.env.ENTORNO_BD !== "preview") {
+  throw new Error(
+    "Preview sin base aislada: define ENTORNO_BD=preview y las variables del proyecto de vista previa (ver README, «Entornos»).",
+  );
+}
+
 export const config = {
   port: toPort(process.env.PORT, 4000),
   nodeEnv: process.env.NODE_ENV ?? "development",
@@ -70,6 +79,19 @@ export const config = {
    * endpoint falla cerrado (503) cuando el secreto no está configurado.
    */
   cronSecret: process.env.CRON_SECRET ?? "",
+
+  /**
+   * URL pública del frontend, para los enlaces que salen por correo. Sin
+   * `WEB_URL` se toma el primer origen de CORS sin comodín (el dominio real).
+   */
+  webUrl: (
+    process.env.WEB_URL ??
+    (process.env.CORS_ORIGIN ?? "http://localhost:3000")
+      .split(",")
+      .map((origen) => origen.trim())
+      .find((origen) => origen && !origen.includes("*")) ??
+    "http://localhost:3000"
+  ).replace(/\/+$/, ""),
 
   /**
    * Mailer de registro (SMTP de Gmail con contraseña de aplicación). La API es

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireCronSecret } from "@/middleware/cron.middleware";
 import { despacharPendientes } from "@/services/notification.service";
 import { limpiarCacheRegistroVencida } from "@/services/codigo-cache.repo";
+import { finalizarTutelasVencidas } from "@/services/guardianship.service";
 
 const router = Router();
 
@@ -9,8 +10,8 @@ const router = Router();
  * Barrido de la cola de notificaciones.
  *
  * Sustituye al `setInterval` que solo puede existir en un proceso de larga vida.
- * En Vercel lo llama un cron externo (cron-job.org) cada minuto; ver el ticket
- * `TICKET-2026-10-27-cron-externo.md` y la sección "Despliegue" del README.
+ * En Vercel lo llama `.github/workflows/despachar-notificaciones.yml` cada 5 minutos;
+ * ver la sección "Despliegue" del README.
  *
  * Es idempotente y seguro con ejecuciones solapadas: `despacharPendientes`
  * reclama cada fila con un `updateMany` condicionado por `intentos`, así que dos
@@ -27,6 +28,14 @@ router.post("/despachar", requireCronSecret, async (_req, res) => {
   });
 
   res.json({ ok: true, procesadas, vencidas, enviadaEn: new Date().toISOString() });
+});
+
+/**
+ * Fin de tutela al cumplir 18 (una vez al día). Los permisos ya se cortan al
+ * autorizar; este barrido solo borra los vínculos, audita y avisa.
+ */
+router.post("/finalizar-tutelas", requireCronSecret, async (_req, res) => {
+  res.json({ ok: true, finalizadas: await finalizarTutelasVencidas() });
 });
 
 export { router as internalRouter };

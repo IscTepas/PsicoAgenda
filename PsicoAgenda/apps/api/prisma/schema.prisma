@@ -39,6 +39,7 @@ model citas {
   modalidad          modalidad_cita      @default(PRESENCIAL)
   tipo_sesion        tipo_sesion
   motivo             String?
+  motivo_id          String?             @db.Uuid
   notas_internas     String?
   motivo_cancelacion String?
   precio             Int?
@@ -50,6 +51,7 @@ model citas {
   pacientes          pacientes           @relation(fields: [paciente_id], references: [id])
   psicologos         psicologos          @relation(fields: [psicologo_id], references: [id])
   solicitudes_cita   solicitudes_cita?   @relation(fields: [solicitud_id], references: [id])
+  motivos_consulta   motivos_consulta?   @relation(fields: [motivo_id], references: [id], onDelete: Restrict)
   entradas_bitacora  entradas_bitacora[]
   notificaciones     notificaciones[]
   pagos_honorarios   pagos_honorarios?
@@ -176,19 +178,17 @@ model pacientes {
   fecha_nacimiento           DateTime?                    @db.Date
   sexo                       String?
   direccion                  String?
-  tutor_legal_id             String?                      @db.Uuid
   psicologo_id               String?                      @db.Uuid
   citas                      citas[]
   consentimientos_informados consentimientos_informados[]
   contactos_emergencia       contactos_emergencia?
   expedientes_clinicos       expedientes_clinicos?
   psicologos                 psicologos?                  @relation(fields: [psicologo_id], references: [id], onDelete: Restrict)
-  tutores                    tutores?                     @relation(fields: [tutor_legal_id], references: [id], onDelete: Restrict)
+  pacientes_tutores          pacientes_tutores[]
   usuarios                   usuarios                     @relation(fields: [usuario_id], references: [id])
   solicitudes_cita           solicitudes_cita[]
 
   @@index([psicologo_id])
-  @@index([tutor_legal_id])
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -275,33 +275,71 @@ model revisiones_bitacora {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model solicitudes_cita {
-  id                String           @id @db.Uuid
-  paciente_id       String           @db.Uuid
-  psicologo_id      String           @db.Uuid
-  inicio_solicitado DateTime         @db.Timestamptz(3)
+  id                String            @id @db.Uuid
+  paciente_id       String            @db.Uuid
+  psicologo_id      String            @db.Uuid
+  inicio_solicitado DateTime          @db.Timestamptz(3)
   tipo_sesion       tipo_sesion
-  modalidad         modalidad_cita   @default(PRESENCIAL)
-  duracion_minutos  Int              @default(50)
+  modalidad         modalidad_cita    @default(PRESENCIAL)
+  duracion_minutos  Int               @default(50)
   motivo            String?
-  estado            estado_solicitud @default(PENDIENTE)
-  creado_en         DateTime         @default(now()) @db.Timestamptz(3)
-  atendida_en       DateTime?        @db.Timestamptz(3)
+  motivo_id         String?           @db.Uuid
+  /// Usuario que pidió la solicitud: el paciente o su tutor.
+  solicitante_id    String?           @db.Uuid
+  estado            estado_solicitud  @default(PENDIENTE)
+  creado_en         DateTime          @default(now()) @db.Timestamptz(3)
+  atendida_en       DateTime?         @db.Timestamptz(3)
   citas             citas?
-  pacientes         pacientes        @relation(fields: [paciente_id], references: [id])
-  psicologos        psicologos       @relation(fields: [psicologo_id], references: [id])
+  pacientes         pacientes         @relation(fields: [paciente_id], references: [id])
+  psicologos        psicologos        @relation(fields: [psicologo_id], references: [id])
+  motivos_consulta  motivos_consulta? @relation(fields: [motivo_id], references: [id], onDelete: Restrict)
+  solicitante       usuarios?         @relation("solicitudes_solicitante", fields: [solicitante_id], references: [id], onDelete: SetNull)
 
   @@index([paciente_id])
   @@index([psicologo_id, estado])
 }
 
+/// Catálogo global de motivos de consulta (categoría → motivo). «Otro» es una fila con es_otro.
+model motivos_consulta {
+  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo           String             @unique
+  etiqueta         String
+  categoria        String
+  activo           Boolean            @default(true)
+  orden            Int                @default(0)
+  es_otro          Boolean            @default(false)
+  requiere_texto   Boolean            @default(false)
+  creado_en        DateTime           @default(now()) @db.Timestamptz(3)
+  citas            citas[]
+  solicitudes_cita solicitudes_cita[]
+
+  @@index([activo, categoria, orden])
+}
+
 model tutores {
   id                         String                       @id @db.Uuid
+  /// Cuenta de la persona tutora, si la tiene (un paciente adulto puede ser tutor).
+  usuario_id                 String?                      @unique @db.Uuid
   nombre_completo            String
   telefono                   String?
   parentesco                 String?
   creado_en                  DateTime                     @default(now()) @db.Timestamptz(3)
   consentimientos_informados consentimientos_informados[]
-  pacientes                  pacientes[]
+  pacientes_tutores          pacientes_tutores[]
+  usuarios                   usuarios?                    @relation(fields: [usuario_id], references: [id], onDelete: SetNull)
+}
+
+/// Vínculo tutor–paciente. Un solo `es_principal` por paciente (índice parcial en la migración).
+model pacientes_tutores {
+  paciente_id  String    @db.Uuid
+  tutor_id     String    @db.Uuid
+  es_principal Boolean   @default(false)
+  creado_en    DateTime  @default(now()) @db.Timestamptz(3)
+  pacientes    pacientes @relation(fields: [paciente_id], references: [id], onDelete: Cascade)
+  tutores      tutores   @relation(fields: [tutor_id], references: [id], onDelete: Restrict)
+
+  @@id([paciente_id, tutor_id])
+  @@index([tutor_id])
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -327,6 +365,8 @@ model usuarios {
   registros_auditoria   registros_auditoria[]
   reportes              reportes[]
   revisiones_bitacora   revisiones_bitacora[]
+  tutores               tutores?
+  solicitudes_pedidas   solicitudes_cita[]    @relation("solicitudes_solicitante")
 }
 
 enum canal_notificacion {

@@ -174,9 +174,9 @@ BEGIN
   ON CONFLICT (id) DO NOTHING;
 
   INSERT INTO public.pacientes (
-    id, usuario_id, fecha_nacimiento, sexo, direccion, tutor_legal_id, psicologo_id
+    id, usuario_id, fecha_nacimiento, sexo, direccion, psicologo_id
   )
-  SELECT gen_random_uuid(), v_user_id, NULL, NULL, NULL, NULL, NULL
+  SELECT gen_random_uuid(), v_user_id, NULL, NULL, NULL, NULL
    WHERE NOT EXISTS (
      SELECT 1 FROM public.pacientes p WHERE p.usuario_id = v_user_id
    );

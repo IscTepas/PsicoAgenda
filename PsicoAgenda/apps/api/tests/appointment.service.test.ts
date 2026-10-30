@@ -16,7 +16,7 @@ const { prismaMock } = vi.hoisted(() => {
     update: vi.fn(),
     count: vi.fn(),
   };
-  const pacientes = { findUnique: vi.fn() };
+  const pacientes = { findUnique: vi.fn(), findFirst: vi.fn() };
   const psicologos = { findUnique: vi.fn() };
   const pagos_honorarios = { create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() };
 
@@ -31,6 +31,10 @@ vi.mock("@/lib/prisma", () => ({
 // Los avisos tienen su propia suite; aquí solo importa que no toquen la base.
 const { notificar } = vi.hoisted(() => ({ notificar: vi.fn() }));
 vi.mock("@/services/notification.service", () => ({ notificar }));
+vi.mock("@/services/guardianship.service", async () => {
+  const { tutelaSinVinculos } = await import("./helpers/tutela-sin-vinculos");
+  return tutelaSinVinculos(prismaMock.pacientes);
+});
 
 const {
   cancelAppointment,
@@ -236,7 +240,7 @@ describe("listAppointments", () => {
 
     const { where } = lastCallArg(prismaMock.citas.findMany) as { where: Record<string, unknown> };
 
-    expect(where).toMatchObject({ paciente_id: PATIENT_ID });
+    expect(where).toMatchObject({ paciente_id: { in: [PATIENT_ID] } });
   });
 
   it("traduce el estado compartido al valor del esquema en los filtros", async () => {
@@ -460,10 +464,7 @@ describe("listAppointmentOccupancy", () => {
   const FIN = new Date(START.getTime() + 50 * 60_000);
 
   it("devuelve los rangos ocupados del psicólogo asignado al paciente", async () => {
-    prismaMock.pacientes.findUnique.mockResolvedValue({
-      id: PATIENT_ID,
-      psicologo_id: PSYCH_ID,
-    });
+    prismaMock.pacientes.findFirst.mockResolvedValue({ psicologo_id: PSYCH_ID });
     prismaMock.citas.findMany.mockResolvedValue([{ inicio: START, fin: FIN }]);
 
     const result = await listAppointmentOccupancy(patient, { from: FROM, to: TO });
@@ -486,7 +487,7 @@ describe("listAppointmentOccupancy", () => {
   });
 
   it("un paciente sin psicólogo no consulta la agenda", async () => {
-    prismaMock.pacientes.findUnique.mockResolvedValue({ id: PATIENT_ID, psicologo_id: null });
+    prismaMock.pacientes.findFirst.mockResolvedValue(null);
 
     const result = await listAppointmentOccupancy(patient, { from: FROM, to: TO });
 

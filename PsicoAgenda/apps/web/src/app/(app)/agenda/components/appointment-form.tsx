@@ -79,8 +79,18 @@ import {
   appointmentService,
   patientService,
   psychologistService,
+  consultationReasonService,
+  errorDeMotivo,
   type AppointmentOccupancySlot,
 } from "@/services"
+import { useQuery } from "@tanstack/react-query"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/motion/select"
 
 // Horarios de respaldo mientras carga el horario real desde la BD (Lun–Vie 09:00–19:00).
 const FALLBACK_HOURS = [
@@ -270,6 +280,31 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     initialAppointment?.modality ?? null
   )
   const [reason, setReason] = React.useState<string>(initialAppointment?.reason || "")
+  // Motivo del catálogo: categoría → motivo; «Otro» revela el texto libre.
+  const [reasonId, setReasonId] = React.useState<string>(initialAppointment?.reasonId ?? "")
+  const [reasonCategory, setReasonCategory] = React.useState<string>("")
+  const { data: reasonGroups = [] } = useQuery({
+    queryKey: ["motivos-consulta"],
+    queryFn: consultationReasonService.listActive,
+    staleTime: 10 * 60_000,
+  })
+  const selectedReason = reasonGroups.flatMap((g) => g.reasons).find((r) => r.id === reasonId)
+  const activeReasonCategory =
+    reasonCategory || reasonGroups.find((g) => g.reasons.some((r) => r.id === reasonId))?.category || ""
+  const reasonsOfCategory = reasonGroups.find((g) => g.category === activeReasonCategory)?.reasons ?? []
+  // Solo «Otro» lleva texto; con otro motivo el texto viejo no se reenvía.
+  // Un tutor puede pedir la cita para sí o para un menor que tutela.
+  const [forPatientId, setForPatientId] = React.useState<string>("")
+  const { data: tutored = [] } = useQuery({
+    queryKey: ["pacientes", "tutelados"],
+    queryFn: patientService.listTutored,
+    enabled: isPatient && !isEdit,
+    staleTime: 5 * 60_000,
+  })
+  const reasonPayload = {
+    reasonId: reasonId || undefined,
+    reason: selectedReason?.requiresText ? reason.trim() : undefined,
+  }
 
   // Existing Appointment Status State
   const [status, setStatus] = React.useState<AppointmentStatus>(
@@ -292,6 +327,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     durationMinutes: number
     modality: AppointmentModality
     reason?: string
+    reasonId?: string
   } | null>(null)
 
   // Form feedback state
@@ -708,6 +744,13 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       return
     }
 
+    // Obligatorio en las altas; al editar una cita histórica sin motivo se puede dejar igual.
+    const motivoError = errorDeMotivo(selectedReason, reason, !isEdit)
+    if (motivoError) {
+      setErrorMessage(motivoError)
+      return
+    }
+
     const [hour, minute] = selectedHourEfectivo.split(":").map(Number)
     const startTime = new Date(selectedDateEfectiva)
     startTime.setHours(hour, minute, 0, 0)
@@ -729,7 +772,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         startTime,
         durationMinutes: durationMinutesEfectivos,
         modality,
-        reason: reason || undefined,
+        ...reasonPayload,
       })
       setIsRescheduleModalOpen(true)
       return
@@ -742,7 +785,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           startTime,
           durationMinutes: durationMinutesEfectivos,
           modality,
-          reason: reason || undefined,
+          ...reasonPayload,
         })
 
         // El estado administrativo viaja por su propio endpoint; solo se llama si
@@ -755,10 +798,11 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       } else if (isPatient) {
         // El paciente no agenda: solicita. La cita existe cuando el psicólogo acepta.
         await appointmentRequestService.create({
+          patientId: forPatientId || undefined,
           startTime,
           durationMinutes: durationMinutesEfectivos,
           modality,
-          reason: reason || undefined,
+          ...reasonPayload,
         })
         notifySuccess("Solicitud enviada. Te avisaremos cuando tu psicólogo la confirme.")
       } else {
@@ -767,7 +811,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           startTime,
           durationMinutes: durationMinutesEfectivos,
           modality,
-          reason: reason || undefined,
+          ...reasonPayload,
         })
         notifySuccess("¡Cita agendada exitosamente!")
       }
@@ -1333,6 +1377,25 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           </CardHeader>
 
           <CardContent className="space-y-4">
+            {tutored.length > 0 ? (
+              <div className="space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground block">¿Para quién es la cita?</span>
+                <Select value={forPatientId || "yo"} onValueChange={(value) => setForPatientId(value === "yo" ? "" : value)}>
+                  <SelectTrigger id="appointment-for-patient" aria-label="Para quién es la cita" className="w-full">
+                    <SelectValue placeholder="Para mí" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yo">Para mí</SelectItem>
+                    {tutored.map((minor) => (
+                      <SelectItem key={minor.id} value={minor.id}>
+                        {`${minor.name} (tutelado)`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+
             {/* Modalidad Selection */}
             <div className="space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground block">
@@ -1385,18 +1448,58 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               </div>
             </div>
 
-            {/* Motivo de Consulta (Opcional) */}
+            {/* Motivo de Consulta: categoría y motivo del catálogo; «Otro» pide texto */}
             <div className="space-y-1.5">
-              <label htmlFor="appointment-reason-textarea" className="text-xs font-medium text-muted-foreground block">
-                Motivo de la consulta (Opcional)
-              </label>
-              <Textarea
-                id="appointment-reason-textarea"
-                placeholder="Ej. Sesión de seguimiento para manejo de ansiedad y técnicas cognitivas..."
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                className="min-h-[90px] rounded-xl border-border/80 focus-visible:ring-primary/20 text-sm"
-              />
+              <span className="text-xs font-medium text-muted-foreground block">
+                Motivo de la consulta{isEdit ? "" : " *"}
+              </span>
+              {isEdit && !reasonId && initialAppointment?.reason ? (
+                <p className="text-xs text-muted-foreground">
+                  Registrado: <span className="font-medium text-foreground">{initialAppointment.reason}</span>
+                </p>
+              ) : null}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Select
+                  value={activeReasonCategory}
+                  onValueChange={(value) => {
+                    setReasonCategory(value)
+                    setReasonId("")
+                  }}
+                >
+                  <SelectTrigger id="appointment-reason-category" aria-label="Categoría del motivo" className="w-full">
+                    <SelectValue placeholder="Categoría" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {reasonGroups.map((group) => (
+                      <SelectItem key={group.category} value={group.category}>
+                        {group.category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={reasonId} onValueChange={setReasonId} disabled={!activeReasonCategory}>
+                  <SelectTrigger id="appointment-reason" aria-label="Motivo" className="w-full">
+                    <SelectValue placeholder="Motivo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {reasonsOfCategory.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {selectedReason?.requiresText ? (
+                <Textarea
+                  id="appointment-reason-textarea"
+                  aria-label="Describe el motivo"
+                  placeholder="Describe brevemente el motivo de la consulta…"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="min-h-[80px] rounded-xl border-border/80 focus-visible:ring-primary/20 text-sm"
+                />
+              ) : null}
               <span className="text-[11px] text-muted-foreground block">
                 Este motivo se reflejará en el calendario y en el expediente clínico del paciente.
               </span>

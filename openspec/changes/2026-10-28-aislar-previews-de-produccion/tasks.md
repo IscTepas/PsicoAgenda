@@ -18,7 +18,7 @@
 
 ## 4. Documentación
 
-- [ ] 4.1 Documentar en el README el mapa de entornos (qué entorno usa qué base y qué credenciales), cómo se promueve un cambio y qué se hace al cambiar los disparadores de identidad; y verificar que una persona nueva puede deducir la configuración sin preguntar
+- [x] 4.1 Documentar en el README el mapa de entornos (qué entorno usa qué base y qué credenciales), cómo se promueve un cambio y qué se hace al cambiar los disparadores de identidad; y verificar que una persona nueva puede deducir la configuración sin preguntar
 
 ## Workflow follow-up
 

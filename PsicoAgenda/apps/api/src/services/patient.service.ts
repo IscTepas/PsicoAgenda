@@ -1,7 +1,6 @@
 import {
   UserRole,
   type EmergencyContact,
-  type LegalGuardian,
   type Patient,
   type PatientProfile,
 } from "@psicoagenda/shared";
@@ -10,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { randomUUID } from "node:crypto";
 import type { AuthenticatedUser } from "@/utils/jwt";
 import { AppError } from "@/utils/app-error";
+import { guardianshipEndedAt, linkSelect, toGuardian } from "@/services/guardianship.service";
 
 const patientListInclude = {
   usuarios: true,
@@ -17,15 +17,14 @@ const patientListInclude = {
 
 const patientInclude = {
   usuarios: true,
-  tutores: true,
+  pacientes_tutores: { select: linkSelect, orderBy: [{ es_principal: "desc" }, { creado_en: "asc" }] },
   // Relación to-one: cada paciente tiene una sola ficha de contacto de emergencia.
   contactos_emergencia: true,
-} as Prisma.pacientesInclude;
+} satisfies Prisma.pacientesInclude;
 
 type PatientRow = Prisma.pacientesGetPayload<{ include: typeof patientInclude }>;
 type PatientListRow = Prisma.pacientesGetPayload<{ include: typeof patientListInclude }>;
 type EmergencyContactRow = NonNullable<PatientRow["contactos_emergencia"]>;
-type LegalGuardianRow = NonNullable<PatientRow["tutores"]>;
 
 /**
  * Un paciente es menor de edad mientras no haya cumplido los 18 años. La fecha
@@ -51,19 +50,11 @@ function toEmergencyContact(row: EmergencyContactRow): EmergencyContact {
   };
 }
 
-function toLegalGuardian(row: LegalGuardianRow): LegalGuardian {
-  return {
-    id: row.id,
-    name: row.nombre_completo,
-    phone: row.telefono ?? undefined,
-    relationship: row.parentesco ?? undefined,
-    createdAt: row.creado_en,
-  };
-}
-
 function toPatient(row: PatientRow): Patient {
   // Relación to-one: `contactos_emergencia` es un objeto o `null`.
   const primaryContact = row.contactos_emergencia;
+  // Los vínculos de un adulto ya no valen (el barrido los borra a diario).
+  const guardians = computeIsMinor(row.fecha_nacimiento) ? row.pacientes_tutores.map(toGuardian) : [];
 
   return {
     id: row.id,
@@ -77,7 +68,8 @@ function toPatient(row: PatientRow): Patient {
     isMinor: computeIsMinor(row.fecha_nacimiento),
     psychologistId: row.psicologo_id ?? undefined,
     emergencyContact: primaryContact ? toEmergencyContact(primaryContact) : undefined,
-    legalGuardian: row.tutores ? toLegalGuardian(row.tutores) : undefined,
+    legalGuardian: guardians.find((g) => g.isPrimary),
+    guardians,
     createdAt: row.usuarios.creado_en,
     updatedAt: row.usuarios.actualizado_en,
   };
@@ -106,7 +98,7 @@ export async function getMyPatientProfile(auth: AuthenticatedUser): Promise<Pati
     throw AppError.forbidden("La cuenta no tiene perfil de paciente");
   }
 
-  return toPatientProfile(row);
+  return { ...toPatientProfile(row), guardianshipEndedAt: await guardianshipEndedAt(row.id) };
 }
 
 export interface UpdatePatientProfileInput {

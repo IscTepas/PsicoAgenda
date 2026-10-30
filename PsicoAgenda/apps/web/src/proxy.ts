@@ -9,6 +9,7 @@ const PROTECTED_PREFIXES = [
   "/pacientes",
   "/notificaciones",
   "/reportes",
+  "/motivos",
   "/perfil",
 ];
 
@@ -126,6 +127,7 @@ export const config = {
     "/pacientes/:path*",
     "/notificaciones/:path*",
     "/reportes/:path*",
+    "/motivos/:path*",
     "/perfil/:path*",
     "/login",
     "/registro",

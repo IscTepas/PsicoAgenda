@@ -14,6 +14,7 @@ import {
 } from "@/generated/prisma/enums";
 import { config } from "@/config";
 import { prisma } from "@/lib/prisma";
+import { isMinorOn } from "@/services/guardianship.service";
 import { enviarCorreoNotificacion } from "@/services/mailer.service";
 import { AppError } from "@/utils/app-error";
 import type { AuthenticatedUser } from "@/utils/jwt";
@@ -349,7 +350,11 @@ async function cargarPartes(aviso: CitaAviso) {
   const [paciente, psicologo] = await Promise.all([
     prisma.pacientes.findUnique({
       where: { id: aviso.pacienteId },
-      select: { usuarios: { select: destinatarioSelect } },
+      select: {
+        usuarios: { select: destinatarioSelect },
+        fecha_nacimiento: true,
+        pacientes_tutores: { select: { tutores: { select: { usuarios: { select: destinatarioSelect } } } } },
+      },
     }),
     prisma.psicologos.findUnique({
       where: { id: aviso.psicologoId },
@@ -361,8 +366,21 @@ async function cargarPartes(aviso: CitaAviso) {
     throw new Error("No se encontraron el paciente o el psicólogo del aviso");
   }
 
-  return { paciente: paciente.usuarios, psicologo: psicologo.usuarios };
+  // Los tutores con cuenta de un menor reciben también los avisos de su agenda.
+  const tutores = isMinorOn(paciente.fecha_nacimiento ?? null)
+    ? (paciente.pacientes_tutores ?? [])
+        .map((link) => link.tutores.usuarios)
+        .filter((usuario): usuario is Destinatario => usuario !== null)
+    : [];
+
+  return { paciente: paciente.usuarios, psicologo: psicologo.usuarios, tutores };
 }
+
+/** Al tutor se le aclara de quién es la cita: el texto está escrito para el paciente. */
+const paraTutor = (texto: { asunto: string; mensaje: string }, paciente: Destinatario) => ({
+  asunto: `${texto.asunto} (${paciente.nombre_completo})`,
+  mensaje: `Aviso sobre ${paciente.nombre_completo}: ${texto.mensaje}`,
+});
 
 const HORA = 60 * 60_000;
 
@@ -371,7 +389,12 @@ const HORA = 60 * 60_000;
  * solo por WhatsApp. Siempre se reemplazan los pendientes, así que llamarlo de
  * nuevo tras mover la cita los reprograma.
  */
-async function programarRecordatorios(aviso: CitaAviso, paciente: Destinatario, psicologo: Destinatario) {
+async function programarRecordatorios(
+  aviso: CitaAviso,
+  paciente: Destinatario,
+  psicologo: Destinatario,
+  tutores: Destinatario[] = [],
+) {
   if (!aviso.citaId) return;
 
   await cancelarRecordatorios(aviso.citaId);
@@ -387,20 +410,23 @@ async function programarRecordatorios(aviso: CitaAviso, paciente: Destinatario, 
     const programadaPara = new Date(aviso.inicio.getTime() - antes);
     if (programadaPara.getTime() <= ahora) continue;
 
-    const { asunto, mensaje } = redactar(clave, aviso, paciente, psicologo.nombre_completo);
-    for (const canal of canales) {
-      if (canal === CORREO && !paciente.notificar_correo) continue;
-      if (canal === WHATSAPP && !(paciente.notificar_whatsapp && paciente.telefono)) continue;
-      filas.push({
-        id: randomUUID(),
-        usuario_id: paciente.id,
-        cita_id: aviso.citaId,
-        tipo: tipo_notificacion.RECORDATORIO,
-        canal,
-        asunto,
-        mensaje,
-        programada_para: programadaPara,
-      });
+    for (const destinatario of [paciente, ...tutores]) {
+      const texto = redactar(clave, aviso, destinatario, psicologo.nombre_completo);
+      const { asunto, mensaje } = destinatario === paciente ? texto : paraTutor(texto, paciente);
+      for (const canal of canales) {
+        if (canal === CORREO && !destinatario.notificar_correo) continue;
+        if (canal === WHATSAPP && !(destinatario.notificar_whatsapp && destinatario.telefono)) continue;
+        filas.push({
+          id: randomUUID(),
+          usuario_id: destinatario.id,
+          cita_id: aviso.citaId,
+          tipo: tipo_notificacion.RECORDATORIO,
+          canal,
+          asunto,
+          mensaje,
+          programada_para: programadaPara,
+        });
+      }
     }
   }
 
@@ -450,29 +476,32 @@ function despacharEnSegundoPlano(): void {
 export async function notificar(evento: EventoCita, aviso: CitaAviso): Promise<void> {
   try {
     const regla = REGLAS[evento];
-    const { paciente, psicologo } = await cargarPartes(aviso);
+    const { paciente, psicologo, tutores } = await cargarPartes(aviso);
     const [destinatario, contraparte] =
       regla.para === "paciente" ? [paciente, psicologo] : [psicologo, paciente];
-
-    const { asunto, mensaje } = redactar(evento, aviso, destinatario, contraparte.nombre_completo);
+    // Lo que va al paciente va también a sus tutores (cada uno con sus preferencias).
+    const destinatarios = regla.para === "paciente" ? [paciente, ...tutores] : [destinatario];
     const ahora = new Date();
-    const canales = canalesDelEvento(evento, aviso, destinatario);
 
-    await prisma.notificaciones.createMany({
-      data: canales.map((canal) => ({
+    const data = destinatarios.flatMap((persona) => {
+      const texto = redactar(evento, aviso, persona, contraparte.nombre_completo);
+      const { asunto, mensaje } = persona === destinatario ? texto : paraTutor(texto, paciente);
+      return canalesDelEvento(evento, aviso, persona).map((canal) => ({
         id: randomUUID(),
-        usuario_id: destinatario.id,
+        usuario_id: persona.id,
         cita_id: aviso.citaId ?? null,
         tipo: regla.tipo,
         canal,
         asunto,
         mensaje,
         programada_para: ahora,
-      })),
+      }));
     });
 
+    await prisma.notificaciones.createMany({ data });
+
     if (regla.recordatorios === "programar") {
-      await programarRecordatorios(aviso, paciente, psicologo);
+      await programarRecordatorios(aviso, paciente, psicologo, tutores);
     } else if (regla.recordatorios === "cancelar" && aviso.citaId) {
       await cancelarRecordatorios(aviso.citaId);
     }

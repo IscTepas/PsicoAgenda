@@ -1,6 +1,15 @@
 import { Router } from "express";
-import { registroPacienteSchema, verificarCodigoRegistroSchema } from "@psicoagenda/shared";
+import {
+  confirmarRecuperacionSchema,
+  registroPacienteSchema,
+  solicitarRecuperacionSchema,
+  verificarCodigoRegistroSchema,
+} from "@psicoagenda/shared";
 import { meController } from "@/controllers/auth.controller";
+import {
+  confirmarRecuperacionController,
+  solicitarRecuperacionController,
+} from "@/controllers/recuperacion.controller";
 import {
   preRegistroController,
   verificarCodigoController,
@@ -20,6 +29,17 @@ router.post(
   "/verificar-codigo",
   validate({ body: verificarCodigoRegistroSchema }),
   verificarCodigoController,
+);
+// Recuperación de contraseña con el mailer propio (no el SMTP de Supabase).
+router.post(
+  "/recuperacion/solicitar",
+  validate({ body: solicitarRecuperacionSchema }),
+  solicitarRecuperacionController,
+);
+router.post(
+  "/recuperacion/confirmar",
+  validate({ body: confirmarRecuperacionSchema }),
+  confirmarRecuperacionController,
 );
 router.get("/me", requireAuth, meController);
 

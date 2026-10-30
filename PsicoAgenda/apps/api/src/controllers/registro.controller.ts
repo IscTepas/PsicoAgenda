@@ -33,7 +33,7 @@ import { AppError } from "@/utils/app-error";
 /** IP del cliente: el primer salto de `X-Forwarded-For` si hubo proxy (en
  * desarrollo las llamadas pasan por el rewrite de Next.js y `req.ip` sería el
  * mismo para todas las personas), o la conexión directa. */
-const origenDe = (req: Request): string => {
+export const origenDe = (req: Request): string => {
   const encabezado = req.headers["x-forwarded-for"];
   const primero = Array.isArray(encabezado) ? encabezado[0] : encabezado;
   return primero?.split(",")[0]?.trim() || req.ip || "desconocida";

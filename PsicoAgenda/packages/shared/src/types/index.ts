@@ -136,7 +136,18 @@ export interface Patient extends User {
   isMinor: boolean;
   psychologistId?: string;
   emergencyContact?: EmergencyContact;
+  /** Tutor principal (atajo de `guardians`). */
   legalGuardian?: LegalGuardian;
+  /** Todos los tutores vinculados; solo aplican mientras el paciente es menor. */
+  guardians?: LegalGuardian[];
+  /** Fecha en que terminó la tutela al cumplir 18 años, si ocurrió. */
+  guardianshipEndedAt?: Date;
+}
+
+/** Menor que la cuenta autenticada tutela (para agendar a su nombre). */
+export interface TutoredPatient {
+  id: string;
+  name: string;
 }
 
 export interface EmergencyContact {
@@ -154,6 +165,10 @@ export interface LegalGuardian {
   name: string;
   phone?: string;
   relationship?: string;
+  /** Correo de su cuenta, si el tutor tiene una. */
+  email?: string;
+  hasAccount?: boolean;
+  isPrimary?: boolean;
   createdAt: Date;
 }
 
@@ -170,7 +185,9 @@ export interface Appointment {
   modality: AppointmentModality;
   attendanceStatus?: AttendanceStatus;
   sessionType?: AppointmentSessionType;
+  /** Para mostrar: etiqueta del catálogo, o el texto libre en «Otro» y en lo histórico. */
   reason?: string;
+  reasonId?: string;
   notes?: string;
   price?: number;
   payment?: HonorariumPayment;
@@ -196,11 +213,30 @@ export interface AppointmentRequest {
   startTime: Date;
   durationMinutes: number;
   modality: AppointmentModality;
+  /** Para mostrar: etiqueta del catálogo, o el texto libre en «Otro» y en lo histórico. */
   reason?: string;
+  reasonId?: string;
   status: AppointmentRequestStatus;
   appointmentId?: string;
   createdAt: Date;
   handledAt?: Date;
+}
+
+/** Motivo del catálogo de consulta (`motivos_consulta`). */
+export interface ConsultationReason {
+  id: string;
+  code: string;
+  label: string;
+  category: string;
+  active: boolean;
+  order: number;
+  isOther: boolean;
+  requiresText: boolean;
+}
+
+export interface ConsultationReasonGroup {
+  category: string;
+  reasons: ConsultationReason[];
 }
 
 export interface ClinicalRecord {

@@ -183,12 +183,15 @@ describe("services integration against real database", () => {
       role: UserRole.PATIENT,
     };
 
-    await expect(getAppointmentById(appointmentId, otherPatientAuth)).rejects.toMatchObject({
-      statusCode: 403,
-    });
-
-    await prisma.pacientes.deleteMany({ where: { id: otherPatientId } }).catch(() => {});
-    await prisma.usuarios.deleteMany({ where: { id: otherPatientUserId } }).catch(() => {});
+    // La limpieza va en `finally`: si la aserción falla, el paciente de prueba no se queda en la base real.
+    try {
+      await expect(getAppointmentById(appointmentId, otherPatientAuth)).rejects.toMatchObject({
+        statusCode: 403,
+      });
+    } finally {
+      await prisma.pacientes.deleteMany({ where: { id: otherPatientId } }).catch(() => {});
+      await prisma.usuarios.deleteMany({ where: { id: otherPatientUserId } }).catch(() => {});
+    }
   });
 
   it("cancels the appointment and keeps an already waived honorarium", async () => {

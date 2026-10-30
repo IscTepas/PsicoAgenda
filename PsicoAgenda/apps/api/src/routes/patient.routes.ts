@@ -1,6 +1,10 @@
 import { Router } from "express";
 import {
+  addGuardianSchema,
   createLogEntrySchema,
+  guardianParamsSchema,
+  removeGuardianQuerySchema,
+  UserRole,
   idParamSchema,
   patientListQuerySchema,
   updatePatientProfileSchema,
@@ -16,13 +20,22 @@ import {
   createLogEntryController,
   listLogEntriesController,
 } from "@/controllers/log-entry.controller";
-import { requireAuth } from "@/middleware/auth.middleware";
+import { requireAuth, requireRole } from "@/middleware/auth.middleware";
+import {
+  addGuardianController,
+  listGuardiansController,
+  listTutoredPatientsController,
+  removeGuardianController,
+  setPrimaryGuardianController,
+} from "@/controllers/guardianship.controller";
 import { validate } from "@/middleware/validate.middleware";
 
 const router = Router();
 
 // `me` va antes que `/:id` para que no lo capture el parámetro.
 router.get("/me", requireAuth, getMyPatientController);
+// Menores que tutela la cuenta (para agendar a su nombre).
+router.get("/me/tutelados", requireAuth, listTutoredPatientsController);
 router.patch(
   "/me",
   requireAuth,
@@ -54,6 +67,29 @@ router.post(
   requireAuth,
   validate({ params: idParamSchema, body: createLogEntrySchema }),
   createLogEntryController,
+);
+
+// Tutores del paciente: los gestiona el psicólogo tratante (o administración)
+// desde el expediente; el tutor no ve contenido clínico.
+const gestionTutores = [requireAuth, requireRole(UserRole.PSYCHOLOGIST, UserRole.ADMIN)];
+router.get("/:id/tutores", ...gestionTutores, validate({ params: idParamSchema }), listGuardiansController);
+router.post(
+  "/:id/tutores",
+  ...gestionTutores,
+  validate({ params: idParamSchema, body: addGuardianSchema }),
+  addGuardianController,
+);
+router.post(
+  "/:id/tutores/:tutorId/principal",
+  ...gestionTutores,
+  validate({ params: guardianParamsSchema }),
+  setPrimaryGuardianController,
+);
+router.delete(
+  "/:id/tutores/:tutorId",
+  ...gestionTutores,
+  validate({ params: guardianParamsSchema, query: removeGuardianQuerySchema }),
+  removeGuardianController,
 );
 
 export default router;

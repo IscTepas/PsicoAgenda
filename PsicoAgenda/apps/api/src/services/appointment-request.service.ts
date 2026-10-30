@@ -9,6 +9,8 @@ import {
 import type { Prisma } from "@/generated/prisma/client";
 import { estado_cita, estado_pago, estado_solicitud } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { reasonText, resolveReason } from "@/services/consultation-reason.service";
+import { assertCanActOnPatient, patientIdsForUser } from "@/services/guardianship.service";
 import { AppError } from "@/utils/app-error";
 import type { AuthenticatedUser } from "@/utils/jwt";
 import { notificar, type CitaAviso } from "@/services/notification.service";
@@ -26,15 +28,21 @@ import {
 } from "@/services/appointment.service";
 
 // La relación 1:1 con la cita creada al aceptar viaja con la solicitud.
-const requestInclude = { citas: { select: { id: true } } } as const;
+const requestInclude = {
+  citas: { select: { id: true } },
+  motivos_consulta: { select: { etiqueta: true, requiere_texto: true } },
+} as const;
 
 type RequestRow = Prisma.solicitudes_citaGetPayload<{ include: typeof requestInclude }>;
 
 export interface CreateAppointmentRequestInput {
+  /** Menor a cuyo nombre pide su tutor. */
+  patientId?: string;
   startTime: Date;
   durationMinutes: number;
   modality: AppointmentModality;
   reason?: string;
+  reasonId?: string;
 }
 
 export interface RescheduleAppointmentRequestInput extends CreateAppointmentRequestInput {
@@ -95,7 +103,8 @@ const toAppointmentRequest = (row: RequestRow): AppointmentRequest => ({
   startTime: row.inicio_solicitado,
   durationMinutes: row.duracion_minutos,
   modality: toSharedModality(row.modalidad),
-  reason: row.motivo ?? undefined,
+  reason: reasonText(row.motivo, row.motivos_consulta),
+  reasonId: row.motivo_id ?? undefined,
   status: toSharedRequestStatus(row.estado),
   appointmentId: row.citas?.id,
   createdAt: row.creado_en,
@@ -114,7 +123,7 @@ export async function listAppointmentRequests(
 
   // Igual que en citas: el alcance por rol gana sobre cualquier filtro del cliente.
   if (auth.role === UserRole.PATIENT) {
-    where.paciente_id = await requirePatientId(auth);
+    where.paciente_id = { in: await patientIdsForUser(auth) };
   } else if (auth.role === UserRole.PSYCHOLOGIST) {
     where.psicologo_id = await requirePsychologistId(auth);
   }
@@ -136,7 +145,9 @@ export async function createAppointmentRequest(
   auth: AuthenticatedUser,
   input: CreateAppointmentRequestInput,
 ): Promise<AppointmentRequest> {
-  const patientId = await requirePatientId(auth);
+  // Un tutor pide a nombre del menor; sin `patientId` la solicitud es propia.
+  const patientId = input.patientId ?? (await requirePatientId(auth));
+  if (input.patientId) await assertCanActOnPatient(auth, input.patientId);
   const patient = await prisma.pacientes.findUniqueOrThrow({
     where: { id: patientId },
     select: { id: true, psicologo_id: true },
@@ -179,7 +190,8 @@ export async function createAppointmentRequest(
         duracion_minutos: input.durationMinutes,
         modalidad: toSchemaModality(input.modality),
         tipo_sesion: await resolveSessionType(tx, patientId),
-        motivo: input.reason?.trim() || null,
+        ...(await resolveReason(tx, input.reasonId, input.reason)),
+        solicitante_id: auth.id,
       },
       include: requestInclude,
     });
@@ -199,7 +211,6 @@ export async function rescheduleAppointmentRequest(
   auth: AuthenticatedUser,
   input: RescheduleAppointmentRequestInput,
 ): Promise<AppointmentRequest> {
-  const patientId = await requirePatientId(auth);
   const start = input.startTime;
 
   if (start.getTime() <= Date.now()) {
@@ -222,9 +233,9 @@ export async function rescheduleAppointmentRequest(
   if (!current) {
     throw AppError.notFound("La cita no existe");
   }
-  if (current.paciente_id !== patientId) {
-    throw AppError.forbidden("No puedes reagendar la cita de otro paciente");
-  }
+  // El propio paciente o su tutor; la solicitud nueva queda a nombre del mismo paciente.
+  await assertCanActOnPatient(auth, current.paciente_id);
+  const patientId = current.paciente_id;
   if (current.estado === estado_cita.CANCELADA) {
     throw AppError.conflict("La cita ya está cancelada");
   }
@@ -287,7 +298,8 @@ export async function rescheduleAppointmentRequest(
           duracion_minutos: input.durationMinutes,
           modalidad: toSchemaModality(input.modality),
           tipo_sesion: await resolveSessionType(tx, patientId),
-          motivo: input.reason?.trim() || null,
+          ...(await resolveReason(tx, input.reasonId, input.reason)),
+          solicitante_id: auth.id,
         },
         include: requestInclude,
       });
@@ -367,7 +379,8 @@ export async function acceptAppointmentRequest(
         start: request.inicio_solicitado,
         durationMinutes: request.duracion_minutos,
         modality: toSharedModality(request.modalidad),
-        reason: request.motivo,
+        motivo: request.motivo,
+        motivo_id: request.motivo_id,
         status: estado_cita.CONFIRMADA,
         requestId: request.id,
       });
@@ -410,9 +423,10 @@ export async function cancelAppointmentRequest(
     throw AppError.notFound("La solicitud no existe");
   }
 
-  if (auth.role !== UserRole.PATIENT || row.paciente_id !== (await requirePatientId(auth))) {
+  if (auth.role !== UserRole.PATIENT) {
     throw AppError.forbidden("Solo puedes cancelar tus propias solicitudes");
   }
+  await assertCanActOnPatient(auth, row.paciente_id);
 
   if (row.estado !== estado_solicitud.PENDIENTE) {
     throw AppError.conflict("La solicitud ya fue atendida");

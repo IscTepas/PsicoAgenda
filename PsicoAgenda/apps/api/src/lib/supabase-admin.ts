@@ -92,6 +92,19 @@ export async function existeCuenta(email: string): Promise<boolean> {
   );
 }
 
+/** Fija una contraseña nueva a una cuenta existente (recuperación por enlace). */
+export async function actualizarContrasena(userId: string, password: string): Promise<void> {
+  const { error } = await obtenerSupabaseAdmin().auth.admin.updateUserById(userId, { password });
+  if (error) {
+    console.error("[recuperacion] Falló auth.admin.updateUserById:", error);
+    throw new AppError(
+      503,
+      "No se pudo guardar la contraseña. Intenta de nuevo más tarde.",
+      "AUTH_ERROR",
+    );
+  }
+}
+
 /**
  * Crea la cuenta YA CONFIRMADA (el código de correo se validó en la API, no
  * hace falta que Supabase reenvíe nada). Los metadatos disparan los triggers

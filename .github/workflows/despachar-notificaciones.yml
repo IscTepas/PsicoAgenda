@@ -1,0 +1,64 @@
+# Disparador del barrido de notificaciones y sonda de salud
+# (tickets 2026-10-27-despacho-programado-de-notificaciones y 2026-10-28-monitorizacion-y-alertas).
+# En Vercel no hay proceso que viva entre peticiones: sin esto, los recordatorios se quedan en PENDIENTE.
+# Una ejecución en rojo es la alerta: GitHub la avisa por correo.
+# shortcut: GitHub puede retrasar los `schedule` varios minutos en horas pico; si se incumplen los 5 min, mover el disparo a cron-job.org con el mismo curl.
+name: Despachar notificaciones
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "0 13 * * *" # 07:00 en Tepic: fin de tutelas por mayoría de edad
+  workflow_dispatch:
+
+jobs:
+  despachar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Barrido de la cola
+        # Los reintentos absorben el corte de un redespliegue; un 401/503 constante sí falla.
+        run: |
+          curl --fail-with-body -sS --retry 2 --retry-delay 20 --retry-all-errors \
+            -X POST "${{ vars.API_URL }}/api/internal/despachar" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+  tutelas:
+    # Una vez al día (y a mano). Los permisos ya se cortan al autorizar; esto borra vínculos, audita y avisa.
+    if: github.event.schedule == '0 13 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Finalizar tutelas de quienes cumplieron 18
+        run: |
+          curl --fail-with-body -sS --retry 2 --retry-delay 20 --retry-all-errors \
+            -X POST "${{ vars.API_URL }}/api/internal/finalizar-tutelas" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+  salud:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    # Silenciar en mantenimiento: Settings → Variables → MONITOR_PAUSADO=1 (y borrarla al terminar).
+    if: vars.MONITOR_PAUSADO != '1'
+    steps:
+      - name: Sonda de /api/health (alerta tras 2 fallos seguidos)
+        run: |
+          sondear() {
+            read -r codigo segundos < <(curl -sS -m 15 -o cuerpo.json -w '%{http_code} %{time_total}' \
+              "${{ vars.API_URL }}/api/health" || true)
+            echo "estado=$codigo latencia=${segundos}s"
+            echo "| $(date -u +%FT%TZ) | $codigo | ${segundos}s |" >> "$GITHUB_STEP_SUMMARY"
+            [ "$codigo" = "200" ]
+          }
+          echo "| hora | estado | latencia |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          sondear && exit 0
+          # Un solo fallo puede ser un despliegue: se confirma en el siguiente ciclo (~5 min).
+          sleep 300
+          sondear && { echo "::warning::Fallo aislado de /api/health, recuperado."; exit 0; }
+          if grep -q '"database":"down"' cuerpo.json 2>/dev/null; then
+            echo "::error::BASE CAÍDA: la API responde pero no alcanza la base. $(cat cuerpo.json)"
+          else
+            echo "::error::API CAÍDA: /api/health no responde 200 (estado $codigo)."
+          fi
+          exit 1

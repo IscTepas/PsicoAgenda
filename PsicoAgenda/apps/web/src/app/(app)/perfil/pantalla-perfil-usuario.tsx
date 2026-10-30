@@ -90,6 +90,7 @@ export function PantallaPerfilUsuario() {
   // Estados de retroalimentación
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [guardianshipEndedAt, setGuardianshipEndedAt] = useState<Date | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const { toast } = useToast()
   const [validationError, setValidationError] = useState<string | null>(null)
@@ -129,6 +130,7 @@ export function PantallaPerfilUsuario() {
           updatePhoto(profile.photoUrl)
           setEmergencyName(profile.emergencyContact?.name ?? "")
           setEmergencyPhone(formatearTelefonoPegado(profile.emergencyContact?.phone ?? ""))
+          setGuardianshipEndedAt(profile.guardianshipEndedAt ?? null)
           savedSnapshotRef.current = {
             name: profile.name,
             phone: formatearTelefonoPegado(profile.phone ?? ""),
@@ -319,6 +321,17 @@ export function PantallaPerfilUsuario() {
         description="Administra tu información personal, datos de contacto y preferencias de la interfaz."
       />
 
+      {/* Solo aparece después de la transición por mayoría de edad */}
+      {guardianshipEndedAt && (
+        <Alert className="rounded-2xl">
+          <AlertCircle className="size-5" />
+          <AlertTitle className="font-bold">Tu tutoría terminó</AlertTitle>
+          <AlertDescription className="text-xs">
+            Desde el {guardianshipEndedAt.toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" })}{" "}
+            gestionas tu propia agenda. Tu psicóloga te pedirá firmar de nuevo el consentimiento informado.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Alerta de Error de Carga del Perfil */}
       {loadError && (

@@ -16,8 +16,7 @@ import {
 } from "@/components/ui/form"
 import { Input as MotionInput } from "@/components/motion/input"
 import { NewPasswordInput } from "@/components/new-password-input"
-import { createClient } from "@/lib/supabase/client"
-import { withTimeout } from "@/lib/with-timeout"
+import { esEnlaceInvalido, recuperacionService } from "@/services/recuperacion.service"
 import { cn } from "@/lib/utils"
 import { KeyRound, Loader2, Lock, ShieldCheck } from "lucide-react"
 
@@ -32,9 +31,6 @@ const newPasswordSchema = z
   })
 
 type NewPasswordValues = z.infer<typeof newPasswordSchema>
-
-// El canje del código del enlace es una petición de red; no esperamos para siempre.
-const LINK_CHECK_TIMEOUT_MS = 8000
 
 type LinkState = "checking" | "ready" | "invalid" | "done"
 
@@ -67,6 +63,7 @@ export function NewPasswordForm() {
   const [error, setError] = useState<string | null>(null)
   const [isPending, setIsPending] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [token, setToken] = useState<string | null>(null)
 
   const form = useForm<NewPasswordValues>({
     resolver: zodResolver(newPasswordSchema),
@@ -75,55 +72,29 @@ export function NewPasswordForm() {
   const password = useWatch({ control: form.control, name: "password" }) ?? ""
   const confirmPassword = useWatch({ control: form.control, name: "confirmPassword" }) ?? ""
 
-  // El cliente de Supabase canjea solo el código del enlace al iniciar; aquí
-  // esperamos a que termine y vemos si quedó una sesión de recuperación.
+  // El token llega en `?token=` del enlace del correo. Si falta, el enlace no sirve;
+  // si ya se usó o venció lo dice la API al guardar.
   useEffect(() => {
-    let cancelled = false
-
-    async function verifyLink() {
-      const params = new URLSearchParams(window.location.search)
-      const hashParams = new URLSearchParams(window.location.hash.slice(1))
-      const linkError = params.get("error") ?? hashParams.get("error")
-
-      let hasSession = false
-      if (!linkError) {
-        try {
-          const { data } = await withTimeout(createClient().auth.getSession(), LINK_CHECK_TIMEOUT_MS)
-          hasSession = Boolean(data.session)
-        } catch {
-          hasSession = false
-        }
-      }
-
-      if (!cancelled) setLinkState(hasSession ? "ready" : "invalid")
-    }
-
-    void verifyLink()
-    return () => {
-      cancelled = true
-    }
+    const valor = new URLSearchParams(window.location.search).get("token")
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- la URL solo existe en el navegador
+    setToken(valor)
+    setLinkState(valor ? "ready" : "invalid")
   }, [])
 
   async function onSubmit(values: NewPasswordValues) {
+    if (!token) return
     setError(null)
     setIsPending(true)
 
-    const { error: updateError } = await createClient().auth.updateUser({ password: values.password })
-
-    setIsPending(false)
-
-    if (updateError) {
-      setError(
-        updateError.code === "same_password"
-          ? "La nueva contraseña debe ser distinta a la anterior."
-          : updateError.code === "weak_password"
-            ? "Esa contraseña es muy fácil de adivinar. Prueba con otra."
-            : "No se pudo guardar la contraseña. Inténtalo de nuevo.",
-      )
-      return
+    try {
+      await recuperacionService.confirmar(token, values.password)
+      setLinkState("done")
+    } catch (err) {
+      if (esEnlaceInvalido(err)) setLinkState("invalid")
+      else setError("No se pudo guardar la contraseña. Inténtalo de nuevo.")
+    } finally {
+      setIsPending(false)
     }
-
-    setLinkState("done")
   }
 
   if (linkState === "checking") {
@@ -141,7 +112,7 @@ export function NewPasswordForm() {
         <StateHeader
           icon={KeyRound}
           title="Este enlace ya no es válido"
-          description="Los enlaces de recuperación caducan y solo funcionan una vez. Pide uno nuevo y ábrelo en este mismo navegador."
+          description="Los enlaces de recuperación caducan a los 30 minutos y solo funcionan una vez. Pide uno nuevo."
         />
         <div className="flex flex-col gap-2">
           <Button asChild size="lg" className="w-full">
@@ -163,15 +134,8 @@ export function NewPasswordForm() {
           title="Contraseña actualizada"
           description="Listo. Desde ahora inicia sesión con tu nueva contraseña."
         />
-        <Button
-          size="lg"
-          className="w-full"
-          onClick={() => {
-            router.push("/dashboard")
-            router.refresh()
-          }}
-        >
-          Ir a mi panel
+        <Button size="lg" className="w-full" onClick={() => router.push("/login")}>
+          Iniciar sesión
         </Button>
       </div>
     )

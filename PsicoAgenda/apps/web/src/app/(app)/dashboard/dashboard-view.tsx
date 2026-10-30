@@ -1186,6 +1186,14 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
       .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
   }, [patientAppointments, today, nextAppointment])
 
+  // Un tutor ve también las solicitudes de sus menores: se rotulan con su nombre.
+  const { data: tutored = [] } = useQuery({
+    queryKey: ["pacientes", "tutelados"],
+    queryFn: patientService.listTutored,
+    staleTime: 5 * 60_000,
+  })
+  const tutoredNames = useMemo(() => new Map(tutored.map((m) => [m.id, m.name])), [tutored])
+
   // Solicitudes que aún importan: las que esperan respuesta y los rechazos de fechas por venir.
   const openRequests = useMemo(() => {
     if (!clock) return []
@@ -1311,6 +1319,9 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-foreground">
                       {formatHeroDate(start)} · <span className="tabular-nums">{formatAppointmentTime(start)}</span>
+                      {tutoredNames.get(request.patientId) ? (
+                        <span className="text-muted-foreground"> · para {tutoredNames.get(request.patientId)}</span>
+                      ) : null}
                     </p>
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <span

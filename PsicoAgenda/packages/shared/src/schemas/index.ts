@@ -34,6 +34,7 @@ export const createAppointmentSchema = z.object({
   durationMinutes: z.number().int().min(45).max(60),
   modality: z.enum(["in_person", "virtual"]),
   reason: z.string().optional(),
+  reasonId: z.string().uuid().optional(),
 });
 
 export const updateAppointmentSchema = z.object({
@@ -41,6 +42,7 @@ export const updateAppointmentSchema = z.object({
   durationMinutes: z.number().int().min(45).max(60).optional(),
   modality: z.enum(["in_person", "virtual"]).optional(),
   reason: z.string().optional(),
+  reasonId: z.string().uuid().optional(),
   notes: z.string().optional(),
 });
 
@@ -79,6 +81,9 @@ export const createAppointmentRequestSchema = z.object({
   durationMinutes: z.number().int().min(45).max(60),
   modality: z.enum(["in_person", "virtual"]),
   reason: z.string().optional(),
+  reasonId: z.string().uuid().optional(),
+  /** Un tutor pide a nombre del menor; sin él, la solicitud es del propio paciente. */
+  patientId: z.string().uuid().optional(),
 });
 
 /**
@@ -216,6 +221,57 @@ export const registroPacienteSchema = registroPacienteBaseSchema.superRefine(exi
 export const verificarCodigoRegistroSchema = registroPacienteBaseSchema
   .extend({ codigo: z.string().regex(/^\d{6}$/, "El código debe tener 6 dígitos") })
   .superRefine(exigirTutorSiMenor);
+
+/** Alta de un motivo del catálogo (solo administración). */
+export const createConsultationReasonSchema = z.object({
+  code: z.string().trim().regex(/^[a-z0-9_]{2,40}$/, "Código: minúsculas, números y guion bajo"),
+  label: z.string().trim().min(2).max(80),
+  category: z.string().trim().min(2).max(60),
+  order: z.number().int().min(0).max(999).optional(),
+  isOther: z.boolean().optional(),
+  requiresText: z.boolean().optional(),
+});
+
+export const updateConsultationReasonSchema = createConsultationReasonSchema
+  .omit({ code: true })
+  .partial()
+  .extend({ active: z.boolean().optional() });
+
+/**
+ * Vincular un tutor desde el expediente: por correo se enlaza una cuenta existente;
+ * sin correo se registra un contacto (nombre obligatorio).
+ */
+export const addGuardianSchema = z
+  .object({
+    email: emailSchema.optional(),
+    name: z.string().trim().min(2).max(120).optional(),
+    phone: z.string().trim().max(20).optional(),
+    relationship: z.string().trim().max(40).optional(),
+    isPrimary: z.boolean().optional(),
+  })
+  .refine((data) => data.email || data.name, {
+    message: "Indica el correo de la cuenta o el nombre del tutor",
+    path: ["name"],
+  });
+
+export const guardianParamsSchema = z.object({
+  id: z.string().uuid("Identificador inválido"),
+  tutorId: z.string().uuid("Identificador inválido"),
+});
+
+/** Al quitar al principal hay que nombrar a otro o aceptar quedarse sin principal. */
+export const removeGuardianQuerySchema = z.object({
+  nuevoPrincipalId: z.string().uuid().optional(),
+  sinPrincipal: z.enum(["true", "false"]).optional(),
+});
+
+export const solicitarRecuperacionSchema = z.object({ email: emailSchema });
+
+/** El token es opaco (32 bytes en base64url = 43 caracteres). */
+export const confirmarRecuperacionSchema = z.object({
+  token: z.string().regex(/^[A-Za-z0-9_-]{43}$/, "Enlace de recuperación inválido"),
+  password: passwordSchema,
+});
 
 export type RegistroPaciente = z.infer<typeof registroPacienteSchema>;
 export type VerificarCodigoRegistro = z.infer<typeof verificarCodigoRegistroSchema>;

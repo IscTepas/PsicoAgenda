@@ -257,19 +257,15 @@ El código sale por **SMTP de Gmail** (Nodemailer + contraseña de aplicación) 
 - Para volumen real o dominio propio conviene un proveedor transaccional (Resend, SendGrid): el flujo funciona igual porque el código y la verificación no dependen del transporte.
 - Sin credenciales en desarrollo, el modo degradado escribe el código en la consola de la API y `pre-registro` sigue respondiendo `201`.
 
-## Límite de correos en el entorno de pruebas
+## Recuperación de contraseña
 
-Esta nota aplica a los correos que envía **Supabase Auth** (sobre todo la recuperación de contraseña). El registro con código de verificación **ya no pasa por ahí**: usa el SMTP de Gmail propio, así que `rate_limit_email_sent` no lo afecta.
+Ya no pasa por el SMTP de Supabase (2 correos por hora): la API la resuelve con el mismo mailer de Gmail que el registro.
 
-El proyecto usa el SMTP por defecto de Supabase, que permite **2 correos por hora** (`rate_limit_email_sent`) y **no admite confirmaciones automáticas** por defecto. Consecuencias al ejercitar la recuperación de contraseña en un entorno recién creado:
-
-- El segundo correo por hora falla con `429` y **no se envía nada**; en la recuperación de contraseña la API de Supabase responde con error y la persona no recibe el enlace.
-- `rate_limit_email_sent` solo se puede subir por la Management API si además hay un SMTP propio configurado; la Management API rechaza el cambio con `Custom SMTP required to configure ... RATE_LIMIT_EMAIL_SENT`.
-
-Para pruebas automatizadas hay dos salidas, y ambas tocan configuración del proyecto, así que conviene reversirlas al terminar:
-
-- `PATCH /v1/projects/<ref>/config/auth` con `{"mailer_autoconfirm": true}`: las altas entregan sesión sin enviar correo, así que no chocan con el límite.
-- Esperar a que se libere la hora, o configurar SMTP propio (Authentication → Email), que además es lo que corresponde en producción para no depender del servicio de Supabase. Es el mismo camino que ya sigue el código de registro con el SMTP de Gmail; migrar la recuperación de contraseña a ese mailer es el follow-up pendiente.
+- `POST /api/auth/recuperacion/solicitar` `{ email }` responde `202` exista o no la cuenta (no permite averiguar qué correos están registrados). Límites: 3 enlaces por correo y 10 solicitudes por IP cada 15 minutos; al pasarlos, `429` con `retryAfterSeconds`.
+- El enlace es `<WEB_URL>/recuperar/nueva?token=…`: 32 bytes aleatorios, válido 30 minutos y de un solo uso. En `cache_registro` solo se guarda su SHA-256.
+- `POST /api/auth/recuperacion/confirmar` `{ token, password }` cambia la contraseña con la service role key y consume el token; un token usado o vencido responde `400 TOKEN_INVALIDO`.
+- `WEB_URL` es la URL pública del frontend. Si falta, se usa el primer origen de `CORS_ORIGIN` sin comodín.
+- Sin credenciales de Gmail en desarrollo, el enlace se escribe en la consola de la API.
 
 ## Promover una cuenta a psicólogo o administrador
 
@@ -429,6 +425,27 @@ Las de `apps/api/.env.example`. En producción, además:
   `*` como comodín (`https://psicoagenda-web-*.vercel.app`) para los previews.
 - `CRON_SECRET`: sin él, `POST /api/internal/despachar` responde 503.
 
+### Entornos
+
+| Entorno | Base y Auth | Variables en Vercel |
+|---|---|---|
+| Producción | proyecto Supabase real | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `GMAIL_*` con alcance **solo Production** |
+| Vista previa | segundo proyecto Supabase (solo datos sintéticos) | las mismas claves con alcance **solo Preview**, apuntando al proyecto aislado, más `ENTORNO_BD=preview` |
+| Desarrollo | la de `apps/api/.env` de cada quien | — |
+
+Vercel pone `NODE_ENV=production` también en los previews. Por eso la API se
+niega a arrancar si `VERCEL_ENV=preview` y no ve `ENTORNO_BD=preview`: un preview
+roto es preferible a uno que escribe en la base real. El frontend necesita lo
+mismo (`NEXT_PUBLIC_SUPABASE_*` y `NEXT_PUBLIC_API_URL` de Preview apuntando al
+proyecto aislado y a la API de preview).
+
+Para montar el proyecto aislado se siguen los pasos 1 a 6 de la puesta en marcha
+(rol `prisma`, migraciones, `grants.sql`, triggers) contra el proyecto nuevo y
+después `prisma/supabase/demo_accounts.sql` en su SQL Editor: datos sintéticos,
+nunca una copia de producción. **Toda migración o cambio de los triggers de identidad se aplica en
+los dos proyectos**: primero en el de vista previa y, una vez probado, en el de
+producción.
+
 ### Migraciones
 
 Vercel no tiene pre-deploy: se aplican a mano antes de desplegar.
@@ -451,8 +468,85 @@ curl -X POST https://psicoagenda-api.vercel.app/api/internal/despachar \
 
 El endpoint es idempotente con ejecuciones solapadas (reclamo optimista en la
 tabla `notificaciones`). Mientras el cron no esté configurado, los recordatorios
-se acumulan en `PENDIENTE` y salen todos en el primer barrido. La
-configuración del cron vive en el ticket `TICKET-2026-10-27-cron-externo.md`.
+se acumulan en `PENDIENTE` y salen todos en el primer barrido.
+
+Respuestas: `503` si el entorno no tiene `CRON_SECRET`, `401` sin cabecera o con
+un secreto distinto, `200` con `{ ok, procesadas, vencidas, enviadaEn }`.
+
+El disparador es `.github/workflows/despachar-notificaciones.yml`, que corre cada
+5 minutos y además consulta `GET /api/health`. Para activarlo, en el repo de GitHub
+(Settings → Secrets and variables → Actions):
+
+- secreto `CRON_SECRET`: el mismo valor que en el proyecto API de Vercel
+  (`openssl rand -base64 32`);
+- variable `API_URL`: `https://psicoagenda-api.vercel.app`.
+
+Si una ejecución falla, GitHub avisa por correo a quien editó el workflow por
+última vez.
+
+**Rotar `CRON_SECRET`:** primero en Vercel (y redesplegar la API), luego en el
+secreto de GitHub. Entre ambos pasos el barrido responde `401`: los avisos esperan
+en cola y salen en la siguiente ejecución correcta. Un `401` constante en el
+workflow significa que los dos valores están desincronizados.
+
+### Monitorización y alertas
+
+El job `salud` del mismo workflow consulta `GET /api/health` cada 5 minutos. Un
+fallo aislado (por ejemplo, un redespliegue) solo deja un aviso amarillo: la
+alerta salta cuando **dos sondeos seguidos**, con 5 minutos de diferencia, no
+responden 200. La alerta es la ejecución en rojo y GitHub la manda por correo.
+Cada ejecución deja la latencia en su resumen (pestaña *Summary*).
+
+Qué hacer ante cada alerta:
+
+- **BASE CAÍDA** (la API responde, `database: "down"`): revisar en el dashboard de
+  Supabase si el proyecto está pausado o en mantenimiento, y luego el pooler
+  (puerto 6543) y `DATABASE_URL` en Vercel.
+- **API CAÍDA** (no hay respuesta o el estado no es 200): revisar el último
+  deployment de la API en Vercel (*Runtime Logs*). Si el último despliegue la rompió,
+  se hace *Promote* del deployment anterior.
+- Se avisa a quien administre el proyecto en Vercel y en Supabase.
+- **Mantenimiento:** crear la variable de Actions `MONITOR_PAUSADO=1` y borrarla al
+  terminar. El despacho de notificaciones sigue corriendo.
+
+### Copias de seguridad
+
+`.github/workflows/copia-de-seguridad.yml` ejecuta `scripts/backup-db.sh` todos los
+días a las 03:17 (hora de Tepic). Hace `pg_dump` del esquema `public` y de los
+datos de `auth.users` y `auth.identities`, valida los volcados con
+`pg_restore --list`, los cifra con `age` y los sube a un bucket compatible con S3
+(`diaria/`, más una copia en `mensual/` el día 1).
+
+Configuración, en GitHub → Actions:
+
+| Nombre | Tipo | Valor |
+|---|---|---|
+| `BACKUP_DATABASE_URL` | secreto | conexión del rol `postgres` al puerto **5432** (el 6543 no admite `pg_dump`) |
+| `AGE_RECIPIENT` | variable | clave **pública** generada con `age-keygen` |
+| `BACKUP_S3_URI`, `BACKUP_S3_ENDPOINT` | variables | p. ej. `s3://psicoagenda-copias` y el endpoint de R2 o B2 |
+| `BACKUP_S3_KEY_ID`, `BACKUP_S3_SECRET` | secretos | credencial **solo de escritura** del bucket |
+
+- **Retención:** la aplica el bucket con reglas de ciclo de vida (borrar `diaria/`
+  a los 30 días y `mensual/` a los 365), porque la credencial no tiene permiso de
+  borrado.
+- **Clave privada:** la guarda el responsable del proyecto en un gestor de
+  contraseñas, con una copia impresa. Nunca va al repo, a GitHub ni al bucket. Si se
+  pierde, ninguna copia se puede abrir.
+
+**Restaurar** (probarlo primero en el proyecto de vista previa):
+
+1. `age -d -i clave.txt psicoagenda-AAAA-MM-DD.tar.age | tar -xf -`
+2. En un proyecto de Supabase nuevo, crear el rol `prisma` (`bootstrap.sql`) **sin**
+   ejecutar todavía `auth_user_triggers.sql`.
+3. `pg_restore --no-owner --no-privileges -d "$URL_DESTINO" psicoagenda-AAAA-MM-DD/public.dump`
+4. `pg_restore --data-only -d "$URL_DESTINO" psicoagenda-AAAA-MM-DD/auth.dump`
+   (antes de los triggers, para que `handle_new_user` no duplique perfiles).
+5. Ejecutar `grants.sql` y `auth_user_triggers.sql`, y comparar los conteos de
+   `pacientes`, `citas` y `expedientes_clinicos` con la base de origen.
+
+El RPO es de 24 horas (una copia diaria) y el RTO hay que medirlo en la primera
+restauración de prueba. Pasar al plan Pro de Supabase (recuperación a un punto en
+el tiempo, RPO de minutos) es una decisión de costo que sigue abierta.
 
 Los códigos de registro viven en la tabla `cache_registro` y no en la memoria del
 proceso, exactamente por la misma razón: con varias instancias, la verificación

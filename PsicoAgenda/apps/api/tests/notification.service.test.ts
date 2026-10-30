@@ -110,6 +110,36 @@ describe("redactar", () => {
 });
 
 describe("notificar", () => {
+  it("los tutores de un menor reciben sus avisos; uno sin canales activos no recibe mensajes", async () => {
+    const MAMA = usuario("u-mama", "Mamá");
+    const PAPA = { ...usuario("u-papa", "Papá"), notificar_correo: false, notificar_whatsapp: false };
+    prismaMock.pacientes.findUnique.mockResolvedValue({
+      usuarios: PACIENTE,
+      fecha_nacimiento: new Date(Date.now() - 10 * 365 * 24 * HORA),
+      pacientes_tutores: [{ tutores: { usuarios: MAMA } }, { tutores: { usuarios: PAPA } }],
+    });
+
+    await notificar("CITA_CANCELADA_POR_PSICOLOGO", aviso());
+
+    const canalesDe = (id: string) => filasCreadas().filter((f) => f.usuario_id === id).map((f) => f.canal);
+    expect(canalesDe(PACIENTE.id)).toEqual([SISTEMA, CORREO, WHATSAPP]);
+    expect(canalesDe(MAMA.id)).toEqual([SISTEMA, CORREO, WHATSAPP]);
+    // Solo el aviso dentro de la app: nada sale por correo ni WhatsApp.
+    expect(canalesDe(PAPA.id)).toEqual([SISTEMA]);
+  });
+
+  it("si el paciente ya es mayor de edad, sus antiguos tutores no reciben nada", async () => {
+    prismaMock.pacientes.findUnique.mockResolvedValue({
+      usuarios: PACIENTE,
+      fecha_nacimiento: new Date("1990-01-01"),
+      pacientes_tutores: [{ tutores: { usuarios: usuario("u-mama", "Mamá") } }],
+    });
+
+    await notificar("CITA_CANCELADA_POR_PSICOLOGO", aviso());
+
+    expect(filasCreadas().every((f) => f.usuario_id === PACIENTE.id)).toBe(true);
+  });
+
   it("una solicitud nueva avisa a la psicóloga por sistema y correo", async () => {
     await notificar("SOLICITUD_CREADA", { ...aviso(), citaId: undefined });
 
@@ -182,6 +212,20 @@ describe("despacharPendientes", () => {
     expect(where.canal.in).toEqual([SISTEMA, CORREO]);
     expect(enviarCorreoNotificacion).toHaveBeenCalledTimes(1);
     expect(estadosActualizados()).toEqual([estado_envio.ENVIADA, estado_envio.ENVIADA]);
+  });
+
+  it("una fila que otro barrido ya reclamó no se entrega dos veces", async () => {
+    prismaMock.notificaciones.findMany.mockResolvedValue([fila(CORREO)]);
+    // El primer reclamo gana; el segundo ve `intentos` ya incrementado y no actualiza nada.
+    prismaMock.notificaciones.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    await despacharPendientes();
+    await despacharPendientes();
+
+    expect(enviarCorreoNotificacion).toHaveBeenCalledTimes(1);
+    expect(estadosActualizados()).toEqual([estado_envio.ENVIADA]);
   });
 
   it("si el correo falla deja la fila pendiente con el error para reintentar", async () => {

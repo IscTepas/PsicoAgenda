@@ -15,13 +15,18 @@ import {
   tipo_sesion,
 } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { reasonText, resolveReason } from "@/services/consultation-reason.service";
+import { assertCanActOnPatient, patientIdsForUser } from "@/services/guardianship.service";
 import { notificar, type CitaAviso } from "@/services/notification.service";
 import { AppError } from "@/utils/app-error";
 import type { AuthenticatedUser } from "@/utils/jwt";
 import { calculateAppointmentPrice, getEffectiveDurationMinutes } from "@/utils/pricing";
 
 // La cita viaja siempre con su fila de honorarios: el panel muestra si ya se cobró.
-const appointmentInclude = { pagos_honorarios: true } as const;
+const appointmentInclude = {
+  pagos_honorarios: true,
+  motivos_consulta: { select: { etiqueta: true, requiere_texto: true } },
+} as const;
 
 type AppointmentRow = Prisma.citasGetPayload<{ include: typeof appointmentInclude }>;
 
@@ -32,6 +37,7 @@ export interface CreateAppointmentInput {
   durationMinutes: number;
   modality: SharedModality;
   reason?: string;
+  reasonId?: string;
 }
 
 export interface UpdateAppointmentInput {
@@ -39,6 +45,7 @@ export interface UpdateAppointmentInput {
   durationMinutes?: number;
   modality?: SharedModality;
   reason?: string;
+  reasonId?: string;
   notes?: string;
 }
 
@@ -194,7 +201,8 @@ export const toAppointment = (row: AppointmentRow): Appointment => {
     modality: toSharedModality(row.modalidad),
     attendanceStatus: toAttendanceStatus(row.estado),
     sessionType: SESSION_TYPES[row.tipo_sesion],
-    reason: row.motivo ?? undefined,
+    reason: reasonText(row.motivo, row.motivos_consulta),
+    reasonId: row.motivo_id ?? undefined,
     notes: row.notas_internas ?? undefined,
     // `precio` es el snapshot de la tarifa; `payment` es el estado de cobro.
     price: row.precio ?? undefined,
@@ -366,7 +374,7 @@ export async function listAppointments(
   // de modo que un paciente no puede pedir las citas de otro ni un psicólogo las
   // suyas ajenas.
   if (auth.role === UserRole.PATIENT) {
-    where.paciente_id = await requirePatientId(auth);
+    where.paciente_id = { in: await patientIdsForUser(auth) };
   } else if (auth.role === UserRole.PSYCHOLOGIST) {
     where.psicologo_id = await requirePsychologistId(auth);
   }
@@ -391,9 +399,9 @@ export async function listAppointmentOccupancy(
   let psychologistId: string | null = null;
 
   if (auth.role === UserRole.PATIENT) {
-    const patientId = await requirePatientId(auth);
-    const patient = await prisma.pacientes.findUnique({
-      where: { id: patientId },
+    // Un tutor ve la ocupación del psicólogo del menor si él mismo no tiene uno.
+    const patient = await prisma.pacientes.findFirst({
+      where: { id: { in: await patientIdsForUser(auth) }, psicologo_id: { not: null } },
       select: { psicologo_id: true },
     });
     psychologistId = patient?.psicologo_id ?? null;
@@ -425,9 +433,7 @@ export async function getAppointmentById(id: string, auth: AuthenticatedUser): P
   }
 
   if (auth.role === UserRole.PATIENT) {
-    if (row.paciente_id !== (await requirePatientId(auth))) {
-      throw AppError.forbidden("No puedes consultar la cita de otro paciente");
-    }
+    await assertCanActOnPatient(auth, row.paciente_id);
   } else if (auth.role === UserRole.PSYCHOLOGIST) {
     if (row.psicologo_id !== (await requirePsychologistId(auth))) {
       throw AppError.forbidden("No puedes consultar una cita de otro profesional");
@@ -450,21 +456,21 @@ export async function createAppointment(
     throw AppError.notFound("El paciente no existe");
   }
 
-  if (auth.role === UserRole.PATIENT && input.patientId !== (await requirePatientId(auth))) {
-    throw AppError.forbidden("Solo puedes agendar citas a tu nombre");
+  if (auth.role === UserRole.PATIENT) {
+    await assertCanActOnPatient(auth, input.patientId);
   }
 
   const psychologistId = await resolvePsychologistId(auth, input, patient.psicologo_id);
 
   try {
-    const created = await prisma.$transaction((tx) =>
+    const created = await prisma.$transaction(async (tx) =>
       insertAppointment(tx, {
         psychologistId,
         patient,
         start: input.startTime,
         durationMinutes: input.durationMinutes,
         modality: input.modality,
-        reason: input.reason,
+        ...(await resolveReason(tx, input.reasonId, input.reason)),
         // Si la agenda el propio profesional ya está confirmada; si la pide el
         // paciente (ruta antigua), queda PENDIENTE hasta que la confirme.
         status: auth.role === UserRole.PATIENT ? estado_cita.PENDIENTE : estado_cita.CONFIRMADA,
@@ -505,7 +511,9 @@ export async function insertAppointment(
     start: Date;
     durationMinutes: number;
     modality: SharedModality;
-    reason?: string | null;
+    /** Ya validados con `resolveReason` (o copiados de una solicitud aceptada). */
+    motivo: string | null;
+    motivo_id: string | null;
     status: estado_cita;
     requestId?: string;
   },
@@ -538,7 +546,8 @@ export async function insertAppointment(
       estado: params.status,
       modalidad: toSchemaModality(params.modality),
       tipo_sesion: sessionType,
-      motivo: params.reason ?? null,
+      motivo: params.motivo,
+      motivo_id: params.motivo_id,
       precio: price,
       // El honorario nace con la cita, pendiente de cobro, por el precio calculado.
       pagos_honorarios: {
@@ -596,7 +605,10 @@ export async function updateAppointment(
           inicio: start,
           fin: end,
           modalidad: input.modality ? toSchemaModality(input.modality) : undefined,
-          motivo: input.reason,
+          // Sin motivo nuevo en el cuerpo, el guardado queda intacto.
+          ...(input.reasonId !== undefined || input.reason !== undefined
+            ? await resolveReason(tx, input.reasonId, input.reason)
+            : {}),
           notas_internas: input.notes,
         },
         include: appointmentInclude,
@@ -668,9 +680,7 @@ export async function cancelAppointment(
   }
 
   if (auth.role === UserRole.PATIENT) {
-    if (row.paciente_id !== (await requirePatientId(auth))) {
-      throw AppError.forbidden("No puedes cancelar la cita de otro paciente");
-    }
+    await assertCanActOnPatient(auth, row.paciente_id);
   } else if (auth.role === UserRole.PSYCHOLOGIST) {
     if (row.psicologo_id !== (await requirePsychologistId(auth))) {
       throw AppError.forbidden("No puedes cancelar una cita de otro profesional");

@@ -5,3 +5,4 @@ export * from "./psychologist.service";
 export * from "./notification.service";
 export * from "./clinical-record.service";
 export * from "./log-entry.service";
+export * from "./consultation-reason.service";

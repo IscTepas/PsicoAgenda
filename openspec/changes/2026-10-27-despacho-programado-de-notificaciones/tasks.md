@@ -2,8 +2,8 @@
 
 ## 1. Contrato del disparador interno
 
-- [ ] 1.1 Verificar el contrato de `POST /api/internal/despachar` (sin credencial → 401, credencial inválida → 401, secreto ausente → 503, correcta → 200 con `{ procesadas, vencidas }`) y verificar con tests de supertest los cuatro casos
-- [ ] 1.2 Verificar que dos barridos solapados entregan cada aviso una sola vez (reclamo optimista por `intentos`) y verificar con un test de concurrencia que no hay duplicados
+- [x] 1.1 Verificar el contrato de `POST /api/internal/despachar` (sin credencial → 401, credencial inválida → 401, secreto ausente → 503, correcta → 200 con `{ procesadas, vencidas }`) y verificar con tests de supertest los cuatro casos
+- [x] 1.2 Verificar que dos barridos solapados entregan cada aviso una sola vez (reclamo optimista por `intentos`) y verificar con un test de concurrencia que no hay duplicados
 - [ ] 1.3 Documentar el contrato del endpoint en el README (método, ruta, cabecera, respuestas) y verificar que el ejemplo `curl` del documento devuelve 200 al ejecutarlo con el secreto real
 
 ## 2. Credencial y disparador en producción

@@ -8,7 +8,6 @@ import {
   Clock,
   FileText,
   Plus,
-  ShieldCheck,
   Phone,
   Mail,
   MapPin,
@@ -39,6 +38,7 @@ import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { useHydrated } from "@/lib/use-hydrated"
+import { GuardiansCard } from "./guardians-card"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
 import {
   appointmentService,
@@ -75,10 +75,11 @@ const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
 
 function calculateAge(birthDate?: Date): number | null {
   if (!birthDate) return null
+  // La fecha de nacimiento es un DATE (medianoche UTC): se lee en UTC para no correrla un día en Tepic.
   const today = new Date()
-  let age = today.getFullYear() - birthDate.getFullYear()
-  const m = today.getMonth() - birthDate.getMonth()
-  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+  let age = today.getFullYear() - birthDate.getUTCFullYear()
+  const m = today.getMonth() - birthDate.getUTCMonth()
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getUTCDate())) {
     age--
   }
   return age
@@ -375,7 +376,13 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
                   )}
                   {patient.birthDate && (
                     <span>
-                      Nacimiento: {formatShortDate(patient.birthDate)}
+                      Nacimiento:{" "}
+                      {patient.birthDate.toLocaleDateString("es-MX", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                        timeZone: "UTC",
+                      })}
                     </span>
                   )}
                   <span>·</span>
@@ -461,25 +468,9 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
               )}
             </div>
 
-            {/* Tutor Legal (si aplica por ser menor o contar con registro) */}
-            {patient.legalGuardian ? (
-              <div className="p-3.5 rounded-xl border border-primary/25 bg-primary/[0.03] flex items-start justify-between gap-3">
-                <div className="space-y-1 min-w-0">
-                  <div className="flex items-center gap-1.5 text-sm font-semibold text-primary">
-                    <ShieldCheck className="size-3.5" />
-                    <span>Tutor Legal Responsable</span>
-                  </div>
-                  <p className="text-sm font-bold text-foreground">
-                    {patient.legalGuardian.name}{" "}
-                    <span className="text-xs font-normal text-muted-foreground">
-                      ({patient.legalGuardian.relationship})
-                    </span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Tel: {patient.legalGuardian.phone || "—"}
-                  </p>
-                </div>
-              </div>
+            {/* Tutores: solo mientras el paciente es menor de edad */}
+            {patient.isMinor ? (
+              <GuardiansCard patientId={patient.id} initial={patient.guardians ?? []} />
             ) : (
               <div className="p-3.5 rounded-xl border border-border/60 bg-muted/20 flex items-center justify-between">
                 <div className="space-y-0.5">

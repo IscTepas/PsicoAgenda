@@ -52,7 +52,7 @@ BEGIN
       END IF;
 
       INSERT INTO public.pacientes (
-        id, usuario_id, fecha_nacimiento, sexo, direccion, tutor_legal_id, psicologo_id
+        id, usuario_id, fecha_nacimiento, sexo, direccion, psicologo_id
       )
       VALUES (
         gen_random_uuid(),
@@ -60,11 +60,16 @@ BEGIN
         nullif(u.meta ->> 'birth_date', '')::date,
         u.meta ->> 'gender',
         u.meta ->> 'address',
-        v_guardian_id,
         NULL
       )
       ON CONFLICT (usuario_id) DO NOTHING
       RETURNING id INTO v_patient_id;
+
+      -- El tutor se liga por la tabla puente (un tutor principal por paciente).
+      IF v_patient_id IS NOT NULL AND v_guardian_id IS NOT NULL THEN
+        INSERT INTO public.pacientes_tutores (paciente_id, tutor_id, es_principal)
+        VALUES (v_patient_id, v_guardian_id, true);
+      END IF;
 
       IF v_patient_id IS NOT NULL
          AND u.meta -> 'emergency_contact' IS NOT NULL
