@@ -424,17 +424,17 @@ Las de `apps/api/.env.example`. En producción, además:
 - `CORS_ORIGIN` con el dominio del frontend; admite lista separada por comas y
   `*` como comodín (`https://psicoagenda-web-*.vercel.app`) para los previews.
 - `CRON_SECRET`: sin él, `POST /api/internal/despachar` responde 503.
-- `PHONE_IDE` y `VERIFY_TOKEN`: ID del número emisor y token de acceso de la
-  **API de WhatsApp Business**. Opcionalmente, `WHATSAPP_TEMPLATE_NAME`,
-  `WHATSAPP_TEMPLATE_LANG` y `WHATSAPP_API_VERSION` ajustan la plantilla y la
-  versión de Graph API. Son independientes de cualquier webhook; sin las
-  credenciales solo se entregan los canales de sistema y correo.
+- `WHATSAPP_PHONE_ID` y `WHATSAPP_ACCESS_TOKEN`: ID del número emisor y token de
+  acceso de la **API de WhatsApp Business**. Opcionalmente,
+  `WHATSAPP_TEMPLATE_NAME`, `WHATSAPP_TEMPLATE_LANG` y `WHATSAPP_API_VERSION`
+  ajustan la plantilla y la versión de Graph API. Son independientes de cualquier
+  webhook; sin las credenciales solo se entregan los canales de sistema y correo.
 
 ### Entornos
 
 | Entorno | Base y Auth | Variables en Vercel |
 |---|---|---|
-| Producción | proyecto Supabase real | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `GMAIL_*`, `PHONE_IDE`, `VERIFY_TOKEN` y `WHATSAPP_*` con alcance **solo Production** |
+| Producción | proyecto Supabase real | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `GMAIL_*`, `WHATSAPP_PHONE_ID`, `WHATSAPP_ACCESS_TOKEN` y `WHATSAPP_*` con alcance **solo Production** |
 | Vista previa | segundo proyecto Supabase (solo datos sintéticos) | las mismas claves con alcance **solo Preview**, apuntando al proyecto aislado, más `ENTORNO_BD=preview` |
 | Desarrollo | la de `apps/api/.env` de cada quien | — |
 
@@ -547,7 +547,7 @@ mensajes. La salida de WhatsApp se resuelve con la **API de WhatsApp Business
 5. Si la persona no tiene teléfono o desactivó WhatsApp, no se crea el aviso de
    WhatsApp; los canales de sistema y correo siguen su curso normal.
 
-La configuración vive en `PHONE_IDE` y `VERIFY_TOKEN`; el nombre e idioma de la
+La configuración vive en `WHATSAPP_PHONE_ID` y `WHATSAPP_ACCESS_TOKEN`; el nombre e idioma de la
 plantilla y la versión de Graph API se pueden ajustar con
 `WHATSAPP_TEMPLATE_NAME`, `WHATSAPP_TEMPLATE_LANG` y `WHATSAPP_API_VERSION`. Sin
 las credenciales, los avisos de WhatsApp quedan `PENDIENTE` en la cola y se

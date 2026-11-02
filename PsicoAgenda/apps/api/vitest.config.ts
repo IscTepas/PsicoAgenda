@@ -18,8 +18,8 @@ export default defineConfig({
       SUPABASE_URL: "https://proyecto-prueba.supabase.co",
       // Nunca enviar WhatsApp real al correr la suite, aunque el `.env` local
       // tenga credenciales de la API de WhatsApp Business.
-      PHONE_IDE: "",
-      VERIFY_TOKEN: "",
+      WHATSAPP_PHONE_ID: "",
+      WHATSAPP_ACCESS_TOKEN: "",
     },
   },
 });
