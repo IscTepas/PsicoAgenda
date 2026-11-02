@@ -18,9 +18,10 @@
 
 ## 4. Verificación de extremo a extremo
 
-- [ ] 4.1 Ejecutar el flujo completo contra el entorno desplegado (solicitar, recibir el correo, cambiar la contraseña e iniciar sesión con la nueva) y verificar que el correo llega desde el remitente propio y no desde Supabase
-- [ ] 4.2 Verificar que reutilizar el mismo enlace una segunda vez falla con un mensaje claro
+- [x] 4.1 Ejecutar el flujo completo contra el entorno desplegado (solicitar, recibir el correo, cambiar la contraseña e iniciar sesión con la nueva) y verificar que el correo llega desde el remitente propio y no desde Supabase
+- [x] 4.2 Verificar que reutilizar el mismo enlace una segunda vez falla con un mensaje claro
 - [x] 4.3 Actualizar el README y `.env.example` para retirar la nota del límite de dos correos por hora del SMTP de Supabase; y verificar que el documento ya no describe ese camino como vigente
+- [x] 4.4 Rechazar una contraseña nueva igual a la actual sin consumir el enlace; y verificar con test que responde `CONTRASENA_REPETIDA` y que el token sigue sirviendo
 
 ## Workflow follow-up
 

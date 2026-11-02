@@ -17,7 +17,7 @@
 
 - [x] 3.1 Implementar el alta de tutor desde el expediente, permitiendo enlazar un usuario existente por correo o registrar un contacto sin cuenta; y verificar con tests ambos caminos y el rechazo de duplicados
 - [x] 3.2 Implementar el listado, la designación de principal y la desvinculación de tutores de un paciente; y verificar con test que al desvincular al principal se exige designar otro o queda el paciente sin principal de forma explícita
-- [ ] 3.3 Conservar y mostrar el tutor que firmó cada consentimiento tras la migración; y verificar que los consentimientos existentes siguen resolviendo su firmante
+- [x] 3.3 Conservar y mostrar el tutor que firmó cada consentimiento tras la migración; y verificar que los consentimientos existentes siguen resolviendo su firmante
 
 ## 4. Agenda y avisos del menor
 

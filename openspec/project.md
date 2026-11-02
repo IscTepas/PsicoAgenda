@@ -9,7 +9,7 @@ PsicoAgenda es un sistema orientado a profesionistas de la psicología que tiene
 ### Incluye
 - Registro y administración de usuarios (psicólogos/as y pacientes).
 - Gestión de citas mediante agenda digital.
-- Envío de recordatorios automáticos a pacientes vía WhatsApp y correo electrónico.
+- Envío de recordatorios automáticos a pacientes vía WhatsApp (API de WhatsApp Business) y correo electrónico.
 - Módulo de historial clínico y bitácora por sesión.
 - Generación de reportes operativos exportables a PDF y Excel.
 - Gestión de roles y permisos.
@@ -81,9 +81,9 @@ Entidades principales:
 
 - Conectividad a internet para mensajes y recordatorios.
 - Almacenamiento conforme a la Ley de Protección de Datos.
-- Compatibilidad con navegadores modernos y WhatsApp API.
+- Compatibilidad con navegadores modernos y la API de WhatsApp Business.
 
 ## Dependencias
 
-- API de WhatsApp Business.
+- API de WhatsApp Business (Cloud API) de Meta.
 - Servidor o hosting para base de datos y aplicaciones web.

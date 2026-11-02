@@ -26,6 +26,20 @@ El sistema SHALL representar al tutor legal como una persona que puede estar vin
 - **WHEN** una persona es tutora de dos pacientes
 - **THEN** el sistema mantiene dos vínculos independientes sobre la misma persona
 
+### Requirement: Firmante histórico del consentimiento
+
+El sistema SHALL conservar al tutor que firmó cada consentimiento informado y SHALL mostrarlo junto al consentimiento en el expediente, incluso después de que el vínculo de tutela haya terminado.
+
+#### Scenario: Consentimiento firmado por un tutor
+
+- **WHEN** se consulta un consentimiento firmado por un tutor
+- **THEN** el sistema muestra su nombre y la fecha de firma
+
+#### Scenario: Consentimiento firmado por el paciente
+
+- **WHEN** se consulta un consentimiento sin tutor asociado
+- **THEN** el sistema indica que lo firmó el propio paciente y no inventa un firmante
+
 ### Requirement: Límites de la tutoría
 
 El sistema SHALL NOT cambiar el rol de la cuenta por ser tutor, SHALL NOT otorgar acceso a la bitácora ni a las notas clínicas, y SHALL impedir la tutoría de uno mismo y la del psicólogo tratante sobre su propio paciente.

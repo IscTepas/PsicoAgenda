@@ -21,6 +21,10 @@ El sistema SHALL permitir restablecer la contraseña mediante un token de un sol
 - **WHEN** el usuario presenta un token vigente y una contraseña válida
 - **THEN** el sistema actualiza la contraseña, inutiliza el token y permite iniciar sesión con la nueva
 
+#### Scenario: Contraseña igual a la actual
+- **WHEN** el usuario presenta un token vigente y una contraseña idéntica a la que ya tiene
+- **THEN** el sistema rechaza el cambio, no consume el token y le pide elegir una contraseña distinta
+
 #### Scenario: Exceso de solicitudes
 - **WHEN** un mismo correo u origen supera el límite de solicitudes en la ventana definida
 - **THEN** el sistema deja de enviar correos y responde con el tiempo restante
