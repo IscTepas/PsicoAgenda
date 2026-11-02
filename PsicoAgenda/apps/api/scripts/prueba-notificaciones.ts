@@ -2,6 +2,8 @@
 // cuentas demo. Correr con el correo en modo consola:
 //   GMAIL_USER= GMAIL_APP_PASSWORD= npx tsx scripts/prueba-notificaciones.ts
 // Para recibir los correos de verdad: PRUEBA_CORREO=tu@gmail.com (usa alias +paciente / +psicologa).
+// Para probar WhatsApp con un número autorizado en el WABA de prueba:
+//   PRUEBA_WHATSAPP=3111479910 npx tsx scripts/prueba-notificaciones.ts
 // Deja la base como estaba: borra lo que crea y restaura correos y preferencias.
 import {
   AppointmentModality,
@@ -9,6 +11,7 @@ import {
   NotificationChannel,
   UserRole,
 } from "@psicoagenda/shared";
+import { config } from "@/config";
 import { disconnectPrisma, prisma } from "@/lib/prisma";
 import {
   acceptAppointmentRequest,
@@ -49,10 +52,17 @@ if (destino) {
   await prisma.usuarios.update({ where: { id: psicologa.auth.id }, data: { correo: alias("psicologa") } });
 }
 
-// WhatsApp encendido para ver que se encola (n8n no está conectado).
+// WhatsApp encendido para ver que se encola (la API puede estar sin configurar).
+// `PRUEBA_WHATSAPP` permite usar un número autorizado en el WABA de prueba sin
+// tocar el teléfono real del perfil; la limpieza restaura el valor original.
+const telefonoPrueba = process.env.PRUEBA_WHATSAPP;
 await prisma.usuarios.update({
   where: { id: paciente.auth.id },
-  data: { notificar_whatsapp: true, notificar_correo: true, telefono: paciente.fila.telefono ?? "3110000000" },
+  data: {
+    notificar_whatsapp: true,
+    notificar_correo: true,
+    telefono: telefonoPrueba ?? paciente.fila.telefono ?? "3110000000",
+  },
 });
 
 const filasDe = (usuarioId: string) =>
@@ -144,7 +154,7 @@ try {
     "Sin recordatorios pendientes tras cancelar",
   );
 
-  // 6. Despacho: sistema y correo salen; WhatsApp espera a n8n.
+  // 6. Despacho: sistema y correo salen; WhatsApp sale por la API si está configurada.
   // Con Gmail real cada correo tarda 1–2 s: se espera hasta 60 s.
   for (let i = 0; i < 120; i++) {
     await despacharPendientes();
@@ -169,10 +179,21 @@ try {
   for (const f of inmediatas.filter((f) => f.canal !== "WHATSAPP" && f.estado !== "ENVIADA")) {
     console.log(`   ↳ ${f.tipo}/${f.canal}: ${f.estado} intentos=${f.intentos} error=${f.error ?? "-"}`);
   }
+  const whatsapp = inmediatas.filter((f) => f.canal === "WHATSAPP");
+  const whatsappOk = config.whatsappEnabled
+    ? whatsapp.every((f) => f.estado === "ENVIADA")
+    : whatsapp.every((f) => f.estado === "PENDIENTE");
   check(
-    inmediatas.filter((f) => f.canal === "WHATSAPP").every((f) => f.estado === "PENDIENTE"),
-    "WhatsApp queda PENDIENTE para n8n",
+    whatsappOk,
+    config.whatsappEnabled
+      ? "WhatsApp despachado por la API (ENVIADA)"
+      : "WhatsApp queda PENDIENTE hasta configurar la API",
   );
+  if (!whatsappOk) {
+    for (const f of whatsapp) {
+      console.log(`   ↳ ${f.tipo}/${f.canal}: ${f.estado} intentos=${f.intentos} error=${f.error ?? "-"}`);
+    }
+  }
 
   // 7. Campana: solo SISTEMA, y marcar leídas.
   const bandeja = await listNotifications(psicologa.auth);

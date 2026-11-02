@@ -1,14 +1,17 @@
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { enviarEnlaceRecuperacion, actualizarContrasena, findUnique } = vi.hoisted(() => ({
-  enviarEnlaceRecuperacion: vi.fn(),
-  actualizarContrasena: vi.fn(),
-  findUnique: vi.fn(),
-}));
+const { enviarEnlaceRecuperacion, actualizarContrasena, esContrasenaActual, findUnique } = vi.hoisted(
+  () => ({
+    enviarEnlaceRecuperacion: vi.fn(),
+    actualizarContrasena: vi.fn(),
+    esContrasenaActual: vi.fn(),
+    findUnique: vi.fn(),
+  }),
+);
 
 vi.mock("@/services/mailer.service", () => ({ enviarEnlaceRecuperacion }));
-vi.mock("@/lib/supabase-admin", () => ({ actualizarContrasena }));
+vi.mock("@/lib/supabase-admin", () => ({ actualizarContrasena, esContrasenaActual }));
 vi.mock("@/lib/prisma", () => ({ prisma: { usuarios: { findUnique } }, disconnectPrisma: vi.fn() }));
 
 const { vaciar } = vi.hoisted(() => ({ vaciar: { fn: () => {} } }));
@@ -26,6 +29,11 @@ const app = createApp();
 const EMAIL = "persona@ejemplo.com";
 const PASSWORD = "NuevaClave1";
 
+interface ErrorBody {
+  error: { code: string; details?: { retryAfterSeconds?: number } };
+}
+const errorBody = (body: unknown): ErrorBody => body as ErrorBody;
+
 const solicitar = (email = EMAIL, ip = "1.1.1.1") =>
   request(app).post("/api/auth/recuperacion/solicitar").set("X-Forwarded-For", ip).send({ email });
 const confirmar = (token: string, password = PASSWORD) =>
@@ -42,6 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   findUnique.mockResolvedValue({ id: "u-1", activo: true });
   actualizarContrasena.mockResolvedValue(undefined);
+  esContrasenaActual.mockResolvedValue(false);
   enviarEnlaceRecuperacion.mockResolvedValue(undefined);
 });
 
@@ -80,7 +89,7 @@ describe("POST /api/auth/recuperacion/solicitar", () => {
     const res = await solicitar();
 
     expect(res.status).toBe(429);
-    expect(res.body.error.details.retryAfterSeconds).toBeGreaterThan(0);
+    expect(errorBody(res.body).error.details?.retryAfterSeconds).toBeGreaterThan(0);
     expect(enviarEnlaceRecuperacion).toHaveBeenCalledTimes(MAX_POR_CORREO);
   });
 });
@@ -95,7 +104,23 @@ describe("POST /api/auth/recuperacion/confirmar", () => {
 
     const otraVez = await confirmar(token);
     expect(otraVez.status).toBe(400);
-    expect(otraVez.body.error.code).toBe("TOKEN_INVALIDO");
+    expect(errorBody(otraVez.body).error.code).toBe("TOKEN_INVALIDO");
+  });
+
+  it("rechaza la contraseña actual sin consumir el enlace", async () => {
+    await solicitar();
+    const token = tokenEnviado();
+    esContrasenaActual.mockResolvedValueOnce(true);
+
+    const repetida = await confirmar(token);
+
+    expect(repetida.status).toBe(400);
+    expect(errorBody(repetida.body).error.code).toBe("CONTRASENA_REPETIDA");
+    expect(actualizarContrasena).not.toHaveBeenCalled();
+
+    // El token sigue vigente: con una contraseña distinta el cambio sí procede.
+    expect((await confirmar(token)).status).toBe(200);
+    expect(actualizarContrasena).toHaveBeenCalledWith("u-1", PASSWORD);
   });
 
   it("rechaza un token vencido", async () => {

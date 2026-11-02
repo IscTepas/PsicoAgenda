@@ -44,14 +44,14 @@ Sistema orientado a profesionistas de la psicología para la gestión integral d
 
 | Capacidad | Descripción | Requirements |
 |-----------|-------------|--------------|
-| `user-management` | Registro, autenticación, roles, perfiles, tutores legales | 5 |
-| `appointment-management` | Agenda: programar, modificar, cancelar, disponibilidad, asistencia | 5 |
-| `notification-management` | Recordatorios 24 h, confirmación asistencia, notificaciones de cambio | 3 |
+| `user-management` | Registro, autenticación, roles, perfiles, tutores legales | 10 |
+| `appointment-management` | Agenda: programar, modificar, cancelar, disponibilidad, asistencia | 7 |
+| `notification-management` | Recordatorios 24 h, confirmación asistencia, notificaciones de cambio, envío por API de WhatsApp Business | 4 |
 | `medical-record` | Historial clínico, bitácora por sesión, consentimiento, contacto de emergencia | 7 |
 | `reporting` | Reportes estadísticos de citas exportables a PDF/Excel | 2 |
 | `data-hosting` | Persistencia en PostgreSQL gestionado, frontera con los schemas del proveedor, perfil sincronizado y migraciones versionadas | 4 |
 | `data-protection` | Cifrado, sesiones, ausencia de contraseñas en la base, LFPDPPP, respaldo AWS, retención y portabilidad | 9 |
-| **Total** | | **35** |
+| **Total** | | **43** |
 
 `user-management` ya no incluye 2FA: la autenticación en dos pasos es responsabilidad del proveedor de identidad, que la ofrece en su panel. `data-protection` suma el requirement `No almacenamiento de contraseñas`, que se explica en la sección de datos de más abajo.
 
@@ -263,7 +263,7 @@ Ya no pasa por el SMTP de Supabase (2 correos por hora): la API la resuelve con 
 
 - `POST /api/auth/recuperacion/solicitar` `{ email }` responde `202` exista o no la cuenta (no permite averiguar qué correos están registrados). Límites: 3 enlaces por correo y 10 solicitudes por IP cada 15 minutos; al pasarlos, `429` con `retryAfterSeconds`.
 - El enlace es `<WEB_URL>/recuperar/nueva?token=…`: 32 bytes aleatorios, válido 30 minutos y de un solo uso. En `cache_registro` solo se guarda su SHA-256.
-- `POST /api/auth/recuperacion/confirmar` `{ token, password }` cambia la contraseña con la service role key y consume el token; un token usado o vencido responde `400 TOKEN_INVALIDO`.
+- `POST /api/auth/recuperacion/confirmar` `{ token, password }` cambia la contraseña con la service role key y consume el token; un token usado o vencido responde `400 TOKEN_INVALIDO`. Si la contraseña elegida es la misma que la actual responde `400 CONTRASENA_REPETIDA` y **no** consume el token, para que se pueda reintentar con el mismo enlace.
 - `WEB_URL` es la URL pública del frontend. Si falta, se usa el primer origen de `CORS_ORIGIN` sin comodín.
 - Sin credenciales de Gmail en desarrollo, el enlace se escribe en la consola de la API.
 
@@ -424,12 +424,17 @@ Las de `apps/api/.env.example`. En producción, además:
 - `CORS_ORIGIN` con el dominio del frontend; admite lista separada por comas y
   `*` como comodín (`https://psicoagenda-web-*.vercel.app`) para los previews.
 - `CRON_SECRET`: sin él, `POST /api/internal/despachar` responde 503.
+- `PHONE_IDE` y `VERIFY_TOKEN`: ID del número emisor y token de acceso de la
+  **API de WhatsApp Business**. Opcionalmente, `WHATSAPP_TEMPLATE_NAME`,
+  `WHATSAPP_TEMPLATE_LANG` y `WHATSAPP_API_VERSION` ajustan la plantilla y la
+  versión de Graph API. Son independientes de cualquier webhook; sin las
+  credenciales solo se entregan los canales de sistema y correo.
 
 ### Entornos
 
 | Entorno | Base y Auth | Variables en Vercel |
 |---|---|---|
-| Producción | proyecto Supabase real | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `GMAIL_*` con alcance **solo Production** |
+| Producción | proyecto Supabase real | `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `GMAIL_*`, `PHONE_IDE`, `VERIFY_TOKEN` y `WHATSAPP_*` con alcance **solo Production** |
 | Vista previa | segundo proyecto Supabase (solo datos sintéticos) | las mismas claves con alcance **solo Preview**, apuntando al proyecto aislado, más `ENTORNO_BD=preview` |
 | Desarrollo | la de `apps/api/.env` de cada quien | — |
 
@@ -441,10 +446,39 @@ proyecto aislado y a la API de preview).
 
 Para montar el proyecto aislado se siguen los pasos 1 a 6 de la puesta en marcha
 (rol `prisma`, migraciones, `grants.sql`, triggers) contra el proyecto nuevo y
-después `prisma/supabase/demo_accounts.sql` en su SQL Editor: datos sintéticos,
-nunca una copia de producción. **Toda migración o cambio de los triggers de identidad se aplica en
-los dos proyectos**: primero en el de vista previa y, una vez probado, en el de
-producción.
+después `prisma/supabase/demo_accounts.sql` y `prisma/supabase/demo_data.sql` en
+su SQL Editor: datos sintéticos, nunca una copia de producción. **Toda migración
+o cambio de los triggers de identidad se aplica en los dos proyectos**: primero
+en el de vista previa y, una vez probado, en el de producción.
+
+El procedimiento está automatizado en dos scripts:
+
+```bash
+# 1. Crea el rol prisma y muestra su contraseña en un notice.
+PREVIEW_ADMIN_DATABASE_URL="postgresql://postgres:<clave>@db.<ref>.supabase.co:5432/postgres" \
+  node scripts/preparar-proyecto-aislado.mjs --solo-bootstrap
+
+# 2. Migraciones, grants, triggers y datos sintéticos.
+PREVIEW_ADMIN_DATABASE_URL="postgresql://postgres:<clave>@db.<ref>.supabase.co:5432/postgres" \
+PREVIEW_PRISMA_DATABASE_URL="postgresql://prisma.<ref>:<clave-generada>@aws-<N>-<region>.pooler.supabase.com:5432/postgres" \
+  node scripts/preparar-proyecto-aislado.mjs
+```
+
+Ambos scripts abortan si el destino es el mismo proyecto Supabase que producción
+(comparan el `ref`). El segundo verifica que el historial de migraciones coincide
+con el número de migraciones versionadas del repositorio.
+
+Con el preview ya desplegado, la comprobación de aislamiento escribe una marca en
+la base aislada y confirma que no aparece en producción:
+
+```bash
+PREVIEW_PRISMA_DATABASE_URL="postgresql://prisma.<ref>:<clave>@..." \
+  node scripts/verificar-aislamiento.mjs
+```
+
+El script imprime los conteos de las tablas clínicas en ambos proyectos: se corre
+antes y después de recorrer login, agenda y expediente para comprobar que
+producción no cambió.
 
 ### Migraciones
 
@@ -488,6 +522,40 @@ Si una ejecución falla, GitHub avisa por correo a quien editó el workflow por
 secreto de GitHub. Entre ambos pasos el barrido responde `401`: los avisos esperan
 en cola y salen en la siguiente ejecución correcta. Un `401` constante en el
 workflow significa que los dos valores están desincronizados.
+
+#### WhatsApp: se envía con la API, no con un webhook
+
+Un webhook es una URL que **recibe** eventos; no es un mecanismo para enviar
+mensajes. La salida de WhatsApp se resuelve con la **API de WhatsApp Business
+(Cloud API)** de Meta, no con un webhook de salida:
+
+1. Cuando el sistema genera una notificación (recordatorio, confirmación, cambio
+   o cancelación), registra la fila con `canal = WHATSAPP` solo si el destinatario
+   tiene `notificar_whatsapp` activo y un teléfono registrado en su perfil. La
+   notificación de `SISTEMA` es la que aparece en la campana; WhatsApp y correo
+   son copias de entrega.
+2. Al despachar, la API toma los datos del usuario destinatario
+   (`usuarios.telefono`, `nombre_completo` y `zona_horaria`), el mensaje del aviso
+   y la fecha/hora de la cita, y llama a la API de WhatsApp Business.
+3. El teléfono se normaliza al formato internacional (E.164) y se envía como
+   destinatario. El envío usa una **plantilla aprobada** de WhatsApp Business,
+   que debe tener tres parámetros de cuerpo en este orden: nombre, mensaje y
+   fecha/hora del aviso.
+4. La respuesta de la API define el estado de la fila: `2xx` la marca como
+   `ENVIADA`; un error la deja `PENDIENTE` para reintentar (hasta 5 intentos) y,
+   al agotarlos, `FALLIDA`.
+5. Si la persona no tiene teléfono o desactivó WhatsApp, no se crea el aviso de
+   WhatsApp; los canales de sistema y correo siguen su curso normal.
+
+La configuración vive en `PHONE_IDE` y `VERIFY_TOKEN`; el nombre e idioma de la
+plantilla y la versión de Graph API se pueden ajustar con
+`WHATSAPP_TEMPLATE_NAME`, `WHATSAPP_TEMPLATE_LANG` y `WHATSAPP_API_VERSION`. Sin
+las credenciales, los avisos de WhatsApp quedan `PENDIENTE` en la cola y se
+entregan cuando se configuren; no se pierden ni bloquean los demás canales.
+
+Un webhook, si algún día se configura, solo sirve para **recibir** eventos de
+Meta (estados de entrega/lectura o mensajes entrantes). Nunca sustituye a la
+llamada de la API que envía la notificación.
 
 ### Monitorización y alertas
 

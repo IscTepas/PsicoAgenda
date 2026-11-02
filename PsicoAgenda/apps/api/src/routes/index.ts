@@ -9,6 +9,7 @@ import psychologistsRouter from "@/routes/psychologist.routes";
 import notificationsRouter from "@/routes/notification.routes";
 import logEntriesRouter from "@/routes/log-entry.routes";
 import consultationReasonsRouter from "@/routes/consultation-reason.routes";
+import whatsappWebhookRouter from "@/routes/whatsapp-webhook.routes";
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use("/psychologists", psychologistsRouter);
 router.use("/notifications", notificationsRouter);
 router.use("/log-entries", logEntriesRouter);
 router.use("/motivos-consulta", consultationReasonsRouter);
+router.use("/webhooks", whatsappWebhookRouter);
 
 export { router as apiRouter };

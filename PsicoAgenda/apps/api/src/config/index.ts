@@ -19,6 +19,27 @@ const toPort = (value: string | undefined, fallback: number): number => {
 };
 
 /**
+ * Credenciales de la API de WhatsApp Business (Cloud API).
+ *
+ * `PHONE_IDE` y `VERIFY_TOKEN` son los nombres que ya usa el `.env` del
+ * proyecto; se aceptan también los nombres estándar `WHATSAPP_PHONE_ID` y
+ * `WHATSAPP_ACCESS_TOKEN` para no atar el código al nombre histórico.
+ */
+const whatsappPhoneId = (process.env.WHATSAPP_PHONE_ID ?? process.env.PHONE_IDE ?? "").trim();
+const whatsappAccessToken = (
+  process.env.WHATSAPP_ACCESS_TOKEN ??
+  process.env.VERIFY_TOKEN ??
+  ""
+).trim();
+const whatsappTemplateName =
+  (process.env.WHATSAPP_TEMPLATE_NAME ?? "").trim() || "jaspers_market_order_confirmation_v1";
+const whatsappTemplateLanguage = (process.env.WHATSAPP_TEMPLATE_LANG ?? "").trim() || "en_US";
+const whatsappApiVersion = ((process.env.WHATSAPP_API_VERSION ?? "").trim() || "v25.0").replace(
+  /^\/+|\/+$/g,
+  "",
+);
+
+/**
  * Variables que el flujo de registro necesita para funcionar a full: en
  * producción su ausencia es un error de despliegue (arranque fallido), en
  * desarrollo la API sigue encendida con un aviso y el mailer degrada (escribe
@@ -112,11 +133,20 @@ export const config = {
   ),
 
   /**
-   * Webhook de n8n que entrega los avisos de WhatsApp. Vacío = WhatsApp
-   * desconectado: los avisos se quedan PENDIENTES en `notificaciones` y salen
-   * solos en cuanto se configure.
+   * API de WhatsApp Business (Cloud API). Si faltan el ID del número emisor o
+   * el token de acceso, WhatsApp queda desconectado: los avisos de ese canal
+   * se conservan PENDIENTES y no bloquean sistema ni correo.
    */
-  n8nWhatsappWebhookUrl: process.env.N8N_WHATSAPP_WEBHOOK_URL ?? "",
-  /** Se envía en la cabecera `X-PsicoAgenda-Secret` para que n8n valide el origen. */
-  n8nWebhookSecret: process.env.N8N_WEBHOOK_SECRET ?? "",
+  whatsappPhoneId,
+  whatsappAccessToken,
+  whatsappEnabled: Boolean(whatsappPhoneId && whatsappAccessToken),
+  /** Plantilla aprobada: {{1}} nombre, {{2}} mensaje y {{3}} fecha/hora. */
+  whatsappTemplateName,
+  whatsappTemplateLanguage,
+  whatsappApiVersion,
+  /**
+   * Token que Meta exige al suscribir el webhook de entregas de WhatsApp.
+   * Si falta, el endpoint GET de verificación responde 403.
+   */
+  whatsappWebhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? "",
 } as const;

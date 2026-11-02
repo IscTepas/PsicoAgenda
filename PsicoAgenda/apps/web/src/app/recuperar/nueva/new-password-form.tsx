@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/form"
 import { Input as MotionInput } from "@/components/motion/input"
 import { NewPasswordInput } from "@/components/new-password-input"
-import { esEnlaceInvalido, recuperacionService } from "@/services/recuperacion.service"
+import { esContrasenaRepetida, esEnlaceInvalido, recuperacionService } from "@/services/recuperacion.service"
 import { cn } from "@/lib/utils"
 import { KeyRound, Loader2, Lock, ShieldCheck } from "lucide-react"
 
@@ -91,6 +91,8 @@ export function NewPasswordForm() {
       setLinkState("done")
     } catch (err) {
       if (esEnlaceInvalido(err)) setLinkState("invalid")
+      else if (esContrasenaRepetida(err))
+        setError("La nueva contraseña debe ser distinta de la que usas ahora.")
       else setError("No se pudo guardar la contraseña. Inténtalo de nuevo.")
     } finally {
       setIsPending(false)

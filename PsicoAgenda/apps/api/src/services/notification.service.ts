@@ -58,6 +58,9 @@ const toNotification = (row: NotificationRow): Notification => ({
   error: row.error ?? undefined,
   attempts: row.intentos,
   readAt: row.leida_en ?? undefined,
+  externalMessageId: row.mensaje_externo_id ?? undefined,
+  deliveryStatus: row.estado_entrega ?? undefined,
+  deliveredAt: row.entregada_en ?? undefined,
   createdAt: row.creado_en,
 });
 
@@ -140,7 +143,7 @@ const { SISTEMA, CORREO, WHATSAPP } = canal_notificacion;
  * recibe WhatsApp: trabaja dentro del sistema.
  */
 export const REGLAS: Record<EventoCita, Regla> = {
-  SOLICITUD_CREADA: { para: "psicologo", tipo: tipo_notificacion.SOLICITUD, canales: [SISTEMA, CORREO] },
+  SOLICITUD_CREADA: { para: "psicologo", tipo: tipo_notificacion.SOLICITUD, canales: [SISTEMA, CORREO, WHATSAPP] },
   SOLICITUD_ACEPTADA: {
     para: "paciente",
     tipo: tipo_notificacion.CONFIRMACION,
@@ -152,14 +155,18 @@ export const REGLAS: Record<EventoCita, Regla> = {
     tipo: tipo_notificacion.RECHAZO,
     canales: [SISTEMA, CORREO, WHATSAPP],
   },
-  SOLICITUD_CANCELADA: { para: "psicologo", tipo: tipo_notificacion.CANCELACION, canales: [SISTEMA] },
+  SOLICITUD_CANCELADA: {
+    para: "psicologo",
+    tipo: tipo_notificacion.CANCELACION,
+    canales: [SISTEMA, CORREO, WHATSAPP],
+  },
   CITA_AGENDADA: {
     para: "paciente",
     tipo: tipo_notificacion.CONFIRMACION,
     canales: [SISTEMA, CORREO, WHATSAPP],
     recordatorios: "programar",
   },
-  CITA_SOLICITADA: { para: "psicologo", tipo: tipo_notificacion.SOLICITUD, canales: [SISTEMA, CORREO] },
+  CITA_SOLICITADA: { para: "psicologo", tipo: tipo_notificacion.SOLICITUD, canales: [SISTEMA, CORREO, WHATSAPP] },
   // La cita ya se avisó completa al agendarla; confirmarla solo deja constancia.
   CITA_CONFIRMADA: {
     para: "paciente",
@@ -183,7 +190,7 @@ export const REGLAS: Record<EventoCita, Regla> = {
   CITA_CANCELADA_POR_PACIENTE: {
     para: "psicologo",
     tipo: tipo_notificacion.CANCELACION,
-    canales: [SISTEMA, CORREO],
+    canales: [SISTEMA, CORREO, WHATSAPP],
     recordatorios: "cancelar",
   },
   CITA_ASISTENCIA: {
@@ -521,7 +528,7 @@ const MAX_INTENTOS = 5;
 const LOTE = 50;
 
 const pendienteInclude = {
-  usuarios: { select: { correo: true, nombre_completo: true, telefono: true } },
+  usuarios: { select: { correo: true, nombre_completo: true, telefono: true, zona_horaria: true } },
   citas: { select: { id: true, inicio: true, fin: true, modalidad: true, estado: true } },
 } as const;
 
@@ -543,45 +550,105 @@ const correoHtml = (fila: FilaPendiente) => `
 `;
 
 /**
- * WhatsApp sale por n8n: se le entrega todo lo necesario para armar la
- * plantilla. Sin URL configurada las filas se quedan PENDIENTES y se
- * entregarán en cuanto n8n esté conectado.
+ * Normaliza el teléfono del perfil al formato que espera WhatsApp.
+ * Los teléfonos locales del proyecto son de 10 dígitos y se asumen de México.
  */
-async function enviarWhatsapp(fila: FilaPendiente): Promise<void> {
-  const respuesta = await fetch(config.n8nWhatsappWebhookUrl, {
+export const normalizarTelefonoWhatsapp = (telefono: string | null): string | null => {
+  const digitos = telefono?.replace(/\D/g, "") ?? "";
+  if (!digitos) return null;
+  if (digitos.length === 10) return `52${digitos}`;
+  // Algunos registros antiguos incluyen el 1 que México eliminó del marcado.
+  if (digitos.length === 13 && digitos.startsWith("521")) return `52${digitos.slice(3)}`;
+  return digitos;
+};
+
+const localeDeIdioma = (codigo: string): string => codigo.replace("_", "-");
+
+const formatearFechaWhatsapp = (fila: FilaPendiente): string => {
+  const fecha = fila.citas?.inicio ?? fila.programada_para ?? new Date();
+  const zona = fila.usuarios.zona_horaria || "America/Mazatlan";
+  return new Intl.DateTimeFormat(localeDeIdioma(config.whatsappTemplateLanguage), {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: zona,
+  }).format(fecha);
+};
+
+/**
+ * WhatsApp sale por la API de WhatsApp Business (Cloud API), no por un webhook.
+ * La plantilla aprobada recibe tres parámetros de cuerpo en este orden:
+ * nombre del destinatario, mensaje del aviso y fecha/hora de la cita.
+ */
+async function enviarWhatsapp(fila: FilaPendiente): Promise<{ id: string; status: string }> {
+  if (!config.whatsappEnabled) {
+    throw new Error("La API de WhatsApp Business no está configurada");
+  }
+
+  const telefono = normalizarTelefonoWhatsapp(fila.usuarios.telefono);
+  if (!telefono) {
+    throw new Error("El destinatario no tiene un teléfono válido para WhatsApp");
+  }
+
+  const url = `https://graph.facebook.com/${config.whatsappApiVersion}/${config.whatsappPhoneId}/messages`;
+  const respuesta = await fetch(url, {
     method: "POST",
     headers: {
+      Authorization: `Bearer ${config.whatsappAccessToken}`,
       "Content-Type": "application/json",
-      ...(config.n8nWebhookSecret ? { "X-PsicoAgenda-Secret": config.n8nWebhookSecret } : {}),
     },
     body: JSON.stringify({
-      notificacionId: fila.id,
-      tipo: fila.tipo,
-      telefono: fila.usuarios.telefono,
-      nombre: fila.usuarios.nombre_completo,
-      asunto: fila.asunto,
-      mensaje: fila.mensaje,
-      cita: fila.citas,
+      messaging_product: "whatsapp",
+      to: telefono,
+      type: "template",
+      template: {
+        name: config.whatsappTemplateName,
+        language: { code: config.whatsappTemplateLanguage },
+        components: [
+          {
+            type: "body",
+            parameters: [
+              { type: "text", text: fila.usuarios.nombre_completo },
+              { type: "text", text: fila.mensaje },
+              { type: "text", text: formatearFechaWhatsapp(fila) },
+            ],
+          },
+        ],
+      },
     }),
     signal: AbortSignal.timeout(15_000),
   });
 
   if (!respuesta.ok) {
-    throw new Error(`n8n respondió ${respuesta.status}`);
+    const detalle = await respuesta.text().catch(() => "");
+    throw new Error(
+      `WhatsApp respondió ${respuesta.status}${detalle ? `: ${detalle.slice(0, 300)}` : ""}`,
+    );
   }
+
+  const body = (await respuesta.json()) as {
+    messages?: Array<{ id?: string; message_status?: string }>;
+  };
+  const mensaje = body.messages?.[0];
+  if (!mensaje?.id) {
+    throw new Error("WhatsApp no devolvió el ID del mensaje");
+  }
+  return { id: mensaje.id, status: mensaje.message_status ?? "accepted" };
 }
 
-async function entregar(fila: FilaPendiente): Promise<void> {
+async function entregar(
+  fila: FilaPendiente,
+): Promise<{ id?: string; status?: string } | undefined> {
   switch (fila.canal) {
     case canal_notificacion.SISTEMA:
-      return;
+      return undefined;
     case canal_notificacion.CORREO:
-      return enviarCorreoNotificacion({
+      await enviarCorreoNotificacion({
         to: fila.usuarios.correo,
         subject: `${APP_NAME}: ${fila.asunto}`,
         text: `Hola, ${fila.usuarios.nombre_completo}.\n\n${fila.mensaje}`,
         html: correoHtml(fila),
       });
+      return undefined;
     case canal_notificacion.WHATSAPP:
       return enviarWhatsapp(fila);
   }
@@ -601,7 +668,7 @@ export async function despacharPendientes(): Promise<number> {
   otraVuelta = false;
 
   try {
-    const canales = config.n8nWhatsappWebhookUrl ? [SISTEMA, CORREO, WHATSAPP] : [SISTEMA, CORREO];
+    const canales = config.whatsappEnabled ? [SISTEMA, CORREO, WHATSAPP] : [SISTEMA, CORREO];
     const filas = await prisma.notificaciones.findMany({
       where: {
         estado: estado_envio.PENDIENTE,
@@ -623,10 +690,17 @@ export async function despacharPendientes(): Promise<number> {
       if (reclamada.count === 0) continue;
 
       try {
-        await entregar(fila);
+        const entrega = await entregar(fila);
         await prisma.notificaciones.update({
           where: { id: fila.id },
-          data: { estado: estado_envio.ENVIADA, enviada_en: new Date(), error: null },
+          data: {
+            estado: estado_envio.ENVIADA,
+            enviada_en: new Date(),
+            error: null,
+            ...(entrega?.id ? { mensaje_externo_id: entrega.id } : {}),
+            ...(entrega?.status ? { estado_entrega: entrega.status } : {}),
+            ...(entrega ? { entregada_en: new Date() } : {}),
+          },
         });
       } catch (error) {
         const agotada = fila.intentos + 1 >= MAX_INTENTOS;

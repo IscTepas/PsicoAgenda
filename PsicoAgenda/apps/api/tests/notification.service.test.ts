@@ -12,7 +12,14 @@ const { prismaMock, config, enviarCorreoNotificacion } = vi.hoisted(() => ({
       findMany: vi.fn(),
     },
   },
-  config: { n8nWhatsappWebhookUrl: "", n8nWebhookSecret: "" },
+  config: {
+    whatsappEnabled: false,
+    whatsappPhoneId: "1352051977997191",
+    whatsappAccessToken: "token-de-prueba",
+    whatsappTemplateName: "psicoagenda_aviso_de_cita",
+    whatsappTemplateLanguage: "es_MX",
+    whatsappApiVersion: "v25.0",
+  },
   enviarCorreoNotificacion: vi.fn(),
 }));
 
@@ -20,9 +27,8 @@ vi.mock("@/lib/prisma", () => ({ prisma: prismaMock, disconnectPrisma: vi.fn() }
 vi.mock("@/config", () => ({ config }));
 vi.mock("@/services/mailer.service", () => ({ enviarCorreoNotificacion }));
 
-const { canalesDelEvento, despacharPendientes, notificar, redactar } = await import(
-  "@/services/notification.service"
-);
+const { canalesDelEvento, despacharPendientes, notificar, normalizarTelefonoWhatsapp, redactar } =
+  await import("@/services/notification.service");
 
 const { SISTEMA, CORREO, WHATSAPP } = canal_notificacion;
 const HORA = 3600_000;
@@ -61,11 +67,34 @@ const filasCreadas = (): Fila[] =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  config.n8nWhatsappWebhookUrl = "";
+  config.whatsappEnabled = false;
   prismaMock.pacientes.findUnique.mockResolvedValue({ usuarios: PACIENTE });
   prismaMock.psicologos.findUnique.mockResolvedValue({ usuarios: PSICOLOGA });
   prismaMock.notificaciones.findMany.mockResolvedValue([]);
   prismaMock.notificaciones.updateMany.mockResolvedValue({ count: 1 });
+});
+
+describe("normalizarTelefonoWhatsapp", () => {
+  it("antepone el código de México a los teléfonos locales de 10 dígitos", () => {
+    expect(normalizarTelefonoWhatsapp("311 123 4567")).toBe("523111234567");
+  });
+
+  it("normaliza el formato visible que guarda el perfil", () => {
+    expect(normalizarTelefonoWhatsapp("311-123-4567")).toBe("523111234567");
+  });
+
+  it("conserva un teléfono que ya trae código de país", () => {
+    expect(normalizarTelefonoWhatsapp("+52 311 123 4567")).toBe("523111234567");
+  });
+
+  it("quita el 1 histórico del marcado mexicano", () => {
+    expect(normalizarTelefonoWhatsapp("+52 1 311 123 4567")).toBe("523111234567");
+  });
+
+  it("devuelve null sin teléfono", () => {
+    expect(normalizarTelefonoWhatsapp(null)).toBeNull();
+    expect(normalizarTelefonoWhatsapp("")).toBeNull();
+  });
 });
 
 describe("canalesDelEvento", () => {
@@ -140,11 +169,11 @@ describe("notificar", () => {
     expect(filasCreadas().every((f) => f.usuario_id === PACIENTE.id)).toBe(true);
   });
 
-  it("una solicitud nueva avisa a la psicóloga por sistema y correo", async () => {
+  it("una solicitud nueva avisa a la psicóloga por sistema, correo y WhatsApp", async () => {
     await notificar("SOLICITUD_CREADA", { ...aviso(), citaId: undefined });
 
     const filas = filasCreadas();
-    expect(filas.map((f) => f.canal)).toEqual([SISTEMA, CORREO]);
+    expect(filas.map((f) => f.canal)).toEqual([SISTEMA, CORREO, WHATSAPP]);
     expect(filas.every((f) => f.usuario_id === PSICOLOGA.id)).toBe(true);
   });
 
@@ -181,17 +210,19 @@ describe("notificar", () => {
 });
 
 describe("despacharPendientes", () => {
-  const fila = (canal: canal_notificacion) => ({
+  const fila = (canal: canal_notificacion, telefono: string | null = PACIENTE.telefono) => ({
     id: `n-${canal}`,
     canal,
     tipo: "CONFIRMACION",
     asunto: "Tu cita fue confirmada",
     mensaje: "Mensaje",
     intentos: 0,
+    programada_para: new Date("2026-11-02T16:00:00Z"),
     usuarios: {
       correo: PACIENTE.correo,
       nombre_completo: PACIENTE.nombre_completo,
-      telefono: PACIENTE.telefono,
+      telefono,
+      zona_horaria: PACIENTE.zona_horaria,
     },
     citas: null,
   });
@@ -201,7 +232,7 @@ describe("despacharPendientes", () => {
       (call) => (call[0] as { data: { estado: string } }).data.estado,
     );
 
-  it("sin n8n no pide WhatsApp; entrega sistema y correo", async () => {
+  it("sin WhatsApp configurado no pide WhatsApp; entrega sistema y correo", async () => {
     prismaMock.notificaciones.findMany.mockResolvedValueOnce([fila(SISTEMA), fila(CORREO)]);
 
     await despacharPendientes();
@@ -240,21 +271,85 @@ describe("despacharPendientes", () => {
     });
   });
 
-  it("con n8n configurado entrega WhatsApp por el webhook", async () => {
-    config.n8nWhatsappWebhookUrl = "https://n8n.ejemplo.com/webhook/whatsapp";
+  const respuestaWhatsappOk = () =>
+    new Response(JSON.stringify({ messages: [{ id: "wamid.HBgTEST==", message_status: "accepted" }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+  it("con WhatsApp configurado entrega por la API con los datos del usuario", async () => {
+    config.whatsappEnabled = true;
     prismaMock.notificaciones.findMany.mockResolvedValueOnce([fila(WHATSAPP)]);
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(respuestaWhatsappOk());
 
     await despacharPendientes();
 
-    expect(fetchMock).toHaveBeenCalledWith(config.n8nWhatsappWebhookUrl, expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://graph.facebook.com/v25.0/1352051977997191/messages",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Authorization: "Bearer token-de-prueba",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+
     const body = JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body) as {
-      telefono: string;
+      messaging_product: string;
+      to: string;
+      type: string;
+      template: {
+        name: string;
+        language: { code: string };
+        components: Array<{ type: string; parameters: Array<{ type: string; text: string }> }>;
+      };
     };
-    expect(body.telefono).toBe(PACIENTE.telefono);
+    expect(body.messaging_product).toBe("whatsapp");
+    expect(body.to).toBe("523111234567");
+    expect(body.type).toBe("template");
+    expect(body.template.name).toBe("psicoagenda_aviso_de_cita");
+    expect(body.template.language.code).toBe("es_MX");
+    expect(body.template.components[0]!.parameters.map((parametro) => parametro.text)).toEqual([
+      PACIENTE.nombre_completo,
+      "Mensaje",
+      expect.stringContaining("2026"),
+    ]);
     expect(estadosActualizados()).toEqual([estado_envio.ENVIADA]);
+    fetchMock.mockRestore();
+  });
+
+  it("usa el teléfono de cada destinatario, no un número fijo", async () => {
+    config.whatsappEnabled = true;
+    prismaMock.notificaciones.findMany.mockResolvedValueOnce([fila(WHATSAPP, "5512345678")]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(respuestaWhatsappOk());
+
+    await despacharPendientes();
+
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body) as {
+      to: string;
+    };
+    expect(body.to).toBe("525512345678");
+    expect(estadosActualizados()).toEqual([estado_envio.ENVIADA]);
+    fetchMock.mockRestore();
+  });
+
+  it("si la API de WhatsApp falla deja la fila pendiente con el error", async () => {
+    config.whatsappEnabled = true;
+    prismaMock.notificaciones.findMany.mockResolvedValueOnce([fila(WHATSAPP)]);
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response("token inválido", { status: 401 }));
+
+    await despacharPendientes();
+
+    expect(prismaMock.notificaciones.update).toHaveBeenCalledWith({
+      where: { id: "n-WHATSAPP" },
+      data: {
+        estado: estado_envio.PENDIENTE,
+        error: "WhatsApp respondió 401: token inválido",
+      },
+    });
     fetchMock.mockRestore();
   });
 });
