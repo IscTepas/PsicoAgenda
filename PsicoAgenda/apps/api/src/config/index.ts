@@ -20,17 +20,9 @@ const toPort = (value: string | undefined, fallback: number): number => {
 
 /**
  * Credenciales de la API de WhatsApp Business (Cloud API).
- *
- * `PHONE_IDE` y `VERIFY_TOKEN` son los nombres que ya usa el `.env` del
- * proyecto; se aceptan también los nombres estándar `WHATSAPP_PHONE_ID` y
- * `WHATSAPP_ACCESS_TOKEN` para no atar el código al nombre histórico.
  */
-const whatsappPhoneId = (process.env.WHATSAPP_PHONE_ID ?? process.env.PHONE_IDE ?? "").trim();
-const whatsappAccessToken = (
-  process.env.WHATSAPP_ACCESS_TOKEN ??
-  process.env.VERIFY_TOKEN ??
-  ""
-).trim();
+const whatsappPhoneId = (process.env.WHATSAPP_PHONE_ID ?? "").trim();
+const whatsappAccessToken = (process.env.WHATSAPP_ACCESS_TOKEN ?? "").trim();
 const whatsappTemplateName =
   (process.env.WHATSAPP_TEMPLATE_NAME ?? "").trim() || "jaspers_market_order_confirmation_v1";
 const whatsappTemplateLanguage = (process.env.WHATSAPP_TEMPLATE_LANG ?? "").trim() || "en_US";
