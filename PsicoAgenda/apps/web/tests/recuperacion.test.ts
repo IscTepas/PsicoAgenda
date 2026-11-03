@@ -16,6 +16,7 @@ vi.mock("@/lib/supabase/client", () => ({
 }))
 
 import {
+  esContrasenaRepetida,
   esEnlaceInvalido,
   mensajeDeRecuperacion,
   recuperacionService,
@@ -52,6 +53,11 @@ describe("errores", () => {
   it("un token vencido o usado lleva a la pantalla de enlace inválido", () => {
     expect(esEnlaceInvalido(new ApiError(400, "TOKEN_INVALIDO", "x"))).toBe(true)
     expect(esEnlaceInvalido(new ApiError(400, "VALIDATION_ERROR", "x"))).toBe(false)
+  })
+
+  it("reutilizar la contraseña actual tiene su propio mensaje", () => {
+    expect(esContrasenaRepetida(new ApiError(400, "CONTRASENA_REPETIDA", "x"))).toBe(true)
+    expect(esContrasenaRepetida(new ApiError(400, "TOKEN_INVALIDO", "x"))).toBe(false)
   })
 
   it("el exceso de solicitudes tiene su propio mensaje", () => {

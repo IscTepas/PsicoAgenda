@@ -247,6 +247,8 @@ export interface ClinicalRecord {
   background?: string;
   generalObservations?: string;
   status: RecordStatus;
+  /** Consentimientos del paciente, del más reciente al más antiguo. */
+  consents: InformedConsent[];
   updatedAt: Date;
 }
 
@@ -275,6 +277,9 @@ export interface Notification {
   error?: string;
   attempts: number;
   readAt?: Date;
+  externalMessageId?: string;
+  deliveryStatus?: string;
+  deliveredAt?: Date;
   createdAt: Date;
 }
 

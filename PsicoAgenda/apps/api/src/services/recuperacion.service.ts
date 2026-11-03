@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { config } from "@/config";
 import { prisma } from "@/lib/prisma";
-import { actualizarContrasena } from "@/lib/supabase-admin";
+import { actualizarContrasena, esContrasenaActual } from "@/lib/supabase-admin";
 import { cacheRegistro } from "@/services/codigo-cache.repo";
 import { enviarEnlaceRecuperacion } from "@/services/mailer.service";
 import { AppError } from "@/utils/app-error";
@@ -74,6 +74,16 @@ export async function confirmarRecuperacion(token: string, password: string): Pr
       400,
       "Este enlace ya no es válido. Pide uno nuevo.",
       "TOKEN_INVALIDO",
+    );
+  }
+
+  // Se comprueba antes de consumir el enlace: si la contraseña es la misma, el
+  // usuario puede corregirla y reintentar con el mismo token.
+  if (await esContrasenaActual(userId, password)) {
+    throw new AppError(
+      400,
+      "La nueva contraseña debe ser distinta de la que usas ahora.",
+      "CONTRASENA_REPETIDA",
     );
   }
 

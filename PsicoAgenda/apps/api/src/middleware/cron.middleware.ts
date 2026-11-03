@@ -8,7 +8,8 @@ import { config } from "@/config";
  * POR QUÉ EXISTE
  * --------------
  * El despacho de notificaciones es una URL pública con efectos reales: envía
- * correos por Gmail y mensajes de WhatsApp por n8n a pacientes. Sin secreto,
+ * correos por Gmail y mensajes de WhatsApp por la API de WhatsApp Business a
+ * pacientes. Sin secreto,
  * cualquiera que descubra la URL puede agotar la cuota de correo, mandar
  * mensajes desde el número del consultorio o saturar el pool de conexiones.
  *

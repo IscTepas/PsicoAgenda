@@ -398,7 +398,7 @@ PsicoAgenda incorporará medidas de seguridad acordes con la naturaleza confiden
 |---|---|
 | Conectividad | Requiere acceso a internet para el envío de mensajes y recordatorios. |
 | Privacidad | Los datos del paciente deben almacenarse conforme a la Ley de Protección de Datos. |
-| Compatibilidad | El sistema debe ser compatible con navegadores modernos y WhatsApp API. |
+| Compatibilidad | El sistema debe ser compatible con navegadores modernos y la API de WhatsApp Business. |
 
 ### 10.2 Supuestos y dependencias
 
@@ -407,7 +407,7 @@ PsicoAgenda incorporará medidas de seguridad acordes con la naturaleza confiden
 - Los pacientes utilizan WhatsApp como medio de comunicación principal.
 
 **Dependencias:**
-- API de WhatsApp Business.
+- API de WhatsApp Business (Cloud API).
 - Servidor o hosting para base de datos y aplicaciones web.
 
 ---

@@ -23,3 +23,28 @@
 ## Workflow follow-up
 
 - Archivar el cambio cuando un preview haya operado de extremo a extremo sin tocar producción.
+
+## Runbook de las tareas pendientes
+
+Las tareas 1.x, 2.x y 3.x requieren credenciales y consolas externas. La
+automatización está en `PsicoAgenda/scripts/` y el detalle operativo en el README
+(«Entornos»).
+
+1. **Proyecto aislado (1.1–1.3).** Crear un proyecto Supabase distinto al de
+   producción. Ejecutar `preparar-proyecto-aislado.mjs --solo-bootstrap` para
+   crear el rol `prisma` y guardar la contraseña que aparece en el notice; después
+   ejecutar el script completo con `PREVIEW_PRISMA_DATABASE_URL`. El script aplica
+   las 15 migraciones, `grants.sql`, los cuatro triggers y los datos sintéticos
+   (`demo_accounts.sql` + `demo_data.sql`), y verifica conteos y paridad.
+2. **Vercel (2.1).** Definir las variables de producción solo con alcance
+   Production y las de Preview apuntando al proyecto aislado, con
+   `ENTORNO_BD=preview`. En el frontend, `NEXT_PUBLIC_SUPABASE_*` y
+   `NEXT_PUBLIC_API_URL` de Preview también deben apuntar al entorno aislado.
+3. **Preview sin configuración (2.2).** Desplegar una rama sin `ENTORNO_BD` ni
+   variables de Preview y comprobar que el arranque falla con el mensaje que
+   menciona `ENTORNO_BD=preview`. El candado ya está cubierto por
+   `apps/api/tests/config.preview.test.ts`.
+4. **Aislamiento (3.1–3.2).** Ejecutar `verificar-aislamiento.mjs` (deja una marca
+   en la base aislada y confirma que no existe en producción), recorrer login,
+   agenda y expediente en el preview y volver a ejecutarlo para comparar los
+   conteos de producción antes y después.

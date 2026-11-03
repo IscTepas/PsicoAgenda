@@ -48,6 +48,10 @@ La migración crea la tabla puente, copia cada `pacientes.tutor_legal_id` como v
 
 **Riesgo:** es la migración más delicada del proyecto hasta ahora. Se ejecuta primero en el entorno aislado, con respaldo reciente.
 
+### 6. El consentimiento conserva a su firmante
+
+`consentimientos_informados.tutor_legal_id` no se migra ni se elimina: sigue apuntando a la persona que firmó. El expediente consulta esos consentimientos por paciente e incluye al tutor resuelto, de modo que el firmante histórico se sigue mostrando aunque el vínculo con el menor ya no exista.
+
 ## Risks / Trade-offs
 
 - **Migración destructiva.** Se mitiga con el orden anterior, la verificación por conteo y una copia previa.

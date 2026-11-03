@@ -161,6 +161,12 @@ model notificaciones {
   error           String?
   intentos        Int                @default(0)
   leida_en        DateTime?          @db.Timestamptz(3)
+  /** ID del mensaje en WhatsApp Business API (wamid...). */
+  mensaje_externo_id String?         @db.VarChar(255)
+  /** Último estado reportado por WhatsApp: accepted, delivered, read, failed, sent. */
+  estado_entrega  String?            @db.VarChar(50)
+  /** Momento del último estado reportado por WhatsApp. */
+  entregada_en    DateTime?          @db.Timestamptz(3)
   creado_en       DateTime           @default(now()) @db.Timestamptz(3)
   citas           citas?             @relation(fields: [cita_id], references: [id], onDelete: Cascade)
   usuarios        usuarios           @relation(fields: [usuario_id], references: [id])

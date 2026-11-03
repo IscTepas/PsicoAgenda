@@ -41,6 +41,10 @@ Ya está en la base, tiene TTL por fila y un barrido periódico en el despacho. 
 
 El enlace se construye en la API con la URL pública del frontend, y el token nunca se expone al cliente antes de tiempo.
 
+### 5. La contraseña nueva debe ser distinta de la actual
+
+El proveedor no expone una comprobación administrativa de contraseña. Antes de actualizarla se prueba el endpoint de token con el correo de la cuenta y la contraseña propuesta: un `invalid_credentials` significa que es distinta. Se usa `fetch` para no dejar una sesión guardada en el proceso compartido. Si la contraseña coincide se responde `400 CONTRASENA_REPETIDA` sin consumir el token; si el proveedor no responde, se falla cerrado (`503`) y el enlace sigue vigente.
+
 ## Risks / Trade-offs
 
 - **Dependencia del SMTP de Gmail**, con su límite diario. Es el mismo riesgo que ya asume el registro; migrar a un proveedor transaccional es un cambio aparte.

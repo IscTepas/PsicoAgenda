@@ -16,6 +16,10 @@ export default defineConfig({
       // para que `@/utils/jwt` pueda construir el JWKS al importarse; ninguna prueba
       // contacta el proyecto real (el verificador se somete a `vi.mock`).
       SUPABASE_URL: "https://proyecto-prueba.supabase.co",
+      // Nunca enviar WhatsApp real al correr la suite, aunque el `.env` local
+      // tenga credenciales de la API de WhatsApp Business.
+      PHONE_IDE: "",
+      VERIFY_TOKEN: "",
     },
   },
 });

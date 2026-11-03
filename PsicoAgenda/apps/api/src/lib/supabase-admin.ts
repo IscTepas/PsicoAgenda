@@ -92,6 +92,69 @@ export async function existeCuenta(email: string): Promise<boolean> {
   );
 }
 
+/**
+ * ¿La contraseña indicada es la que la cuenta tiene ahora?
+ *
+ * El proveedor no expone una comprobación administrativa de contraseña: solo la
+ * valida al iniciar sesión. Se prueba el endpoint de token con el correo de la
+ * cuenta y se descarta la respuesta; se usa `fetch` en vez del cliente para no
+ * dejar una sesión guardada en el proceso compartido. Solo `invalid_credentials`
+ * prueba que la contraseña es distinta; cualquier otro fallo se propaga para no
+ * cambiar la contraseña sin haber podido comparar.
+ */
+export async function esContrasenaActual(userId: string, password: string): Promise<boolean> {
+  const { data, error } = await obtenerSupabaseAdmin().auth.admin.getUserById(userId);
+  if (error || !data.user?.email) {
+    console.error("[recuperacion] No se pudo leer la cuenta para comparar la contraseña:", error);
+    throw new AppError(
+      503,
+      "No se pudo verificar la contraseña. Intenta de nuevo más tarde.",
+      "AUTH_ERROR",
+    );
+  }
+
+  let respuesta: Response;
+  try {
+    respuesta = await fetch(`${config.supabaseUrl}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: config.supabaseServiceRoleKey,
+        Authorization: `Bearer ${config.supabaseServiceRoleKey}`,
+      },
+      body: JSON.stringify({ email: data.user.email, password }),
+    });
+  } catch (errorFetch) {
+    console.error("[recuperacion] No se pudo comparar la contraseña actual:", errorFetch);
+    throw new AppError(
+      503,
+      "No se pudo verificar la contraseña. Intenta de nuevo más tarde.",
+      "AUTH_ERROR",
+    );
+  }
+
+  if (respuesta.ok) return true;
+
+  const cuerpo = (await respuesta.json().catch(() => ({}))) as { error_code?: string };
+  // Cuenta sin confirmar: no hay una contraseña vigente que el usuario pueda
+  // reutilizar para entrar, así que el cambio puede continuar.
+  if (
+    respuesta.status === 400 &&
+    (cuerpo.error_code === "invalid_credentials" || cuerpo.error_code === "email_not_confirmed")
+  ) {
+    return false;
+  }
+
+  console.error(
+    `[recuperacion] No se pudo comparar la contraseña actual: HTTP ${respuesta.status} ${cuerpo.error_code ?? ""}`,
+  );
+  throw new AppError(
+    503,
+    "No se pudo verificar la contraseña. Intenta de nuevo más tarde.",
+    "AUTH_ERROR",
+  );
+}
+
 /** Fija una contraseña nueva a una cuenta existente (recuperación por enlace). */
 export async function actualizarContrasena(userId: string, password: string): Promise<void> {
   const { error } = await obtenerSupabaseAdmin().auth.admin.updateUserById(userId, { password });

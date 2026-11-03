@@ -27,6 +27,7 @@ import {
 import {
   AppointmentModality,
   AppointmentStatus,
+  ConsentStatus,
   type Appointment,
   type ClinicalRecord,
   type Patient,
@@ -71,6 +72,20 @@ const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
   [AppointmentStatus.CANCELLED]: { label: "Cancelada", dot: "bg-destructive" },
   [AppointmentStatus.COMPLETED]: { label: "Completada", dot: "bg-muted-foreground/50" },
   [AppointmentStatus.NO_SHOW]: { label: "No asistió", dot: "bg-muted-foreground/50" },
+}
+
+const CONSENT_STATUS: Record<ConsentStatus, { label: string; className: string; dot: string }> = {
+  [ConsentStatus.SIGNED]: { label: "Vigente", className: "bg-primary/10 text-primary", dot: "bg-primary" },
+  [ConsentStatus.EXPIRED]: {
+    label: "Vencido",
+    className: "bg-muted text-muted-foreground",
+    dot: "bg-muted-foreground/50",
+  },
+  [ConsentStatus.WITHDRAWN]: {
+    label: "Retirado",
+    className: "bg-destructive/10 text-destructive",
+    dot: "bg-destructive",
+  },
 }
 
 function calculateAge(birthDate?: Date): number | null {
@@ -153,6 +168,7 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
 
   const hydrated = useHydrated()
   const age = hydrated && patient ? calculateAge(patient.birthDate) : null
+  const consents = record?.consents ?? []
 
   // Associated session date for modal read-only field
   const associatedAppointment = React.useMemo(() => {
@@ -582,23 +598,58 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
                 <span>Consentimiento Informado y Protección de Datos</span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="size-2 rounded-full bg-primary" aria-hidden="true" />
-                  <span className="text-xs font-semibold text-foreground">
-                    Consentimiento Informado Vigente y Firmado
-                  </span>
+            <CardContent className="pt-4 space-y-3">
+              {consents.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-4 text-center text-xs text-muted-foreground">
+                  Aún no hay consentimientos informados registrados para este paciente.
                 </div>
-                <p className="text-xs text-muted-foreground max-w-xl">
-                  El paciente o su tutor legal ha firmado digitalmente el consentimiento informado para la atención psicológica y el tratamiento de datos sensibles bajo la LFPDPPP.
-                </p>
-              </div>
+              ) : (
+                consents.map((consent) => {
+                  const estado = CONSENT_STATUS[consent.status]
+                  return (
+                    <div
+                      key={consent.id}
+                      className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`size-2 rounded-full ${estado.dot}`} aria-hidden="true" />
+                          <span className="text-xs font-semibold text-foreground">
+                            Consentimiento {estado.label.toLowerCase()}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground max-w-xl">
+                          Firmado el {formatShortDate(consent.signedAt)} por{" "}
+                          <strong className="font-semibold text-foreground">
+                            {consent.legalGuardian?.name ?? "el propio paciente"}
+                          </strong>
+                          {consent.legalGuardian ? " (tutor legal)" : ""}.
+                          {consent.withdrawnAt
+                            ? ` Retirado el ${formatShortDate(consent.withdrawnAt)}.`
+                            : ""}
+                        </p>
+                        {consent.documentUrl ? (
+                          <Link
+                            href={consent.documentUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-medium text-primary hover:underline"
+                          >
+                            Ver documento
+                          </Link>
+                        ) : null}
+                      </div>
 
-              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                Firmado digitalmente
-              </span>
+                      <span
+                        className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${estado.className}`}
+                      >
+                        <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                        {estado.label}
+                      </span>
+                    </div>
+                  )
+                })
+              )}
             </CardContent>
           </Card>
         </TabsContent>

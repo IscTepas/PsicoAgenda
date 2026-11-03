@@ -16,6 +16,10 @@ export const recuperacionService = {
 export const esEnlaceInvalido = (error: unknown): boolean =>
   error instanceof ApiError && error.code === "TOKEN_INVALIDO"
 
+/** ¿La contraseña elegida es la misma que la cuenta ya tiene? */
+export const esContrasenaRepetida = (error: unknown): boolean =>
+  error instanceof ApiError && error.code === "CONTRASENA_REPETIDA"
+
 export function mensajeDeRecuperacion(error: unknown): string {
   if (error instanceof ApiError && error.status === 429) {
     return "Pediste varios enlaces seguidos. Espera unos minutos antes de pedir otro."
