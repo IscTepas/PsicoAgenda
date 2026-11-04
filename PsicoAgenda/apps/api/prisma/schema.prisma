@@ -167,6 +167,8 @@ model notificaciones {
   estado_entrega  String?            @db.VarChar(50)
   /** Momento del último estado reportado por WhatsApp. */
   entregada_en    DateTime?          @db.Timestamptz(3)
+  /** Nombre de la plantilla de WhatsApp que debe usarse para este aviso. */
+  plantilla_whatsapp String?         @db.VarChar(255)
   creado_en       DateTime           @default(now()) @db.Timestamptz(3)
   citas           citas?             @relation(fields: [cita_id], references: [id], onDelete: Cascade)
   usuarios        usuarios           @relation(fields: [usuario_id], references: [id])

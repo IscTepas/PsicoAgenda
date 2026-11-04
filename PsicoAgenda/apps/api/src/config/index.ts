@@ -23,12 +23,49 @@ const toPort = (value: string | undefined, fallback: number): number => {
  */
 const whatsappPhoneId = (process.env.WHATSAPP_PHONE_ID ?? "").trim();
 const whatsappAccessToken = (process.env.WHATSAPP_ACCESS_TOKEN ?? "").trim();
-const whatsappTemplateName =
-  (process.env.WHATSAPP_TEMPLATE_NAME ?? "").trim() || "jaspers_market_order_confirmation_v1";
 const whatsappTemplateLanguage = (process.env.WHATSAPP_TEMPLATE_LANG ?? "").trim() || "en_US";
 const whatsappApiVersion = ((process.env.WHATSAPP_API_VERSION ?? "").trim() || "v25.0").replace(
   /^\/+|\/+$/g,
   "",
+);
+
+/**
+ * Plantillas de WhatsApp.
+ *
+ * Si se define `WHATSAPP_TEMPLATE_NAME`, todas las notificaciones usan esa
+ * plantilla única (útil para pruebas con plantillas sin parámetros).
+ * Si no, se usa un mapeo por tipo de aviso:
+ *   - avisos al profesional (solicitudes/cancelaciones del paciente)
+ *   - avisos al paciente (confirmaciones/agendaciones/modificaciones)
+ *   - cancelaciones/rechazos al paciente
+ *   - recordatorios
+ *
+ * Todas las plantillas por tipo esperan 3 parámetros posicionales:
+ * {{1}} nombre del destinatario, {{2}} asunto del aviso, {{3}} fecha/hora.
+ * La plantilla única puede configurarse con `WHATSAPP_TEMPLATE_PARAMS`.
+ */
+const whatsappTemplateName = (process.env.WHATSAPP_TEMPLATE_NAME ?? "").trim();
+const whatsappTemplatePsychologist =
+  (process.env.WHATSAPP_TEMPLATE_PSYCHOLOGIST ?? "").trim() || "psicoagenda_aviso_profesional";
+const whatsappTemplatePatientNotice =
+  (process.env.WHATSAPP_TEMPLATE_PATIENT_NOTICE ?? "").trim() || "psicoagenda_aviso_paciente";
+const whatsappTemplatePatientCancellation =
+  (process.env.WHATSAPP_TEMPLATE_PATIENT_CANCELLATION ?? "").trim() ||
+  "psicoagenda_cancelacion_paciente";
+const whatsappTemplateReminder =
+  (process.env.WHATSAPP_TEMPLATE_REMINDER ?? "").trim() || "psicoagenda_recordatorio";
+
+const toTemplateParams = (value: string | undefined, templateName: string): number => {
+  if (value) {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isNaN(parsed) && parsed >= 0) return parsed;
+  }
+  if (templateName === "jaspers_market_plain_text_v1") return 0;
+  return 3;
+};
+const whatsappTemplateParams = toTemplateParams(
+  process.env.WHATSAPP_TEMPLATE_PARAMS,
+  whatsappTemplateName || whatsappTemplatePsychologist,
 );
 
 /**
@@ -132,10 +169,16 @@ export const config = {
   whatsappPhoneId,
   whatsappAccessToken,
   whatsappEnabled: Boolean(whatsappPhoneId && whatsappAccessToken),
-  /** Plantilla aprobada: {{1}} nombre, {{2}} mensaje y {{3}} fecha/hora. */
+  /** Plantilla única (opcional). Si está definida, se usa para todo. */
   whatsappTemplateName,
+  whatsappTemplatePsychologist,
+  whatsappTemplatePatientNotice,
+  whatsappTemplatePatientCancellation,
+  whatsappTemplateReminder,
   whatsappTemplateLanguage,
   whatsappApiVersion,
+  /** Número de parámetros de cuerpo que espera la plantilla configurada. */
+  whatsappTemplateParams,
   /**
    * Token que Meta exige al suscribir el webhook de entregas de WhatsApp.
    * Si falta, el endpoint GET de verificación responde 403.

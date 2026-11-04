@@ -392,6 +392,35 @@ const paraTutor = (texto: { asunto: string; mensaje: string }, paciente: Destina
 const HORA = 60 * 60_000;
 
 /**
+ * Devuelve el nombre de la plantilla de WhatsApp que corresponde a cada evento.
+ * Si el administrador configuró una plantilla única global, se ignora este
+ * mapeo y se usa la global.
+ */
+function plantillaParaEvento(evento: EventoCita | "RECORDATORIO_24H" | "RECORDATORIO_2H"): string {
+  if (config.whatsappTemplateName) return config.whatsappTemplateName;
+
+  switch (evento) {
+    case "SOLICITUD_CREADA":
+    case "CITA_SOLICITADA":
+    case "SOLICITUD_CANCELADA":
+    case "CITA_CANCELADA_POR_PACIENTE":
+      return config.whatsappTemplatePsychologist;
+    case "SOLICITUD_ACEPTADA":
+    case "CITA_AGENDADA":
+    case "CITA_MODIFICADA":
+      return config.whatsappTemplatePatientNotice;
+    case "SOLICITUD_RECHAZADA":
+    case "CITA_CANCELADA_POR_PSICOLOGO":
+      return config.whatsappTemplatePatientCancellation;
+    case "RECORDATORIO_24H":
+    case "RECORDATORIO_2H":
+      return config.whatsappTemplateReminder;
+    default:
+      return config.whatsappTemplateReminder;
+  }
+}
+
+/**
  * Recordatorios de una cita activa: 24 h antes por los tres canales y 2 h antes
  * solo por WhatsApp. Siempre se reemplazan los pendientes, así que llamarlo de
  * nuevo tras mover la cita los reprograma.
@@ -432,6 +461,7 @@ async function programarRecordatorios(
           asunto,
           mensaje,
           programada_para: programadaPara,
+          plantilla_whatsapp: plantillaParaEvento(clave),
         });
       }
     }
@@ -490,6 +520,8 @@ export async function notificar(evento: EventoCita, aviso: CitaAviso): Promise<v
     const destinatarios = regla.para === "paciente" ? [paciente, ...tutores] : [destinatario];
     const ahora = new Date();
 
+    const plantillaWhatsapp = plantillaParaEvento(evento);
+
     const data = destinatarios.flatMap((persona) => {
       const texto = redactar(evento, aviso, persona, contraparte.nombre_completo);
       const { asunto, mensaje } = persona === destinatario ? texto : paraTutor(texto, paciente);
@@ -502,6 +534,7 @@ export async function notificar(evento: EventoCita, aviso: CitaAviso): Promise<v
         asunto,
         mensaje,
         programada_para: ahora,
+        plantilla_whatsapp: canal === canal_notificacion.WHATSAPP ? plantillaWhatsapp : null,
       }));
     });
 
@@ -576,8 +609,11 @@ const formatearFechaWhatsapp = (fila: FilaPendiente): string => {
 
 /**
  * WhatsApp sale por la API de WhatsApp Business (Cloud API), no por un webhook.
- * La plantilla aprobada recibe tres parámetros de cuerpo en este orden:
- * nombre del destinatario, mensaje del aviso y fecha/hora de la cita.
+ * Cada fila puede traer su propia plantilla (`plantilla_whatsapp`); si no, se
+ * usa la plantilla única configurada globalmente. La plantilla puede recibir
+ * 0 o 3 parámetros de cuerpo. Cuando admite 3, el orden es:
+ * nombre del destinatario, asunto del aviso y fecha/hora de la cita.
+ * Cuando admite 0, se envía la plantilla tal cual.
  */
 async function enviarWhatsapp(fila: FilaPendiente): Promise<{ id: string; status: string }> {
   if (!config.whatsappEnabled) {
@@ -587,6 +623,24 @@ async function enviarWhatsapp(fila: FilaPendiente): Promise<{ id: string; status
   const telefono = normalizarTelefonoWhatsapp(fila.usuarios.telefono);
   if (!telefono) {
     throw new Error("El destinatario no tiene un teléfono válido para WhatsApp");
+  }
+
+  const parametrosCuerpo =
+    config.whatsappTemplateParams > 0
+      ? [
+          { type: "text", text: fila.usuarios.nombre_completo },
+          { type: "text", text: fila.asunto },
+          { type: "text", text: formatearFechaWhatsapp(fila) },
+        ]
+      : [];
+
+  const nombrePlantilla = fila.plantilla_whatsapp || config.whatsappTemplateName;
+  const template: Record<string, unknown> = {
+    name: nombrePlantilla,
+    language: { code: config.whatsappTemplateLanguage },
+  };
+  if (parametrosCuerpo.length > 0) {
+    template.components = [{ type: "body", parameters: parametrosCuerpo }];
   }
 
   const url = `https://graph.facebook.com/${config.whatsappApiVersion}/${config.whatsappPhoneId}/messages`;
@@ -600,20 +654,7 @@ async function enviarWhatsapp(fila: FilaPendiente): Promise<{ id: string; status
       messaging_product: "whatsapp",
       to: telefono,
       type: "template",
-      template: {
-        name: config.whatsappTemplateName,
-        language: { code: config.whatsappTemplateLanguage },
-        components: [
-          {
-            type: "body",
-            parameters: [
-              { type: "text", text: fila.usuarios.nombre_completo },
-              { type: "text", text: fila.mensaje },
-              { type: "text", text: formatearFechaWhatsapp(fila) },
-            ],
-          },
-        ],
-      },
+      template,
     }),
     signal: AbortSignal.timeout(15_000),
   });
