@@ -63,13 +63,5 @@ export function useThemePreference() {
     notify()
   }, [])
 
-  /** Vuelve al tema de la marca: automático + paleta por defecto. */
-  const reset = useCallback(() => {
-    const prefs = { mode: "system" as const, palette: "default" as const }
-    writePreferences(prefs)
-    applyTheme(prefs)
-    notify()
-  }, [])
-
-  return { mode, palette, setMode, setPalette, reset }
+  return { mode, palette, setMode, setPalette }
 }

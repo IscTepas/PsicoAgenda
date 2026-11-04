@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Contrast, Monitor, Moon, RotateCcw, Sun } from "lucide-react";
+import { Check, Contrast, Monitor, Moon, Sun } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs";
-import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   resolveIsDark,
@@ -19,7 +19,8 @@ const ICONOS = { light: Sun, dark: Moon, system: Monitor } as const;
 /**
  * Selector de tema en dos decisiones independientes:
  * - modo (claro/oscuro/automático) como control segmentado con el activo resaltado;
- * - paleta como tarjetas con muestras, y "Alto contraste" aparte por accesibilidad.
+ * - paleta como tarjetas con muestras (la primera, "Original", es la de la marca);
+ * - "Alto contraste" aparte, como interruptor de accesibilidad.
  *
  * Las muestras se pintan con las variables del propio tema (`data-theme` +
  * `dark` en el contenedor), así no se duplican colores en el componente.
@@ -29,13 +30,14 @@ export function ThemePicker({
   palette,
   onModeChange,
   onPaletteChange,
-  onReset,
+  onContrastChange,
 }: {
   mode: ThemeMode;
   palette: ThemePalette;
   onModeChange: (mode: ThemeMode) => void;
   onPaletteChange: (palette: ThemePalette) => void;
-  onReset: () => void;
+  /** Apagarlo devuelve a una paleta estética; cuál, lo decide quien usa el selector. */
+  onContrastChange: (on: boolean) => void;
 }) {
   // Se resuelve en el cliente para previsualizar cada paleta tal como se verá,
   // sin desajustes de hidratación.
@@ -49,7 +51,7 @@ export function ThemePicker({
     return () => mq.removeEventListener("change", actualizar);
   }, [mode]);
 
-  const yaEsPredeterminado = mode === "system" && palette === "default";
+  const contraste = palette === THEME_ACCESSIBILITY.value;
 
   return (
     <div className="space-y-3">
@@ -75,9 +77,9 @@ export function ThemePicker({
         </TabsList>
       </Tabs>
 
-      {/* Paletas estéticas: 3×2 exacta */}
+      {/* Paletas estéticas: Original + seis */}
       <div
-        className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-4"
         role="group"
         aria-label="Paletas de color"
       >
@@ -118,40 +120,18 @@ export function ThemePicker({
         })}
       </div>
 
-      {/* Accesibilidad: separada del resto y con el restablecer al lado */}
-      <div className="flex flex-col gap-2 border-t border-border/60 pt-3 sm:flex-row sm:items-center">
-        <button
-          type="button"
-          onClick={() => onPaletteChange(THEME_ACCESSIBILITY.value)}
-          aria-pressed={palette === THEME_ACCESSIBILITY.value}
-          className={cn(
-            "flex flex-1 items-center gap-2 rounded-xl border p-2.5 text-left transition-all",
-            palette === THEME_ACCESSIBILITY.value
-              ? "border-primary bg-primary/5 ring-2 ring-primary/25"
-              : "border-border/70 hover:border-border hover:bg-muted/50"
-          )}
-        >
-          <Contrast className="size-4 shrink-0 text-primary" />
-          <span className="text-xs font-medium text-foreground">{THEME_ACCESSIBILITY.label}</span>
-          <span className="text-[10px] text-muted-foreground">Accesibilidad</span>
-          {palette === THEME_ACCESSIBILITY.value ? (
-            <Check className="ml-auto size-3.5 text-primary" />
-          ) : null}
-        </button>
-
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={onReset}
-          disabled={yaEsPredeterminado}
-          title="Volver al tema de la marca (automático)"
-          className="h-9 shrink-0 rounded-xl text-xs"
-        >
-          <RotateCcw className="mr-1.5 size-3.5" />
-          Restablecer
-        </Button>
-      </div>
+      {/* Accesibilidad: un interruptor aparte de las paletas */}
+      <label className="flex cursor-pointer items-center gap-2 border-t border-border/60 pt-3">
+        <Contrast className="size-4 shrink-0 text-primary" />
+        <span className="text-xs font-medium text-foreground">{THEME_ACCESSIBILITY.label}</span>
+        <span className="text-[10px] text-muted-foreground">Accesibilidad</span>
+        <Switch
+          className="ml-auto"
+          checked={contraste}
+          onCheckedChange={onContrastChange}
+          aria-label={`${contraste ? "Desactivar" : "Activar"} ${THEME_ACCESSIBILITY.label.toLowerCase()}`}
+        />
+      </label>
     </div>
   );
 }

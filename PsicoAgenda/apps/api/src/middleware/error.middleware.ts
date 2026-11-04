@@ -15,6 +15,14 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
+  // Un CHECK de la base (23514) es un dato inválido que la validación no atajó: 400, no 500.
+  if (err instanceof Error && /\b23514\b|check constraint/.test(err.message)) {
+    res.status(400).json({
+      error: { code: "DATOS_INVALIDOS", message: "Algún dato no es válido. Revisa los campos e inténtalo de nuevo." },
+    });
+    return;
+  }
+
   console.error(err);
 
   res.status(500).json({

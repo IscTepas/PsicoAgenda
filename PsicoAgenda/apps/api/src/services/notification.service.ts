@@ -4,6 +4,7 @@ import {
   NotificationChannel as SharedChannel,
   NotificationStatus as SharedStatus,
   type Notification,
+  type NotificationKind,
 } from "@psicoagenda/shared";
 import type { Prisma } from "@/generated/prisma/client";
 import {
@@ -45,10 +46,22 @@ const toSharedChannel = (channel: canal_notificacion): SharedChannel => {
   }
 };
 
+const KINDS: Record<tipo_notificacion, NotificationKind> = {
+  RECORDATORIO: "reminder",
+  CONFIRMACION: "confirmation",
+  CAMBIO: "change",
+  CANCELACION: "cancellation",
+  SOLICITUD: "request",
+  RECHAZO: "rejection",
+  ASISTENCIA: "attendance",
+};
+
 const toNotification = (row: NotificationRow): Notification => ({
   id: row.id,
   patientId: row.usuario_id,
   appointmentId: row.cita_id ?? undefined,
+  requestId: row.solicitud_id ?? undefined,
+  kind: KINDS[row.tipo],
   channel: toSharedChannel(row.canal),
   subject: row.asunto,
   message: row.mensaje,
@@ -204,6 +217,8 @@ export const REGLAS: Record<EventoCita, Regla> = {
 /** Datos de la cita (o de la solicitud) que describe el aviso. */
 export interface CitaAviso {
   citaId?: string;
+  /** Avisos de una solicitud: a cuál se refieren (la interfaz lleva a responderla). */
+  solicitudId?: string;
   pacienteId: string;
   psicologoId: string;
   inicio: Date;
@@ -529,6 +544,7 @@ export async function notificar(evento: EventoCita, aviso: CitaAviso): Promise<v
         id: randomUUID(),
         usuario_id: persona.id,
         cita_id: aviso.citaId ?? null,
+        solicitud_id: aviso.solicitudId ?? null,
         tipo: regla.tipo,
         canal,
         asunto,

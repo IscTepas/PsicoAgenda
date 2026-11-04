@@ -54,7 +54,10 @@ import {
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
 import { useHydrated } from "@/lib/use-hydrated"
+import { cn } from "@/lib/utils"
 import { Calendar } from "@/components/arc/calendar/calendar"
+import { ChipGroup } from "@/components/arc/chip-group/chip-group"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
 import { useToast } from "@/components/toast-provider"
 import {
   addMonths,
@@ -279,20 +282,18 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const [modality, setModality] = React.useState<AppointmentModality | null>(
     initialAppointment?.modality ?? null
   )
-  const [reason, setReason] = React.useState<string>(initialAppointment?.reason || "")
-  // Motivo del catálogo: categoría → motivo; «Otro» revela el texto libre.
-  const [reasonId, setReasonId] = React.useState<string>(initialAppointment?.reasonId ?? "")
-  const [reasonCategory, setReasonCategory] = React.useState<string>("")
+  // Motivos del catálogo (uno o varios, como chips); «Otro» abre el texto libre.
+  const [reasonIds, setReasonIds] = React.useState<string[]>(initialAppointment?.reasonIds ?? [])
+  const [reason, setReason] = React.useState<string>(initialAppointment?.reasonOther ?? "")
   const { data: reasonGroups = [] } = useQuery({
     queryKey: ["motivos-consulta"],
     queryFn: consultationReasonService.listActive,
     staleTime: 10 * 60_000,
   })
-  const selectedReason = reasonGroups.flatMap((g) => g.reasons).find((r) => r.id === reasonId)
-  const activeReasonCategory =
-    reasonCategory || reasonGroups.find((g) => g.reasons.some((r) => r.id === reasonId))?.category || ""
-  const reasonsOfCategory = reasonGroups.find((g) => g.category === activeReasonCategory)?.reasons ?? []
-  // Solo «Otro» lleva texto; con otro motivo el texto viejo no se reenvía.
+  const reasonOptions = reasonGroups.flatMap((g) => g.reasons)
+  const selectedReasons = reasonOptions.filter((r) => reasonIds.includes(r.id))
+  const needsReasonText = selectedReasons.some((r) => r.requiresText)
+  const reduceMotion = useReducedMotion() ?? false
   // Un tutor puede pedir la cita para sí o para un menor que tutela.
   const [forPatientId, setForPatientId] = React.useState<string>("")
   const { data: tutored = [] } = useQuery({
@@ -301,9 +302,11 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     enabled: isPatient && !isEdit,
     staleTime: 5 * 60_000,
   })
+  // Una cita histórica sin motivos del catálogo no se toca si no se eligió ninguno;
+  // el texto solo viaja con «Otro».
   const reasonPayload = {
-    reasonId: reasonId || undefined,
-    reason: selectedReason?.requiresText ? reason.trim() : undefined,
+    reasonIds: reasonIds.length > 0 || (initialAppointment?.reasonIds?.length ?? 0) > 0 ? reasonIds : undefined,
+    reason: needsReasonText ? reason.trim() : undefined,
   }
 
   // Existing Appointment Status State
@@ -327,14 +330,18 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     durationMinutes: number
     modality: AppointmentModality
     reason?: string
-    reasonId?: string
+    reasonIds?: string[]
   } | null>(null)
 
   // Form feedback state
   // Los éxitos salen como aviso flotante: sigue visible aunque se navegue a la agenda.
   const { toast } = useToast()
   const notifySuccess = (title: string) => toast({ title, status: "success" })
-  const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
+  // Los errores se muestran junto a su campo desde el primer intento de guardar y se
+  // recalculan solos: al corregir un campo, su error desaparece.
+  const [intentoEnviar, setIntentoEnviar] = React.useState(false)
+  // Errores que solo se saben al enviar (hora ya pasada, misma hora): valen para ese día y hora.
+  const [errorDeHorario, setErrorDeHorario] = React.useState<{ clave: string; mensaje: string } | null>(null)
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false)
 
   // Today check
@@ -697,57 +704,57 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const estadoFechaEstilo = ESTADO_FECHA_ESTILO[estadoDeFecha]
   const estadoFechaEtiqueta = etiquetaEstadoFecha(estadoDeFecha, horasLibres)
 
+  type CampoCita = "paciente" | "fecha" | "modalidad" | "motivo" | "otro"
+  const erroresDeCita = (): Partial<Record<CampoCita, string>> => {
+    const e: Partial<Record<CampoCita, string>> = {}
+    if (!lockedPatientId) e.paciente = "Selecciona un paciente."
+    if (!selectedDateEfectiva) e.fecha = "Elige el día de la cita."
+    else if (minimaFecha && startOfDay(selectedDateEfectiva).getTime() < minimaFecha.getTime()) e.fecha = "Elige una fecha válida."
+    else if (maximaFecha && startOfDay(selectedDateEfectiva).getTime() > maximaFecha.getTime())
+      e.fecha = "Elige una fecha dentro de los próximos 3 meses."
+    else if (!selectedHourEfectivo) e.fecha = "Elige un horario libre."
+    else if (!availableHours.includes(selectedHourEfectivo)) e.fecha = "Ese día no tiene horarios disponibles. Elige otra fecha."
+    else {
+      const slot = slotAvailability[selectedHourEfectivo]
+      if (slot && !slot.available) e.fecha = `Las ${selectedHourEfectivo} ya están ocupadas por ${slot.conflictWith}.`
+    }
+    if (!modality) e.modalidad = "Elige si la consulta es presencial o virtual."
+    // Obligatorio en las altas; al editar una cita histórica sin motivo se puede dejar igual.
+    const motivoError = errorDeMotivo(selectedReasons, reason, !isEdit)
+    if (motivoError) e[selectedReasons.length === 0 ? "motivo" : "otro"] = motivoError
+    return e
+  }
+  const claveHorario = `${selectedDateEfectiva?.toDateString() ?? ""}|${selectedHourEfectivo ?? ""}`
+  const errores: Partial<Record<CampoCita, string>> = intentoEnviar ? erroresDeCita() : {}
+  if (!errores.fecha && errorDeHorario?.clave === claveHorario) errores.fecha = errorDeHorario.mensaje
+
+  const errorDe = (campo: CampoCita) =>
+    errores[campo] ? (
+      <p
+        id={`error-${campo}`}
+        role="alert"
+        className="flex items-center gap-1.5 text-xs font-medium text-destructive animate-in fade-in slide-in-from-top-1 duration-200"
+      >
+        <AlertCircle className="size-3.5 shrink-0" aria-hidden="true" />
+        {errores[campo]}
+      </p>
+    ) : null
+
+  const enfocarCampo = (campo: string) => {
+    requestAnimationFrame(() => {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      document.getElementById(`campo-${campo}`)?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" })
+    })
+  }
+
   // Form Submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setErrorMessage(null)
 
-    if (!lockedPatientId) {
-      setErrorMessage("Por favor selecciona un paciente antes de continuar.")
-      return
-    }
-
-    if (!selectedDateEfectiva) {
-      setErrorMessage("Por favor selecciona una fecha válida.")
-      return
-    }
-
-    if (minimaFecha && startOfDay(selectedDateEfectiva).getTime() < minimaFecha.getTime()) {
-      setErrorMessage("Elige una fecha válida.")
-      return
-    }
-
-    if (maximaFecha && startOfDay(selectedDateEfectiva).getTime() > maximaFecha.getTime()) {
-      setErrorMessage("Elige una fecha dentro de los próximos 3 meses.")
-      return
-    }
-
-    if (!selectedHourEfectivo) {
-      setErrorMessage("Por favor selecciona una hora para la sesión.")
-      return
-    }
-
-    if (!availableHours.includes(selectedHourEfectivo)) {
-      setErrorMessage("El día seleccionado no tiene franjas horarias disponibles. Elige otra fecha.")
-      return
-    }
-
-    // Check slot availability
-    const slot = slotAvailability[selectedHourEfectivo]
-    if (slot && !slot.available) {
-      setErrorMessage(`El horario de las ${selectedHourEfectivo} ya se encuentra ocupado por ${slot.conflictWith}.`)
-      return
-    }
-
-    if (!modality) {
-      setErrorMessage("Selecciona la modalidad de la sesión.")
-      return
-    }
-
-    // Obligatorio en las altas; al editar una cita histórica sin motivo se puede dejar igual.
-    const motivoError = errorDeMotivo(selectedReason, reason, !isEdit)
-    if (motivoError) {
-      setErrorMessage(motivoError)
+    const pendientes = erroresDeCita()
+    if (Object.keys(pendientes).length > 0 || !selectedDateEfectiva || !selectedHourEfectivo || !modality) {
+      setIntentoEnviar(true)
+      enfocarCampo(Object.keys(pendientes)[0] ?? "fecha")
       return
     }
 
@@ -755,8 +762,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     const startTime = new Date(selectedDateEfectiva)
     startTime.setHours(hour, minute, 0, 0)
 
-    if (startTime.getTime() <= Date.now()) {
-      setErrorMessage("Elige un horario en el futuro.")
+    if (startTime.getTime() <= new Date().getTime()) {
+      setIntentoEnviar(true)
+      setErrorDeHorario({ clave: claveHorario, mensaje: "Ese horario ya pasó. Elige uno en el futuro." })
+      enfocarCampo("fecha")
       return
     }
 
@@ -764,7 +773,9 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     // la solicitud en una sola transacción.
     if (isEdit && isPatient && initialAppointment) {
       if (startTime.getTime() === toDate(initialAppointment.startTime).getTime()) {
-        setErrorMessage("Elige un horario distinto al actual.")
+        setIntentoEnviar(true)
+        setErrorDeHorario({ clave: claveHorario, mensaje: "Elige un horario distinto al de tu cita actual." })
+        enfocarCampo("fecha")
         return
       }
 
@@ -820,7 +831,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         router.push(isPatient ? "/dashboard" : "/agenda")
       }, 900)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "No se pudo guardar la cita")
+      toast({ title: error instanceof Error ? error.message : "No se pudo guardar la cita", status: "error" })
     } finally {
       setIsSubmitting(false)
     }
@@ -832,7 +843,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     if (!draft || !initialAppointment) return
 
     setIsSubmitting(true)
-    setErrorMessage(null)
 
     try {
       await appointmentRequestService.reschedule({
@@ -843,7 +853,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       notifySuccess("Solicitud de reagendamiento enviada. Tu cita anterior fue cancelada.")
       setTimeout(() => router.push("/dashboard"), 900)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "No se pudo reagendar la cita")
+      toast({ title: error instanceof Error ? error.message : "No se pudo reagendar la cita", status: "error" })
     } finally {
       setIsSubmitting(false)
     }
@@ -891,7 +901,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           : "Asistencia registrada: Paciente no asistió.",
       )
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "No se pudo registrar la asistencia")
+      toast({ title: error instanceof Error ? error.message : "No se pudo registrar la asistencia", status: "error" })
     } finally {
       setIsSubmitting(false)
     }
@@ -948,14 +958,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           )}
         </div>
       </div>
-
-      {/* Errores de validación: se quedan junto al formulario */}
-      {errorMessage && (
-        <div role="alert" className="p-4 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 flex items-center gap-3 animate-in fade-in-50">
-          <AlertCircle className="size-5 shrink-0" />
-          <p className="text-sm font-medium">{errorMessage}</p>
-        </div>
-      )}
 
       {loadError && (
         <div role="alert" className="p-4 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 flex items-center gap-3 animate-in fade-in-50">
@@ -1026,7 +1028,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         {/* CARD 1: SELECCIÓN DEL PACIENTE (solo psicólogo/admin; el paciente ya sabe quién es) */}
         {!isPatient && (
         // overflow-visible: la lista de resultados sale por debajo de la tarjeta; el Card la recortaba.
-        <Card className="overflow-visible border-border/70 shadow-2xs bg-card">
+        <Card
+          id="campo-paciente"
+          className={cn("scroll-mt-24 overflow-visible border-border/70 shadow-2xs bg-card", errores.paciente && "border-destructive/60")}
+        >
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
               <User className="size-4 text-primary" />
@@ -1035,6 +1040,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
             <CardDescription className="text-xs text-muted-foreground">
               Busca o selecciona el paciente asignado para esta sesión clínica.
             </CardDescription>
+            {errorDe("paciente")}
           </CardHeader>
 
           <CardContent className="space-y-3">
@@ -1184,7 +1190,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         )}
 
         {/* FECHA Y HORA: calendario a la izquierda y horarios del día a la derecha (apilados en móvil) */}
-        <Card className="border-border/70 shadow-2xs bg-card">
+        <Card id="campo-fecha" className={cn("scroll-mt-24 border-border/70 shadow-2xs bg-card", errores.fecha && "border-destructive/60")}>
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
               <CalendarIcon className="size-4 text-primary" />
@@ -1193,6 +1199,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
             <CardDescription className="text-xs text-muted-foreground">
               Elige un día dentro de los próximos 3 meses y después un horario libre. Los días con citas llevan un punto; los llenos o sin horario aparecen atenuados.
             </CardDescription>
+            {errorDe("fecha")}
           </CardHeader>
 
           <CardContent className="grid gap-6 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] md:gap-0">
@@ -1397,7 +1404,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
             ) : null}
 
             {/* Modalidad Selection */}
-            <div className="space-y-1.5">
+            <div id="campo-modalidad" className="scroll-mt-24 space-y-1.5">
               <span className="text-xs font-medium text-muted-foreground block">
                 Modalidad de la sesión:
               </span>
@@ -1446,64 +1453,76 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   </div>
                 </button>
               </div>
+              {errorDe("modalidad")}
             </div>
 
-            {/* Motivo de Consulta: categoría y motivo del catálogo; «Otro» pide texto */}
-            <div className="space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground block">
+            {/* Motivos de consulta: chips de selección múltiple; «Otro» abre el texto */}
+            <fieldset id="campo-motivo" className="scroll-mt-24 space-y-2.5">
+              <legend className="text-xs font-medium text-muted-foreground">
                 Motivo de la consulta{isEdit ? "" : " *"}
-              </span>
-              {isEdit && !reasonId && initialAppointment?.reason ? (
+                <span className="font-normal"> · puedes elegir varios</span>
+              </legend>
+              {isEdit && reasonIds.length === 0 && initialAppointment?.reason ? (
                 <p className="text-xs text-muted-foreground">
                   Registrado: <span className="font-medium text-foreground">{initialAppointment.reason}</span>
                 </p>
               ) : null}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Select
-                  value={activeReasonCategory}
-                  onValueChange={(value) => {
-                    setReasonCategory(value)
-                    setReasonId("")
-                  }}
-                >
-                  <SelectTrigger id="appointment-reason-category" aria-label="Categoría del motivo" className="w-full">
-                    <SelectValue placeholder="Categoría" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {reasonGroups.map((group) => (
-                      <SelectItem key={group.category} value={group.category}>
-                        {group.category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={reasonId} onValueChange={setReasonId} disabled={!activeReasonCategory}>
-                  <SelectTrigger id="appointment-reason" aria-label="Motivo" className="w-full">
-                    <SelectValue placeholder="Motivo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {reasonsOfCategory.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {selectedReason?.requiresText ? (
-                <Textarea
-                  id="appointment-reason-textarea"
-                  aria-label="Describe el motivo"
-                  placeholder="Describe brevemente el motivo de la consulta…"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  className="min-h-[80px] rounded-xl border-border/80 focus-visible:ring-primary/20 text-sm"
-                />
-              ) : null}
-              <span className="text-[11px] text-muted-foreground block">
-                Este motivo se reflejará en el calendario y en el expediente clínico del paciente.
+              <ChipGroup
+                label="Motivos de consulta"
+                options={reasonOptions.map((option) => ({ value: option.id, label: option.label }))}
+                value={reasonIds}
+                onValueChange={setReasonIds}
+                multiple
+              />
+              {errorDe("motivo")}
+              {/* «Otro»: el campo se despliega (alto en resorte, contenido que baja y se enfoca)
+                  y se repliega igual al quitarlo. Con movimiento reducido, solo un fundido. */}
+              <AnimatePresence initial={false}>
+                {needsReasonText ? (
+                  <motion.div
+                    key="otro-motivo"
+                    initial={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                    animate={reduceMotion ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+                    exit={reduceMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+                    transition={
+                      reduceMotion
+                        ? { duration: 0.15 }
+                        : {
+                            height: { type: "spring", bounce: 0, duration: 0.4 },
+                            opacity: { duration: 0.2 },
+                          }
+                    }
+                    // Margen interno para que el recorte del alto no corte el anillo de foco.
+                    className="-mx-1 overflow-hidden px-1"
+                  >
+                    <motion.div
+                      initial={reduceMotion ? false : { y: -8, filter: "blur(4px)" }}
+                      animate={{ y: 0, filter: "blur(0px)" }}
+                      exit={reduceMotion ? undefined : { y: -8, filter: "blur(4px)" }}
+                      transition={{ type: "spring", bounce: 0, duration: 0.35 }}
+                      className="space-y-1.5 pt-1 pb-1"
+                    >
+                      <label htmlFor="appointment-reason-textarea" className="block text-xs font-medium text-foreground">
+                        ¿Cuál es el otro motivo? *
+                      </label>
+                      <Textarea
+                        id="appointment-reason-textarea"
+                        placeholder="Escribe brevemente el motivo de la consulta…"
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                        aria-invalid={Boolean(errores.otro)}
+                        aria-describedby={errores.otro ? "error-otro" : undefined}
+                        className="min-h-[80px] rounded-xl border-border/80 text-sm focus-visible:ring-primary/20"
+                      />
+                      {errorDe("otro")}
+                    </motion.div>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+              <span className="block text-[11px] text-muted-foreground">
+                Los motivos se reflejarán en el calendario y en el expediente clínico del paciente.
               </span>
-            </div>
+            </fieldset>
           </CardContent>
         </Card>
 
@@ -1527,7 +1546,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   onClick={() => setStatus(AppointmentStatus.PENDING)}
                   className={`p-2.5 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
                     status === AppointmentStatus.PENDING
-                      ? "bg-amber-600 text-white border-amber-600 shadow-2xs"
+                      ? "bg-amber-700 text-white border-amber-700 shadow-2xs dark:bg-amber-400 dark:text-amber-950 dark:border-amber-400"
                       : "bg-card border-border/70 text-foreground hover:bg-muted/40"
                   }`}
                 >
@@ -1553,7 +1572,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   onClick={() => setStatus(AppointmentStatus.COMPLETED)}
                   className={`p-2.5 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
                     status === AppointmentStatus.COMPLETED
-                      ? "bg-slate-700 text-white border-slate-700 shadow-2xs"
+                      ? "bg-foreground text-background border-foreground shadow-2xs"
                       : "bg-card border-border/70 text-foreground hover:bg-muted/40"
                   }`}
                 >
@@ -1566,8 +1585,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   onClick={() => setIsCancelModalOpen(true)}
                   className={`p-2.5 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
                     status === AppointmentStatus.CANCELLED
-                      ? "bg-rose-600 text-white border-rose-600 shadow-2xs"
-                      : "bg-card border-border/70 text-rose-600 hover:bg-rose-50/50"
+                      ? "bg-destructive text-white border-destructive shadow-2xs"
+                      : "bg-card border-border/70 text-destructive hover:bg-destructive/5"
                   }`}
                 >
                   <XCircle className="size-3.5" />
@@ -1679,7 +1698,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       <Dialog open={isCancelModalOpen} onOpenChange={setIsCancelModalOpen}>
         <DialogContent className="sm:max-w-md p-6 bg-card border-border/80">
           <DialogHeader className="space-y-1.5">
-            <div className="size-10 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mb-1">
+            <div className="size-10 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mb-1">
               <XCircle className="size-5" />
             </div>
             <DialogTitle className="text-lg font-heading font-semibold text-foreground">
@@ -1693,7 +1712,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           <div className="space-y-3 py-2">
             <div className="space-y-1">
               <label htmlFor="cancel-reason-textarea" className="text-xs font-semibold text-foreground block">
-                Motivo de cancelación <span className="text-rose-600">*</span>
+                Motivo de cancelación <span className="text-destructive">*</span>
               </label>
               <Textarea
                 id="cancel-reason-textarea"
@@ -1706,7 +1725,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 className="min-h-[85px] rounded-xl text-xs"
               />
               {cancelError && (
-                <p className="text-[11px] text-rose-600 font-medium">{cancelError}</p>
+                <p role="alert" className="text-xs text-destructive font-medium">{cancelError}</p>
               )}
             </div>
 

@@ -90,3 +90,46 @@ describe("updatePsychologistProfileSchema", () => {
     expect(updatePsychologistProfileSchema.safeParse({ phone: "551234567" }).success).toBe(false);
   });
 });
+
+import { erroresDePerfil } from "@/lib/perfil";
+
+describe("erroresDePerfil (pantalla de perfil)", () => {
+  const paciente = {
+    name: "Ana Pérez",
+    phone: "311-123-4567",
+    timeZone: "America/Mazatlan",
+    photoUrl: "",
+    emergencyContactName: "Luis Pérez",
+    emergencyContactPhone: "311-765-4321",
+  };
+
+  it("un perfil completo no tiene errores (y una foto vacía significa quitarla)", () => {
+    expect(erroresDePerfil(true, paciente)).toEqual({});
+  });
+
+  it("no deja guardar nombre, teléfono ni contacto de emergencia vacíos", () => {
+    const errores = erroresDePerfil(true, {
+      ...paciente,
+      name: "  ",
+      phone: "",
+      emergencyContactName: "",
+      emergencyContactPhone: "",
+    });
+    expect(errores).toEqual({
+      name: "El nombre es obligatorio",
+      phone: "El teléfono es obligatorio",
+      emergencyContactName: "El nombre del contacto es obligatorio",
+      emergencyContactPhone: "El teléfono es obligatorio",
+    });
+  });
+
+  it("rechaza un teléfono incompleto", () => {
+    expect(erroresDePerfil(true, { ...paciente, phone: "311-123" }).phone).toBe("El teléfono debe tener 10 dígitos");
+  });
+
+  it("al psicólogo le exige la cédula; la especialidad es opcional", () => {
+    const base = { name: "Claudia Amaro", phone: "311-128-4689", timeZone: "America/Mazatlan", specialty: "" };
+    expect(erroresDePerfil(false, { ...base, licenseNumber: "5340355" })).toEqual({});
+    expect(erroresDePerfil(false, { ...base, licenseNumber: "" }).licenseNumber).toMatch(/al menos 4/);
+  });
+});

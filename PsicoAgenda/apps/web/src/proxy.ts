@@ -84,7 +84,7 @@ export async function proxy(request: NextRequest) {
     (name) => request.cookies.get(name)?.value,
   );
 
-  let authTimedOut = false;
+  let staleSession = false;
 
   if (!user) {
     // La vía rápida no pudo confirmar la sesión (token ausente, vencido o
@@ -96,9 +96,13 @@ export async function proxy(request: NextRequest) {
     try {
       const result = await withTimeout(supabase.auth.getUser(), AUTH_CHECK_TIMEOUT_MS);
       user = result.data.user;
+      // La cookie trae un refresh token que el proveedor ya revocó (cambio de
+      // contraseña, cierre de sesión en otro lado): se borra para no reintentar
+      // —y registrar el mismo error— en cada petición.
+      if (result.error?.code === "refresh_token_not_found") staleSession = true;
     } catch (error) {
       if (error instanceof TimeoutError) {
-        authTimedOut = true;
+        staleSession = true;
       } else {
         throw error;
       }
@@ -107,7 +111,7 @@ export async function proxy(request: NextRequest) {
 
   if (isProtected && !user) {
     const redirectResponse = NextResponse.redirect(new URL("/login", request.url));
-    if (authTimedOut) clearStaleAuthCookies(request, redirectResponse);
+    if (staleSession) clearStaleAuthCookies(request, redirectResponse);
     return redirectResponse;
   }
 
@@ -115,7 +119,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  if (authTimedOut) clearStaleAuthCookies(request, response);
+  if (staleSession) clearStaleAuthCookies(request, response);
 
   return response;
 }

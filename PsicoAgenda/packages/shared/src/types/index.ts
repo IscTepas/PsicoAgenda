@@ -185,9 +185,11 @@ export interface Appointment {
   modality: AppointmentModality;
   attendanceStatus?: AttendanceStatus;
   sessionType?: AppointmentSessionType;
-  /** Para mostrar: etiqueta del catálogo, o el texto libre en «Otro» y en lo histórico. */
+  /** Para mostrar: etiquetas del catálogo unidas, más el texto de «Otro» (o el texto histórico). */
   reason?: string;
-  reasonId?: string;
+  reasonIds?: string[];
+  /** Lo escrito en «Otro», si se eligió (para poder editarlo). */
+  reasonOther?: string;
   notes?: string;
   price?: number;
   payment?: HonorariumPayment;
@@ -213,9 +215,11 @@ export interface AppointmentRequest {
   startTime: Date;
   durationMinutes: number;
   modality: AppointmentModality;
-  /** Para mostrar: etiqueta del catálogo, o el texto libre en «Otro» y en lo histórico. */
+  /** Para mostrar: etiquetas del catálogo unidas, más el texto de «Otro» (o el texto histórico). */
   reason?: string;
-  reasonId?: string;
+  reasonIds?: string[];
+  /** Lo escrito en «Otro», si se eligió (para poder editarlo). */
+  reasonOther?: string;
   status: AppointmentRequestStatus;
   appointmentId?: string;
   createdAt: Date;
@@ -264,10 +268,23 @@ export interface LogEntry {
   updatedAt: Date;
 }
 
+/** Qué aviso es (notificaciones.tipo): decide qué hace la interfaz al abrirlo. */
+export type NotificationKind =
+  | "reminder"
+  | "confirmation"
+  | "change"
+  | "cancellation"
+  | "request"
+  | "rejection"
+  | "attendance";
+
 export interface Notification {
   id: string;
   patientId?: string;
   appointmentId?: string;
+  /** Solicitud a la que se refiere el aviso, si es de una solicitud. */
+  requestId?: string;
+  kind: NotificationKind;
   channel: NotificationChannel;
   subject: string;
   message: string;

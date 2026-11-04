@@ -39,7 +39,6 @@ model citas {
   modalidad          modalidad_cita      @default(PRESENCIAL)
   tipo_sesion        tipo_sesion
   motivo             String?
-  motivo_id          String?             @db.Uuid
   notas_internas     String?
   motivo_cancelacion String?
   precio             Int?
@@ -51,10 +50,10 @@ model citas {
   pacientes          pacientes           @relation(fields: [paciente_id], references: [id])
   psicologos         psicologos          @relation(fields: [psicologo_id], references: [id])
   solicitudes_cita   solicitudes_cita?   @relation(fields: [solicitud_id], references: [id])
-  motivos_consulta   motivos_consulta?   @relation(fields: [motivo_id], references: [id], onDelete: Restrict)
   entradas_bitacora  entradas_bitacora[]
   notificaciones     notificaciones[]
   pagos_honorarios   pagos_honorarios?
+  citas_motivos      citas_motivos[]
 
   @@index([paciente_id, inicio])
   @@index([psicologo_id, inicio])
@@ -148,30 +147,41 @@ model horarios_psicologo {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model notificaciones {
-  id              String             @id @db.Uuid
-  usuario_id      String             @db.Uuid
-  cita_id         String?            @db.Uuid
-  tipo            tipo_notificacion
-  canal           canal_notificacion
-  asunto          String
-  mensaje         String
-  estado          estado_envio       @default(PENDIENTE)
-  programada_para DateTime?          @db.Timestamptz(3)
-  enviada_en      DateTime?          @db.Timestamptz(3)
-  error           String?
-  intentos        Int                @default(0)
-  leida_en        DateTime?          @db.Timestamptz(3)
-  /** ID del mensaje en WhatsApp Business API (wamid...). */
-  mensaje_externo_id String?         @db.VarChar(255)
-  /** Último estado reportado por WhatsApp: accepted, delivered, read, failed, sent. */
-  estado_entrega  String?            @db.VarChar(50)
-  /** Momento del último estado reportado por WhatsApp. */
-  entregada_en    DateTime?          @db.Timestamptz(3)
-  /** Nombre de la plantilla de WhatsApp que debe usarse para este aviso. */
-  plantilla_whatsapp String?         @db.VarChar(255)
-  creado_en       DateTime           @default(now()) @db.Timestamptz(3)
-  citas           citas?             @relation(fields: [cita_id], references: [id], onDelete: Cascade)
-  usuarios        usuarios           @relation(fields: [usuario_id], references: [id])
+  id                 String             @id @db.Uuid
+  usuario_id         String             @db.Uuid
+  cita_id            String?            @db.Uuid
+  /// Solicitud a la que se refiere el aviso (para llevar directo a responderla).
+  solicitud_id       String?            @db.Uuid
+  tipo               tipo_notificacion
+  canal              canal_notificacion
+  asunto             String
+  mensaje            String
+  estado             estado_envio       @default(PENDIENTE)
+  programada_para    DateTime?          @db.Timestamptz(3)
+  enviada_en         DateTime?          @db.Timestamptz(3)
+  error              String?
+  intentos           Int                @default(0)
+  leida_en           DateTime?          @db.Timestamptz(3)
+  /**
+   * ID del mensaje en WhatsApp Business API (wamid...).
+   */
+  mensaje_externo_id String?            @db.VarChar(255)
+  /**
+   * Último estado reportado por WhatsApp: accepted, delivered, read, failed, sent.
+   */
+  estado_entrega     String?            @db.VarChar(50)
+  /**
+   * Momento del último estado reportado por WhatsApp.
+   */
+  entregada_en       DateTime?          @db.Timestamptz(3)
+  /**
+   * Nombre de la plantilla de WhatsApp que debe usarse para este aviso.
+   */
+  plantilla_whatsapp String?            @db.VarChar(255)
+  creado_en          DateTime           @default(now()) @db.Timestamptz(3)
+  citas              citas?             @relation(fields: [cita_id], references: [id], onDelete: Cascade)
+  solicitudes_cita   solicitudes_cita?  @relation(fields: [solicitud_id], references: [id], onDelete: SetNull)
+  usuarios           usuarios           @relation(fields: [usuario_id], references: [id])
 
   @@index([programada_para], map: "idx_notificaciones_pendientes", where: raw("(estado = 'PENDIENTE'::estado_envio)"))
   @@index([cita_id])
@@ -283,45 +293,67 @@ model revisiones_bitacora {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model solicitudes_cita {
-  id                String            @id @db.Uuid
-  paciente_id       String            @db.Uuid
-  psicologo_id      String            @db.Uuid
-  inicio_solicitado DateTime          @db.Timestamptz(3)
-  tipo_sesion       tipo_sesion
-  modalidad         modalidad_cita    @default(PRESENCIAL)
-  duracion_minutos  Int               @default(50)
-  motivo            String?
-  motivo_id         String?           @db.Uuid
+  id                  String                @id @db.Uuid
+  paciente_id         String                @db.Uuid
+  psicologo_id        String                @db.Uuid
+  inicio_solicitado   DateTime              @db.Timestamptz(3)
+  tipo_sesion         tipo_sesion
+  modalidad           modalidad_cita        @default(PRESENCIAL)
+  duracion_minutos    Int                   @default(50)
+  motivo              String?
   /// Usuario que pidió la solicitud: el paciente o su tutor.
-  solicitante_id    String?           @db.Uuid
-  estado            estado_solicitud  @default(PENDIENTE)
-  creado_en         DateTime          @default(now()) @db.Timestamptz(3)
-  atendida_en       DateTime?         @db.Timestamptz(3)
-  citas             citas?
-  pacientes         pacientes         @relation(fields: [paciente_id], references: [id])
-  psicologos        psicologos        @relation(fields: [psicologo_id], references: [id])
-  motivos_consulta  motivos_consulta? @relation(fields: [motivo_id], references: [id], onDelete: Restrict)
-  solicitante       usuarios?         @relation("solicitudes_solicitante", fields: [solicitante_id], references: [id], onDelete: SetNull)
+  solicitante_id      String?               @db.Uuid
+  estado              estado_solicitud      @default(PENDIENTE)
+  creado_en           DateTime              @default(now()) @db.Timestamptz(3)
+  atendida_en         DateTime?             @db.Timestamptz(3)
+  citas               citas?
+  solicitudes_motivos solicitudes_motivos[]
+  notificaciones      notificaciones[]
+  pacientes           pacientes             @relation(fields: [paciente_id], references: [id])
+  psicologos          psicologos            @relation(fields: [psicologo_id], references: [id])
+  solicitante         usuarios?             @relation("solicitudes_solicitante", fields: [solicitante_id], references: [id], onDelete: SetNull)
 
   @@index([paciente_id])
   @@index([psicologo_id, estado])
 }
 
-/// Catálogo global de motivos de consulta (categoría → motivo). «Otro» es una fila con es_otro.
+/// Catálogo plano de motivos de consulta (una cita elige varios). «Otro» es una fila con es_otro y pide texto.
 model motivos_consulta {
-  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  codigo           String             @unique
-  etiqueta         String
-  categoria        String
-  activo           Boolean            @default(true)
-  orden            Int                @default(0)
-  es_otro          Boolean            @default(false)
-  requiere_texto   Boolean            @default(false)
-  creado_en        DateTime           @default(now()) @db.Timestamptz(3)
-  citas            citas[]
-  solicitudes_cita solicitudes_cita[]
+  id                  String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  codigo              String                @unique
+  etiqueta            String
+  categoria           String
+  activo              Boolean               @default(true)
+  orden               Int                   @default(0)
+  es_otro             Boolean               @default(false)
+  requiere_texto      Boolean               @default(false)
+  creado_en           DateTime              @default(now()) @db.Timestamptz(3)
+  citas_motivos       citas_motivos[]
+  solicitudes_motivos solicitudes_motivos[]
 
   @@index([activo, categoria, orden])
+}
+
+/// Motivos de una cita (varios por cita). Un motivo en uso no se borra: se desactiva.
+model citas_motivos {
+  cita_id          String           @db.Uuid
+  motivo_id        String           @db.Uuid
+  citas            citas            @relation(fields: [cita_id], references: [id], onDelete: Cascade)
+  motivos_consulta motivos_consulta @relation(fields: [motivo_id], references: [id], onDelete: Restrict)
+
+  @@id([cita_id, motivo_id])
+  @@index([motivo_id])
+}
+
+/// Motivos de una solicitud de cita; se copian a la cita al aceptarla.
+model solicitudes_motivos {
+  solicitud_id     String           @db.Uuid
+  motivo_id        String           @db.Uuid
+  solicitudes_cita solicitudes_cita @relation(fields: [solicitud_id], references: [id], onDelete: Cascade)
+  motivos_consulta motivos_consulta @relation(fields: [motivo_id], references: [id], onDelete: Restrict)
+
+  @@id([solicitud_id, motivo_id])
+  @@index([motivo_id])
 }
 
 model tutores {
