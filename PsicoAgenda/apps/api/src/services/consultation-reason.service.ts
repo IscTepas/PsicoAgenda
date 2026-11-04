@@ -16,39 +16,55 @@ export const toConsultationReason = (row: Fila): ConsultationReason => ({
   requiresText: row.requiere_texto,
 });
 
+/** Lo que hay que incluir de las tablas de enlace (citas_motivos / solicitudes_motivos). */
+export const reasonLinks = {
+  select: { motivos_consulta: { select: { id: true, etiqueta: true, requiere_texto: true, orden: true } } },
+} as const;
+
+type Enlace = { motivos_consulta: { id: string; etiqueta: string; requiere_texto: boolean; orden: number } };
+
 /**
- * Lo que la cita o solicitud expone como `reason`: la etiqueta del catálogo, salvo
- * en «Otro» y en lo histórico (sin `motivo_id`), donde manda el texto libre.
+ * Lo que la cita o solicitud expone como `reason`: las etiquetas elegidas en el
+ * orden del catálogo, con el texto escrito en lugar de «Otro». Sin motivos del
+ * catálogo (lo histórico) manda el texto libre.
  */
-export const reasonText = (
-  texto: string | null,
-  motivo: { etiqueta: string; requiere_texto: boolean } | null,
-): string | undefined => {
-  if (!motivo) return texto ?? undefined;
-  return motivo.requiere_texto ? (texto ?? motivo.etiqueta) : motivo.etiqueta;
+export const reasonText = (texto: string | null, enlaces: Enlace[] = []): string | undefined => {
+  if (enlaces.length === 0) return texto ?? undefined;
+  return [...enlaces]
+    .sort((a, b) => a.motivos_consulta.orden - b.motivos_consulta.orden)
+    .map(({ motivos_consulta: m }) => (m.requiere_texto ? (texto ?? m.etiqueta) : m.etiqueta))
+    .join(", ");
 };
 
-/**
- * Valida el motivo elegido y devuelve las columnas a guardar. Sin `reasonId` se
- * acepta el texto libre tal cual (compatibilidad con clientes anteriores).
- */
-export async function resolveReason(
-  db: Prisma.TransactionClient,
-  reasonId: string | undefined,
-  text: string | undefined,
-): Promise<{ motivo_id: string | null; motivo: string | null }> {
-  const libre = text?.trim() || null;
-  if (!reasonId) return { motivo_id: null, motivo: libre };
+/** El texto de «Otro», solo si «Otro» está entre los motivos elegidos. */
+export const reasonOtherOf = (texto: string | null, enlaces: Enlace[] = []): string | undefined =>
+  enlaces.some((e) => e.motivos_consulta.requiere_texto) ? (texto ?? undefined) : undefined;
 
-  const motivo = await db.motivos_consulta.findUnique({ where: { id: reasonId } });
-  if (!motivo || !motivo.activo) {
-    throw AppError.badRequest("El motivo de consulta elegido no está disponible.");
+export const reasonIdsOf = (enlaces: Enlace[] = []): string[] => enlaces.map((e) => e.motivos_consulta.id);
+
+/**
+ * Valida los motivos elegidos (uno o varios) y devuelve qué guardar. Sin motivos
+ * se acepta el texto libre tal cual (compatibilidad con clientes anteriores).
+ */
+export async function resolveReasons(
+  db: Prisma.TransactionClient,
+  reasonIds: string[] | undefined,
+  text: string | undefined,
+): Promise<{ motivoIds: string[]; motivo: string | null }> {
+  const libre = text?.trim() || null;
+  const ids = [...new Set(reasonIds ?? [])];
+  if (ids.length === 0) return { motivoIds: [], motivo: libre };
+
+  const motivos = await db.motivos_consulta.findMany({ where: { id: { in: ids } } });
+  if (motivos.length !== ids.length || motivos.some((m) => !m.activo)) {
+    throw AppError.badRequest("Alguno de los motivos elegidos ya no está disponible.");
   }
-  if (motivo.requiere_texto && !libre) {
-    throw AppError.badRequest(`Describe el motivo de la consulta para «${motivo.etiqueta}».`);
+  const otro = motivos.find((m) => m.requiere_texto);
+  if (otro && !libre) {
+    throw AppError.badRequest(`Describe el motivo de la consulta para «${otro.etiqueta}».`);
   }
-  // Con un motivo del catálogo el texto solo vale en «Otro»: una sola fuente de verdad.
-  return { motivo_id: motivo.id, motivo: motivo.requiere_texto ? libre : null };
+  // Con motivos del catálogo el texto solo vale con «Otro»: una sola fuente de verdad.
+  return { motivoIds: ids, motivo: otro ? libre : null };
 }
 
 const ORDEN = [{ orden: "asc" }, { etiqueta: "asc" }] satisfies Prisma.motivos_consultaOrderByWithRelationInput[];

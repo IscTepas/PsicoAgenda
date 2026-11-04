@@ -184,7 +184,7 @@ export function DateRangePickerSummary({
         <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Start date
         </p>
-        <p className="text-[13px] font-medium tabular-nums">
+        <p className="text-sm font-medium tabular-nums">
           {value ? shortFormat.format(parse(value.from)) : "Elegir fecha"}
         </p>
       </div>
@@ -199,7 +199,7 @@ export function DateRangePickerSummary({
         </p>
         <p
           className={cn(
-            "text-[13px] font-medium tabular-nums",
+            "text-sm font-medium tabular-nums",
             !value?.to && "text-muted-foreground",
           )}
         >
@@ -249,7 +249,7 @@ export function DateRangePickerHeader({
           disabled={disabled}
           onClick={() => openChoices("months")}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
+            "inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-semibold transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
             view === "years" && "hidden",
           )}
         >
@@ -271,7 +271,7 @@ export function DateRangePickerHeader({
           aria-controls={view === "years" ? choicesId : undefined}
           disabled={disabled}
           onClick={() => openChoices("years")}
-          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-medium tabular-nums text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
+          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium tabular-nums text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
         >
           {view === "years" ? `${yearPage}–${yearPageEnd}` : year}
           <ChevronDown
@@ -764,7 +764,7 @@ export function DateRangePickerTrigger({
         disabled={disabled || ctx.disabled}
         aria-label={props["aria-label"] ?? `${ctx.label}: ${summary}`}
         className={cn(
-          "inline-flex h-9 w-fit max-w-full items-center gap-2 rounded-xl border border-border bg-background px-3 text-[13px] font-medium text-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
+          "inline-flex h-9 w-fit max-w-full items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
           className,
         )}
       >
@@ -980,7 +980,7 @@ function CalendarChoices({
           whileTap={reduce ? undefined : { scale: 0.96 }}
           transition={SPRING_PRESS}
           className={cn(
-            "flex h-13 items-center justify-center rounded-xl px-1 text-[13px] tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-25",
+            "flex h-13 items-center justify-center rounded-xl px-1 text-sm tabular-nums transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-25",
             choice.id === selected
               ? "bg-foreground font-medium text-background"
               : "bg-muted/40 hover:bg-muted",

@@ -50,7 +50,9 @@
   --color-brand-agenda: var(--brand-agenda);
 }
 
-:root {
+:root,
+/* La muestra "Original" del selector repinta la marca aunque el documento tenga otra paleta. */
+[data-theme="default"] {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

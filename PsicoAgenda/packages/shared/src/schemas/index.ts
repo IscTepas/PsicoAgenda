@@ -34,7 +34,8 @@ export const createAppointmentSchema = z.object({
   durationMinutes: z.number().int().min(45).max(60),
   modality: z.enum(["in_person", "virtual"]),
   reason: z.string().optional(),
-  reasonId: z.string().uuid().optional(),
+  /** Motivos del catálogo (uno o varios); «Otro» exige `reason`. */
+  reasonIds: z.array(z.string().uuid()).max(12).optional(),
 });
 
 export const updateAppointmentSchema = z.object({
@@ -42,7 +43,8 @@ export const updateAppointmentSchema = z.object({
   durationMinutes: z.number().int().min(45).max(60).optional(),
   modality: z.enum(["in_person", "virtual"]).optional(),
   reason: z.string().optional(),
-  reasonId: z.string().uuid().optional(),
+  /** Motivos del catálogo (uno o varios); «Otro» exige `reason`. */
+  reasonIds: z.array(z.string().uuid()).max(12).optional(),
   notes: z.string().optional(),
 });
 
@@ -81,7 +83,8 @@ export const createAppointmentRequestSchema = z.object({
   durationMinutes: z.number().int().min(45).max(60),
   modality: z.enum(["in_person", "virtual"]),
   reason: z.string().optional(),
-  reasonId: z.string().uuid().optional(),
+  /** Motivos del catálogo (uno o varios); «Otro» exige `reason`. */
+  reasonIds: z.array(z.string().uuid()).max(12).optional(),
   /** Un tutor pide a nombre del menor; sin él, la solicitud es del propio paciente. */
   patientId: z.string().uuid().optional(),
 });
@@ -149,6 +152,7 @@ export const patientListQuerySchema = z.object({
  */
 export const telefonoSchema = z
   .string()
+  .min(1, "El teléfono es obligatorio")
   .regex(/^[+0-9\s()-]+$/, "Formato de teléfono no válido")
   .refine((valor) => valor.replace(/\D/g, "").length === 10, {
     message: "El teléfono debe tener 10 dígitos",
@@ -300,6 +304,8 @@ export const photoUrlSchema = z
   .max(5_000_000, "La imagen es demasiado grande (máximo 3 MB)")
   .refine(
     (valor) =>
+      // Cadena vacía = quitar la foto (la API la guarda como NULL).
+      valor === "" ||
       /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(valor) ||
       /^https?:\/\/\S+$/.test(valor),
     "La foto debe ser una imagen PNG, JPG o WebP",
@@ -348,6 +354,23 @@ export const updatePatientProfileSchema = z.object({
     .trim()
     .max(60, "El parentesco es demasiado largo")
     .optional(),
+});
+
+/**
+ * Perfil completo tal como lo envía la pantalla de perfil: lo que no puede quedar
+ * vacío es obligatorio (el PATCH de la API sigue siendo parcial, pero rechaza vacíos).
+ */
+export const perfilPacienteSchema = updatePatientProfileSchema.required({
+  name: true,
+  phone: true,
+  emergencyContactName: true,
+  emergencyContactPhone: true,
+});
+
+export const perfilPsicologoSchema = updatePsychologistProfileSchema.required({
+  name: true,
+  phone: true,
+  licenseNumber: true,
 });
 
 /**

@@ -28,6 +28,7 @@ import {
 import { createPortal } from "react-dom";
 import { EASE_OUT } from "@/lib/ease";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/use-hydrated";
 
 export type ToastStatus = "neutral" | "info" | "loading" | "success" | "error";
 export type ToastPosition =
@@ -269,15 +270,14 @@ export function AnimatedToastStack({
   icons,
   renderToast,
 }: AnimatedToastStackProps) {
-  const [portalTarget, setPortalTarget] = useState<Element | null>(null);
   const visibleToasts = toasts.slice(-maxVisible);
   const isBottom = position.startsWith("bottom");
   const resolvedPlacement = placement ?? (fixed ? "fixed" : "static");
   const shouldPortal = portal ?? resolvedPlacement === "fixed";
 
-  useEffect(() => {
-    setPortalTarget(shouldPortal ? (portalRoot ?? document.body) : null);
-  }, [portalRoot, shouldPortal]);
+  // El portal necesita `document`: se activa ya hidratado, sin un efecto que vuelva a renderizar.
+  const hydrated = useHydrated();
+  const portalTarget = shouldPortal && hydrated ? (portalRoot ?? document.body) : null;
 
   const stack = (
     <ol

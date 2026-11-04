@@ -6,24 +6,14 @@ import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { UserRole } from "@psicoagenda/shared"
 import { Wordmark } from "@/components/brand/wordmark"
-import {
-  AnimatedSidebar,
-  AnimatedSidebarContent,
-  AnimatedSidebarFooter,
-  AnimatedSidebarHeader,
-  AnimatedSidebarInset,
-  AnimatedSidebarMenu,
-  AnimatedSidebarMenuButton,
-  AnimatedSidebarMenuItem,
-  AnimatedSidebarProvider,
-  AnimatedSidebarTrigger,
-  useAnimatedSidebar,
-} from "@/components/motion/animated-sidebar"
+import { motion } from "motion/react"
+import { DesktopSidebar, Sidebar, SidebarLink, useSidebar } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { ToastProvider } from "@/components/toast-provider"
 import { navItemsForRole } from "@/lib/navigation"
 import { cn } from "@/lib/utils"
 import { useSession } from "@/lib/use-session"
+import { usePendingResponses } from "@/lib/use-pending-responses"
 import {
   CalendarDays,
   LayoutDashboard,
@@ -73,9 +63,10 @@ function isActivePath(pathname: string, href: string): boolean {
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
-      <AnimatedSidebarProvider style={{ "--sidebar-width": "15rem", "--sidebar-width-icon": "4.5rem" }}>
+      {/* Sidebar de Aceternity: se abre al pasar el mouse (o al enfocarla con el teclado). */}
+      <Sidebar>
         <ShellContent>{children}</ShellContent>
-      </AnimatedSidebarProvider>
+      </Sidebar>
     </ToastProvider>
   )
 }
@@ -84,12 +75,13 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { user, isLoading, logout } = useSession()
-  const { state, isMobile, setOpenMobile } = useAnimatedSidebar()
-  // En móvil el cajón siempre va expandido; el riel de iconos es solo de escritorio.
-  const collapsed = state === "collapsed" && !isMobile
+  const { open } = useSidebar()
 
   const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
   const filteredNav = React.useMemo(() => navItemsForRole(effectiveRole), [effectiveRole])
+  // Lo que espera respuesta de la psicóloga se señala en "Notificaciones", donde se atiende.
+  const { count: pendingCount } = usePendingResponses(Boolean(user) && effectiveRole === UserRole.PSYCHOLOGIST)
+  const badgeOf = (href: string) => (href === "/notificaciones" ? pendingCount : 0)
 
   const handleLogout = () => {
     void logout().finally(() => router.push("/login"))
@@ -99,17 +91,21 @@ function ShellContent({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <AnimatedSidebar
-        ariaLabel="Menú principal"
-        collapsible="icon"
-        className="material bg-card/70 backdrop-blur-xl backdrop-saturate-150"
-        panelClassName="material border-border/40 bg-card/50 backdrop-blur-xl backdrop-saturate-150"
+      {/* Con teclado, el primer Tab ofrece saltar el menú e ir directo al contenido. */}
+      <a
+        href="#contenido"
+        className="sr-only rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:outline-none focus:ring-3 focus:ring-ring/40"
       >
-        <AnimatedSidebarHeader className="h-14 flex-row items-center border-b border-border/40 px-4 py-0">
+        Saltar al contenido
+      </a>
+
+      {/* Escritorio: barra lateral. En móvil manda la barra inferior de abajo. */}
+      <DesktopSidebar className="justify-between gap-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
           <Link
             href="/dashboard"
-            onClick={() => setOpenMobile(false)}
-            className="flex min-w-0 items-center gap-2.5 rounded-lg font-semibold tracking-tight text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+            // Posición fija: 12 del riel + 8 + 16 = 36, el centro del riel contraído.
+            className="flex h-10 min-w-0 items-center gap-2.5 rounded-lg px-2 font-semibold tracking-tight text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
           >
             <Image
               src="/images/psicoagenda-icon.png"
@@ -119,76 +115,88 @@ function ShellContent({ children }: { children: React.ReactNode }) {
               className="h-7 w-8 shrink-0 object-contain"
               priority
             />
-            <Wordmark
-              className={cn(
-                "whitespace-nowrap text-[15px] transition-opacity duration-150",
-                collapsed && "opacity-0",
-              )}
-            />
+            <motion.span
+              initial={false}
+              animate={{ opacity: open ? 1 : 0 }}
+              transition={{ duration: open ? 0.18 : 0.08, delay: open ? 0.06 : 0 }}
+            >
+              <Wordmark className="whitespace-nowrap text-[15px]" />
+            </motion.span>
           </Link>
-        </AnimatedSidebarHeader>
 
-        <AnimatedSidebarContent className="p-3">
-          <nav aria-label="Secciones">
-            <AnimatedSidebarMenu>
-              {filteredNav.map((item) => {
-                const Icon = ICONS_BY_HREF[item.href] ?? PanelLeft
-                return (
-                  <AnimatedSidebarMenuItem key={item.href}>
-                    <AnimatedSidebarMenuButton
-                      href={item.href}
-                      isActive={isActivePath(pathname, item.href)}
-                      icon={<Icon className="size-[18px]" />}
-                      className="min-h-10"
-                    >
-                      {item.label}
-                    </AnimatedSidebarMenuButton>
-                  </AnimatedSidebarMenuItem>
-                )
-              })}
-            </AnimatedSidebarMenu>
+          <nav aria-label="Secciones" className="mt-6 flex flex-col gap-1">
+            {/* Perfil y configuración viven en la tarjeta de cuenta de abajo, no en la lista. */}
+            {filteredNav.filter((item) => item.href !== "/perfil").map((item) => {
+              const Icon = ICONS_BY_HREF[item.href] ?? PanelLeft
+              return (
+                <SidebarLink
+                  key={item.href}
+                  active={isActivePath(pathname, item.href)}
+                  badge={badgeOf(item.href)}
+                  link={{ label: item.label, href: item.href, icon: <Icon className="size-[18px] shrink-0" /> }}
+                />
+              )
+            })}
           </nav>
-        </AnimatedSidebarContent>
+        </div>
 
-        <AnimatedSidebarFooter className="border-border/40">
-          <Link
-            href="/perfil"
-            onClick={() => setOpenMobile(false)}
-            className="flex items-center gap-3 overflow-hidden rounded-xl p-1.5 transition-colors duration-150 hover:bg-muted/60 active:bg-muted outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
-            title={collapsed ? displayName : undefined}
-          >
+        {/* Tarjeta de cuenta (estilo Discord): la foto y el nombre solo informan; el engrane lleva a la configuración. */}
+        <div
+          // Posición fija como el resto: la foto queda en 12 + 8 + 16 = 36 con el riel contraído.
+          className="flex items-center gap-2.5 overflow-hidden rounded-xl bg-muted/40 p-2"
+          title={!open ? displayName : undefined}
+        >
+          <span className="relative shrink-0">
             {user?.photoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- la foto llega como data URL del perfil
               <img
                 src={user.photoUrl}
                 alt=""
-                className="size-8 shrink-0 rounded-full border border-border/60 object-cover"
+                className="size-8 rounded-full border border-border/60 object-cover"
               />
             ) : (
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+              <span className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
                 {getInitials(displayName)}
-              </div>
+              </span>
             )}
-            <div className={cn("min-w-0 flex-1 transition-opacity duration-150", collapsed && "opacity-0")}>
-              <p className="truncate text-xs font-semibold text-foreground">
-                {isLoading ? "Cargando…" : displayName}
-              </p>
-              <p className="truncate text-[11px] text-muted-foreground">{ROLE_LABELS[effectiveRole]}</p>
-            </div>
-          </Link>
-        </AnimatedSidebarFooter>
-      </AnimatedSidebar>
+            {/* Sesión activa */}
+            <span
+              aria-hidden="true"
+              className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-card bg-emerald-500"
+            />
+          </span>
+          <motion.span
+            initial={false}
+            animate={{ opacity: open ? 1 : 0 }}
+            transition={{ duration: open ? 0.18 : 0.08, delay: open ? 0.06 : 0 }}
+            className="min-w-0 flex-1"
+          >
+            <span className="block truncate text-xs font-semibold text-foreground">
+              {isLoading ? "Cargando…" : displayName}
+            </span>
+            <span className="block truncate text-[11px] text-muted-foreground">{ROLE_LABELS[effectiveRole]}</span>
+          </motion.span>
+          <motion.span
+            initial={false}
+            animate={{ opacity: open ? 1 : 0 }}
+            transition={{ duration: open ? 0.18 : 0.08, delay: open ? 0.06 : 0 }}
+            className={cn("shrink-0", !open && "pointer-events-none")}
+          >
+            <Link
+              href="/perfil"
+              aria-label="Configuración"
+              title="Configuración"
+              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+            >
+              <Settings className="size-[18px]" />
+            </Link>
+          </motion.span>
+        </div>
+      </DesktopSidebar>
 
       {/* Contenido */}
-      <AnimatedSidebarInset className="bg-transparent">
+      <div className="flex min-w-0 flex-1 flex-col">
         <header className="material scroll-edge sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-border/40 bg-background/75 px-4 backdrop-blur-xl backdrop-saturate-150 lg:px-6">
-          <AnimatedSidebarTrigger
-            aria-label="Mostrar u ocultar menú"
-            title="Mostrar u ocultar menú (Ctrl+B)"
-            className="size-9 rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-          >
-            <PanelLeft className="size-5" />
-          </AnimatedSidebarTrigger>
           <div className="flex-1" />
           <Button
             variant="ghost"
@@ -202,8 +210,10 @@ function ShellContent({ children }: { children: React.ReactNode }) {
           </Button>
         </header>
 
-        <div className="flex-1 p-4 pb-24 md:pb-6 lg:p-6">{children}</div>
-      </AnimatedSidebarInset>
+        <main id="contenido" tabIndex={-1} className="flex-1 scroll-mt-14 p-4 pb-24 outline-none md:pb-6 lg:p-6">
+          {children}
+        </main>
+      </div>
 
       {/* Barra inferior (móvil), material translúcido con margen para la zona segura */}
       <nav
@@ -223,7 +233,14 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                 isActive ? "font-semibold text-primary" : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Icon className={cn("size-5", isActive ? "stroke-[2.5]" : "stroke-2")} aria-hidden="true" />
+              <span className="relative">
+                <Icon className={cn("size-5", isActive ? "stroke-[2.5]" : "stroke-2")} aria-hidden="true" />
+                {badgeOf(item.href) > 0 && (
+                  <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-700 px-1 text-[10px] font-semibold tabular-nums text-white ring-2 ring-background dark:bg-amber-400 dark:text-amber-950">
+                    {badgeOf(item.href)}
+                  </span>
+                )}
+              </span>
               <span className="max-w-[58px] truncate">{item.label}</span>
             </Link>
           )

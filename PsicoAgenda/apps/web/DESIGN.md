@@ -202,7 +202,7 @@ A monochrome white-and-grey world with a single mid-dark teal carrying all brand
 
 ### Signal (functional, not brand)
 - **Destructive Red** (`destructive`): errors, invalid fields, cancelled status dot, cancel hover.
-- **Pending Amber** (Tailwind `amber-500` dot, `amber-700` text, `amber-100` fill): the one recurring non-token hue; reserved for "Por confirmar" and "Falta registrar" states in the dashboard.
+- **Pending Amber** (Tailwind `amber-500` dot, `amber-700` text, `amber-100` fill): the one recurring non-token hue; reserved for what waits on the psychologist: the "Por responder" list and its count in Notificaciones, the count on the Notificaciones nav item (a dot on the collapsed rail) and on the bell, and "Por confirmar" / "Sin registrar" appointment states.
 - **Chart teals** (`chart-1` to `chart-5`): a teal-to-green family around hue 150-200 for reports; they stay inside the brand hue band.
 
 ### Named Rules
@@ -304,8 +304,8 @@ Dates are chosen from the animated `Calendar` (`src/components/arc/calendar/cale
 
 ### Navigation
 - **Public header:** sticky translucent white bar, icon logo (40x35) plus the `Wordmark` at 18px, section anchors as 14px grey links with 10px-radius `muted` hover, ghost "Iniciar sesión" and primary "Crear cuenta" at `sm` size. Anchors hide below `md`.
-- **App sidebar:** 240px (72px collapsed), translucent `card` material, icon plus the `Wordmark` at 15px (the word hides when collapsed), items 14px medium with 18px icons and 14px radius, at least 40px tall; the active item is a teal fill with white text and stays active on the section's subpages (`/agenda/nueva` keeps Agenda selected). On desktop it is sticky at full viewport height so it never scrolls away. The footer is the signed-in person (initials avatar, name, role) and links to Perfil.
-- **Mobile drawer:** the same sidebar slides in over a 40% black scrim that fades with it (300ms, `cubic-bezier(0.32, 0.72, 0, 1)`). It tracks a horizontal drag 1:1 after a 10px threshold, rubber-bands when pulled outward, and closes when the drag projected by its release velocity passes half its width. Escape and a tap on the scrim also close it; the page behind does not scroll while it is open.
+- **App sidebar:** Aceternity `Sidebar` (`components/ui/sidebar.tsx`), desktop only. It rests as a 72px icon rail and widens to 240px on hover or keyboard focus (spring without bounce; instant under reduced motion). Translucent `card` material, icon plus the `Wordmark` at 15px (the word fades out when collapsed), items 14px medium with 18px icons and 14px radius, at least 40px tall; collapsed items keep their label as accessible name and tooltip. The active item is a teal fill with white text and stays active on the section's subpages (`/agenda/nueva` keeps Agenda selected). Sticky at full viewport height so it never scrolls away. The footer is the signed-in person (photo or initials avatar, name, role) and links to Perfil.
+- **Mobile:** no drawer; the bottom tab bar is the navigation.
 - **Mobile tab bar:** fixed bottom material, 64px plus the safe-area inset, 10px labels under 20px icons; the active item is teal text with a heavier icon stroke; a press dims the item to 60%.
 
 ### Initials Avatar

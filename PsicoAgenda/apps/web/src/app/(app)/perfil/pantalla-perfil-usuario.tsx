@@ -30,8 +30,19 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { PageHeader } from "../components/page-header"
 import { useSession } from "@/lib/use-session"
 import { useThemePreference } from "@/lib/use-theme"
+import { applyTheme, readPreferences, type ThemePreferences } from "@/lib/theme"
+import { useUnsavedChanges } from "@/lib/use-unsaved-changes"
+import { erroresDePerfil, type CampoPerfil, type ErroresPerfil } from "@/lib/perfil"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { TelefonoInput } from "@/components/telefono-input"
-import { contarDigitosTelefono, formatearTelefonoPegado } from "@/lib/telefono"
+import { formatearTelefonoPegado } from "@/lib/telefono"
 import { comprimirAvatar } from "@/lib/imagen"
 import { ThemePicker } from "@/components/theme-picker"
 import { patientService, psychologistService } from "@/services"
@@ -85,7 +96,16 @@ export function PantallaPerfilUsuario() {
 
   // 3. Preferencias (Zona horaria y tema de interfaz)
   const [timezone, setTimezone] = useState<string>("America/Mazatlan")
-  const { mode, palette, setMode, setPalette, reset } = useThemePreference()
+  const { mode, palette, setMode, setPalette } = useThemePreference()
+  // El tema elegido aquí es un borrador: se ve al instante pero solo se guarda con "Guardar cambios".
+  const [themeDraft, setThemeDraft] = useState<ThemePreferences | null>(null)
+  const shownTheme = themeDraft ?? { mode, palette }
+  const previewTheme = (next: ThemePreferences) => {
+    setThemeDraft(next)
+    applyTheme(next)
+  }
+  // Al salir sin guardar, la interfaz vuelve al tema guardado.
+  useEffect(() => () => applyTheme(readPreferences()), [])
 
   // Estados de retroalimentación
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
@@ -94,9 +114,23 @@ export function PantallaPerfilUsuario() {
   const [isSaving, setIsSaving] = useState(false)
   const { toast } = useToast()
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<ErroresPerfil>({})
+  // Al corregir un campo se borra su error; los demás se quedan hasta el siguiente intento.
+  const limpiarError = (campo: CampoPerfil) =>
+    setFieldErrors((prev) => (prev[campo] ? { ...prev, [campo]: undefined } : prev))
+  const errorDe = (campo: CampoPerfil) =>
+    fieldErrors[campo] ? (
+      <p id={`perfil-error-${campo}`} role="alert" className="text-xs font-medium text-destructive">
+        {fieldErrors[campo]}
+      </p>
+    ) : null
+  const propsDeError = (campo: CampoPerfil) =>
+    fieldErrors[campo]
+      ? { "aria-invalid": true as const, "aria-describedby": `perfil-error-${campo}` }
+      : {}
 
-  // Última versión guardada: permite que "Cancelar" descarte ediciones sin confirmar.
-  const savedSnapshotRef = useRef({
+  // Última versión guardada: contra ella se detectan los cambios sin guardar.
+  const [saved, setSaved] = useState({
     name,
     phone,
     email,
@@ -131,7 +165,7 @@ export function PantallaPerfilUsuario() {
           setEmergencyName(profile.emergencyContact?.name ?? "")
           setEmergencyPhone(formatearTelefonoPegado(profile.emergencyContact?.phone ?? ""))
           setGuardianshipEndedAt(profile.guardianshipEndedAt ?? null)
-          savedSnapshotRef.current = {
+          setSaved({
             name: profile.name,
             phone: formatearTelefonoPegado(profile.phone ?? ""),
             email: profile.email,
@@ -141,7 +175,7 @@ export function PantallaPerfilUsuario() {
             emergencyName: profile.emergencyContact?.name ?? "",
             emergencyPhone: formatearTelefonoPegado(profile.emergencyContact?.phone ?? ""),
             avatarImage: profile.photoUrl ?? null,
-          }
+          })
         } else {
           const profile = await psychologistService.getMe()
           if (cancelled) return
@@ -153,7 +187,7 @@ export function PantallaPerfilUsuario() {
           updatePhoto(profile.photoUrl)
           setLicenseNumber(profile.licenseNumber ?? "")
           setSpecialty(profile.specialty ?? "")
-          savedSnapshotRef.current = {
+          setSaved({
             name: profile.name,
             phone: formatearTelefonoPegado(profile.phone ?? ""),
             email: profile.email,
@@ -163,7 +197,7 @@ export function PantallaPerfilUsuario() {
             emergencyName: "",
             emergencyPhone: "",
             avatarImage: profile.photoUrl ?? null,
-          }
+          })
         }
       } catch (error) {
         if (!cancelled) {
@@ -207,88 +241,65 @@ export function PantallaPerfilUsuario() {
     }
   }
 
-  const handleCancel = () => {
-    const saved = savedSnapshotRef.current
-    setName(saved.name)
-    setPhone(saved.phone)
-    setEmail(saved.email)
-    setTimezone(saved.timezone)
-    setLicenseNumber(saved.licenseNumber)
-    setSpecialty(saved.specialty)
-    setEmergencyName(saved.emergencyName)
-    setEmergencyPhone(saved.emergencyPhone)
-    setAvatarImage(saved.avatarImage)
-    setValidationError(null)
+  const DEFAULT_PREFERENCES = { timezone: "America/Mazatlan", mode: "system", palette: "default" } as const
+
+  // Solo preferencias (zona horaria y tema), y como borrador: se aplica con "Guardar cambios".
+  const handleResetPreferences = () => {
+    setTimezone(DEFAULT_PREFERENCES.timezone)
+    previewTheme({ mode: DEFAULT_PREFERENCES.mode, palette: DEFAULT_PREFERENCES.palette })
   }
+  const preferencesAreDefault =
+    timezone === DEFAULT_PREFERENCES.timezone &&
+    shownTheme.mode === DEFAULT_PREFERENCES.mode &&
+    shownTheme.palette === DEFAULT_PREFERENCES.palette
+
+  // Apagar el alto contraste vuelve a la paleta guardada (u Original si la guardada era el contraste).
+  const handleContrastChange = (on: boolean) =>
+    previewTheme({
+      mode: shownTheme.mode,
+      palette: on ? "contraste" : palette === "contraste" ? "default" : palette,
+    })
+
+  const isDirty =
+    !isLoadingProfile &&
+    (name !== saved.name ||
+      phone !== saved.phone ||
+      timezone !== saved.timezone ||
+      licenseNumber !== saved.licenseNumber ||
+      specialty !== saved.specialty ||
+      emergencyName !== saved.emergencyName ||
+      emergencyPhone !== saved.emergencyPhone ||
+      avatarImage !== saved.avatarImage ||
+      shownTheme.mode !== mode ||
+      shownTheme.palette !== palette)
+  const unsaved = useUnsavedChanges(isDirty)
 
   // Guardar Cambios (datos personales y preferencias)
   const handleSavePreferences = async (e: React.FormEvent) => {
     e.preventDefault()
     setValidationError(null)
 
-    const nombre = name.trim()
-    if (nombre.length < 2) {
-      setValidationError("El nombre completo debe tener al menos 2 caracteres.")
+    // Todo se envía tal cual: un campo vacío se rechaza aquí (y en la API), no se omite en silencio.
+    const comunes = { name, phone, timeZone: timezone, photoUrl: avatarImage ?? "" }
+    const payload = isPatient
+      ? { ...comunes, emergencyContactName: emergencyName, emergencyContactPhone: emergencyPhone }
+      : { ...comunes, licenseNumber, specialty }
+    const errores = erroresDePerfil(isPatient, payload)
+    setFieldErrors(errores)
+    if (Object.keys(errores).length > 0) {
+      setValidationError("Revisa los campos marcados en rojo antes de guardar.")
       return
-    }
-    if (nombre.length > 120) {
-      setValidationError("El nombre completo es demasiado largo (máximo 120 caracteres).")
-      return
-    }
-    if (phone && contarDigitosTelefono(phone) !== 10) {
-      setValidationError("El teléfono debe tener 10 dígitos.")
-      return
-    }
-
-    if (isPatient) {
-      const contactoNombre = emergencyName.trim()
-      const contactoTelefono = emergencyPhone.trim()
-      if (Boolean(contactoNombre) !== Boolean(contactoTelefono)) {
-        setValidationError("El contacto de emergencia necesita nombre y teléfono.")
-        return
-      }
-      if (contactoNombre && contarDigitosTelefono(contactoTelefono) !== 10) {
-        setValidationError("El teléfono de emergencia debe tener 10 dígitos.")
-        return
-      }
-    } else {
-      const cedula = licenseNumber.trim()
-      if (cedula && !/^[A-Za-z0-9ÁÉÍÓÚÜáéíóúüÑñ.\s-]{4,30}$/.test(cedula)) {
-        setValidationError("La cédula debe tener entre 4 y 30 caracteres válidos.")
-        return
-      }
-      if (specialty.trim().length > 120) {
-        setValidationError("La especialidad es demasiado larga (máximo 120 caracteres).")
-        return
-      }
     }
 
     setIsSaving(true)
 
     try {
-      if (isPatient) {
-        const guardado = await patientService.updateProfile({
-          name,
-          phone: phone || undefined,
-          timeZone: timezone,
-          photoUrl: avatarImage ?? undefined,
-          emergencyContactName: emergencyName.trim() || undefined,
-          emergencyContactPhone: emergencyPhone || undefined,
-        })
-        updatePhoto(guardado.photoUrl)
-      } else {
-        const guardado = await psychologistService.updateMe({
-          name,
-          phone: phone || undefined,
-          timeZone: timezone,
-          photoUrl: avatarImage ?? undefined,
-          licenseNumber: licenseNumber.trim() || undefined,
-          specialty: specialty.trim() || undefined,
-        })
-        updatePhoto(guardado.photoUrl)
-      }
+      const guardado = isPatient
+        ? await patientService.updateProfile(payload)
+        : await psychologistService.updateMe(payload)
+      updatePhoto(guardado.photoUrl)
 
-      savedSnapshotRef.current = {
+      setSaved({
         name,
         phone,
         email,
@@ -298,6 +309,12 @@ export function PantallaPerfilUsuario() {
         emergencyName,
         emergencyPhone,
         avatarImage,
+      })
+      // El tema vive en este navegador: se confirma junto con el resto.
+      if (themeDraft) {
+        setMode(themeDraft.mode)
+        setPalette(themeDraft.palette)
+        setThemeDraft(null)
       }
       toast({
         title: "Cambios guardados",
@@ -418,16 +435,6 @@ export function PantallaPerfilUsuario() {
                     className="hidden"
                     aria-label="Seleccionar archivo de imagen"
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="text-xs rounded-xl border-border/80 h-8"
-                  >
-                    <Camera className="mr-1.5 size-3.5 text-primary" />
-                    Cambiar imagen
-                  </Button>
 
                   {avatarImage && (
                     <Button
@@ -449,36 +456,45 @@ export function PantallaPerfilUsuario() {
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Campo Nombre */}
               <div className="space-y-1.5 sm:col-span-2">
-                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                <label htmlFor="perfil-nombre" className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   <User className="size-3.5 text-primary" />
                   Nombre Completo
                 </label>
                 <Input
+                  id="perfil-nombre"
                   type="text"
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value)
+                    limpiarError("name")
                   }}
                   placeholder="Tu nombre y apellidos"
                   className="rounded-xl h-11 text-sm bg-background border-border/80"
                   required
+                  {...propsDeError("name")}
                 />
+                {errorDe("name")}
               </div>
 
               {/* Campo Teléfono */}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                <label htmlFor="perfil-telefono" className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   <Phone className="size-3.5 text-primary" />
                   Teléfono de Contacto
                 </label>
                 <TelefonoInput
+                  id="perfil-telefono"
                   value={phone}
                   onChange={(valor) => {
                     setPhone(valor)
+                    limpiarError("phone")
                   }}
                   placeholder="311-123-4567"
                   className="rounded-xl h-11 text-sm bg-background border-border/80 font-mono"
+                  required
+                  {...propsDeError("phone")}
                 />
+                {errorDe("phone")}
                 <p className="text-[11px] text-muted-foreground">
                   Se utilizará para los recordatorios por WhatsApp.
                 </p>
@@ -486,11 +502,12 @@ export function PantallaPerfilUsuario() {
 
               {/* Campo Correo */}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                <label htmlFor="perfil-correo" className="text-sm font-medium text-foreground flex items-center gap-1.5">
                   <Mail className="size-3.5 text-primary" />
                   Correo Electrónico
                 </label>
                 <Input
+                  id="perfil-correo"
                   type="email"
                   value={email}
                   readOnly
@@ -505,31 +522,44 @@ export function PantallaPerfilUsuario() {
               {!isPatient && (
                 <>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                    <label htmlFor="perfil-cedula" className="text-sm font-medium text-foreground flex items-center gap-1.5">
                       <FileCheck className="size-3.5 text-primary" />
                       Cédula Profesional
                     </label>
                     <Input
+                      id="perfil-cedula"
                       type="text"
                       value={licenseNumber}
-                      onChange={(e) => setLicenseNumber(e.target.value)}
+                      onChange={(e) => {
+                        setLicenseNumber(e.target.value)
+                        limpiarError("licenseNumber")
+                      }}
                       placeholder="Psic. 12345"
                       className="rounded-xl h-11 text-sm bg-background border-border/80"
+                      required
+                      {...propsDeError("licenseNumber")}
                     />
+                    {errorDe("licenseNumber")}
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                    <label htmlFor="perfil-especialidad" className="text-sm font-medium text-foreground flex items-center gap-1.5">
                       <HeartPulse className="size-3.5 text-primary" />
                       Especialidad Clínica
                     </label>
                     <Input
+                      id="perfil-especialidad"
                       type="text"
                       value={specialty}
-                      onChange={(e) => setSpecialty(e.target.value)}
+                      onChange={(e) => {
+                        setSpecialty(e.target.value)
+                        limpiarError("specialty")
+                      }}
                       placeholder="Psicología clínica / TCC"
                       className="rounded-xl h-11 text-sm bg-background border-border/80"
+                      {...propsDeError("specialty")}
                     />
+                    {errorDe("specialty")}
                   </div>
                 </>
               )}
@@ -538,32 +568,44 @@ export function PantallaPerfilUsuario() {
               {isPatient && (
                 <>
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                    <label htmlFor="perfil-emergencia-nombre" className="text-sm font-medium text-foreground flex items-center gap-1.5">
                       <Shield className="size-3.5 text-primary" />
                       Contacto de Emergencia (Nombre)
                     </label>
                     <Input
+                      id="perfil-emergencia-nombre"
                       type="text"
                       value={emergencyName}
-                      onChange={(e) => setEmergencyName(e.target.value)}
+                      onChange={(e) => {
+                        setEmergencyName(e.target.value)
+                        limpiarError("emergencyContactName")
+                      }}
                       placeholder="Nombre del familiar"
                       className="rounded-xl h-11 text-sm bg-background border-border/80"
+                      required
+                      {...propsDeError("emergencyContactName")}
                     />
+                    {errorDe("emergencyContactName")}
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                    <label htmlFor="perfil-emergencia-telefono" className="text-sm font-medium text-foreground flex items-center gap-1.5">
                       <Phone className="size-3.5 text-primary" />
                       Teléfono de Emergencia
                     </label>
                     <TelefonoInput
+                      id="perfil-emergencia-telefono"
                       value={emergencyPhone}
                       onChange={(valor) => {
                         setEmergencyPhone(valor)
+                        limpiarError("emergencyContactPhone")
                       }}
                       placeholder="311-123-4567"
                       className="rounded-xl h-11 text-sm bg-background border-border/80 font-mono"
+                      required
+                      {...propsDeError("emergencyContactPhone")}
                     />
+                    {errorDe("emergencyContactPhone")}
                   </div>
                 </>
               )}
@@ -592,7 +634,7 @@ export function PantallaPerfilUsuario() {
           <CardContent className="p-5 sm:p-6 space-y-5">
             {/* Zona Horaria */}
             <div className="space-y-1.5 max-w-sm">
-              <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+              <label htmlFor="perfil-zona-horaria" className="text-sm font-medium text-foreground flex items-center gap-1.5">
                 <Globe className="size-3.5 text-primary" />
                 Zona Horaria
               </label>
@@ -603,7 +645,7 @@ export function PantallaPerfilUsuario() {
                   setTimezone(val)
                 }}
               >
-                <SelectTrigger className="w-full rounded-xl h-11 text-sm bg-background border-border/80">
+                <SelectTrigger id="perfil-zona-horaria" className="w-full rounded-xl h-11 text-sm bg-background border-border/80">
                   <SelectValue placeholder="Selecciona tu zona horaria" />
                 </SelectTrigger>
                 <SelectContent>
@@ -621,33 +663,35 @@ export function PantallaPerfilUsuario() {
 
             {/* Diseño de interfaz (tema) */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+              <p id="perfil-diseno" className="text-sm font-medium text-foreground flex items-center gap-1.5">
                 <Palette className="size-3.5 text-primary" />
                 Diseño de Interfaz
-              </label>
+              </p>
               <ThemePicker
-                mode={mode}
-                palette={palette}
-                onModeChange={setMode}
-                onPaletteChange={setPalette}
-                onReset={reset}
+                mode={shownTheme.mode}
+                palette={shownTheme.palette}
+                onModeChange={(next) => previewTheme({ ...shownTheme, mode: next })}
+                onPaletteChange={(next) => previewTheme({ ...shownTheme, palette: next })}
+                onContrastChange={handleContrastChange}
               />
             </div>
           </CardContent>
         </Card>
 
-        {/* SECCIÓN 3: BOTONES "GUARDAR CAMBIOS" Y "CANCELAR" */}
+        {/* SECCIÓN 3: "RESTABLECER CONFIGURACIÓN" (solo preferencias) Y "GUARDAR CAMBIOS" (todo) */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
           <div className="flex items-center gap-2.5 w-full sm:w-auto">
             <Button
               type="button"
               variant="outline"
               size="lg"
-              onClick={handleCancel}
-              disabled={isSaving}
+              onClick={handleResetPreferences}
+              disabled={isSaving || preferencesAreDefault}
+              title="Vuelve la zona horaria y el diseño de interfaz a los predeterminados"
               className="flex-1 sm:flex-none h-11 px-6 rounded-xl border-border/80 font-semibold text-sm"
             >
-              Cancelar
+              <RotateCcw className="mr-1.5 size-4" />
+              Restablecer configuración
             </Button>
 
             <Button
@@ -671,6 +715,26 @@ export function PantallaPerfilUsuario() {
           </div>
         </div>
       </form>
+
+      {/* Salir con cambios sin guardar */}
+      <Dialog open={unsaved.pendingHref !== null} onOpenChange={(open) => !open && unsaved.stay()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tienes cambios sin guardar</DialogTitle>
+            <DialogDescription>
+              Si sales ahora se pierden los cambios de tu perfil y de tus preferencias. ¿Qué quieres hacer?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={unsaved.leave}>
+              Salir sin guardar
+            </Button>
+            <Button type="button" onClick={unsaved.stay}>
+              Seguir editando
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
