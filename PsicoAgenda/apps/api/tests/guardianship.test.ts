@@ -128,7 +128,7 @@ describe("addGuardian", () => {
   it("registra un contacto sin cuenta", async () => {
     await addGuardian(psico, "p-1", { name: "Papá", phone: "3111111111" });
     expect(db.tutores.create).toHaveBeenCalled();
-    expect(db.pacientes_tutores.create.mock.calls[0]![0].data.tutor_id).toBe("t-contacto");
+    expect((db.pacientes_tutores.create.mock.calls[0]![0] as { data?: { tutor_id?: string } }).data?.tutor_id).toBe("t-contacto");
   });
 
   it("rechaza al propio paciente y al psicólogo tratante como tutores", async () => {
@@ -200,11 +200,11 @@ describe("finalizarTutelasVencidas", () => {
     expect(db.consentimientos_informados.updateMany.mock.calls[0]![0]).toMatchObject({
       data: { estado: "VENCIDO" },
     });
-    expect(db.registros_auditoria.create.mock.calls[0]![0].data).toMatchObject({
+    expect((db.registros_auditoria.create.mock.calls[0]![0] as { data?: unknown }).data).toMatchObject({
       accion: "TUTELA_FINALIZADA",
       detalle: { tutores: ["t-1", "t-2", "t-3"] },
     });
-    const avisos = db.notificaciones.createMany.mock.calls[0]![0].data as { usuario_id: string; canal: string }[];
+    const avisos = (db.notificaciones.createMany.mock.calls[0]![0] as { data?: { usuario_id: string; canal: string }[] }).data;
     const de = (id: string) => avisos.filter((a) => a.usuario_id === id).map((a) => a.canal);
     expect(de("u-menor")).toEqual(["SISTEMA", "CORREO"]);
     expect(de("u-mama")).toEqual(["SISTEMA", "CORREO"]);

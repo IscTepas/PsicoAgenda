@@ -61,6 +61,42 @@ describe("verifyToken", () => {
     });
   });
 
+  it("extrae name y photoUrl de user_metadata cuando el proveedor los incluye", async () => {
+    const token = await signFor(
+      issuerKeys,
+      {
+        email: "ana@psicoagenda.test",
+        app_metadata: { role: UserRole.PSYCHOLOGIST },
+        user_metadata: { name: "Dra. Ana García", photo_url: "https://example.com/photo.webp" },
+      },
+      "1h",
+    );
+
+    await expect(verifyToken(token)).resolves.toEqual({
+      id: SUBJECT,
+      email: "ana@psicoagenda.test",
+      role: UserRole.PSYCHOLOGIST,
+      name: "Dra. Ana García",
+      photoUrl: "https://example.com/photo.webp",
+    });
+  });
+
+  it("acepta full_name como respaldo de name", async () => {
+    const token = await signFor(
+      issuerKeys,
+      {
+        email: "ana@psicoagenda.test",
+        app_metadata: { role: UserRole.PSYCHOLOGIST },
+        user_metadata: { full_name: "Dra. Ana García" },
+      },
+      "1h",
+    );
+
+    await expect(verifyToken(token)).resolves.toMatchObject({
+      name: "Dra. Ana García",
+    });
+  });
+
   it("rechaza un token firmado con una clave ajena al proyecto", async () => {
     const token = await signFor(
       foreignKeys,

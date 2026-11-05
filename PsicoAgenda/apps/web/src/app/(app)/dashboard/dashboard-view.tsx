@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import {
@@ -22,6 +22,7 @@ import {
   UserRole,
   type Appointment,
   type AppointmentRequest,
+  type Notification,
   type Patient,
   type PatientProfile,
   type PsychologistProfile,
@@ -45,7 +46,8 @@ import { useSession } from "@/lib/use-session"
 import { useHydrated } from "@/lib/use-hydrated"
 import { cn } from "@/lib/utils"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
-import { appointmentRequestService, appointmentService, patientService, psychologistService, notificationService } from "@/services"
+import { appointmentRequestService, appointmentService, notificationService, patientService, psychologistService } from "@/services"
+import { useDashboardData } from "./use-dashboard-data"
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
@@ -151,14 +153,22 @@ function ModalityLabel({ modality }: { modality: AppointmentModality }) {
  * sin leer (o de los recientes si todo está leído) que se despliega hacia abajo;
  * "Ver todas" lleva a Notificaciones.
  */
-function NotificationsButton({ className }: { className?: string }) {
+function NotificationsButton({
+  className,
+  notifications: propNotifications,
+}: {
+  className?: string
+  notifications?: Notification[]
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const { data: notifications = [] } = useQuery({
+  const { data: queryNotifications = [] } = useQuery<Notification[]>({
     queryKey: ["notifications", "bell"],
     queryFn: () => notificationService.list(undefined, 20),
     staleTime: 30_000,
+    enabled: propNotifications === undefined,
   })
+  const notifications = propNotifications ?? queryNotifications
   const unread = notifications.filter((n) => !n.readAt)
   const items = unread.length > 0 ? unread : notifications.slice(0, 3)
   const count = unread.length
@@ -364,36 +374,23 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const fromToday = useMemo(() => startOfDay(today), [today])
   const toNextDays = useMemo(() => new Date(today.getTime() + 30 * DAY), [today])
 
-  const { data: appointments = [], refetch: refetchAppointments } = useQuery({
-    queryKey: ["appointments", "dashboard", fromToday.toISOString(), toNextDays.toISOString()],
-    queryFn: () =>
-      appointmentService.list({ from: fromToday, to: toNextDays, limit: 200 }),
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-  })
+  const {
+    appointments,
+    patients,
+    pendingRequests,
+    notifications,
+  } = useDashboardData({ from: fromToday, to: toNextDays })
 
-  const { data: patients = [] } = useQuery({
-    queryKey: ["patients", "list", 100],
-    queryFn: () => patientService.list({ limit: 100 }),
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
-  })
+  const queryClient = useQueryClient()
+  const refetchAppointments = () =>
+    queryClient.invalidateQueries({ queryKey: ["appointments", "dashboard"] })
+  const refetchRequests = () =>
+    queryClient.invalidateQueries({ queryKey: ["appointment-requests", AppointmentRequestStatus.PENDING] })
 
   const patientById = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient])),
     [patients],
   )
-
-  const { data: pendingRequests = [], refetch: refetchRequests } = useQuery({
-    queryKey: ["appointment-requests", AppointmentRequestStatus.PENDING],
-    // Solo las que aún pueden aceptarse: las de fechas pasadas ya no aplican.
-    queryFn: async () =>
-      (await appointmentRequestService.list(AppointmentRequestStatus.PENDING)).filter(
-        (r) => new Date(r.startTime).getTime() > Date.now(),
-      ),
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-  })
 
   // Mini-calendario state
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date())
@@ -496,7 +493,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
 
   const handleRegisterAttendance = async (aptId: string) => {
     try {
-      const updated = await appointmentService.changeStatus(aptId, AppointmentStatus.COMPLETED)
+      await appointmentService.changeStatus(aptId, AppointmentStatus.COMPLETED)
       await refetchAppointments()
       setActiveSessionAppointment(null)
       showNotice("Asistencia registrada. La sesión quedó como completada.")
@@ -507,7 +504,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
 
   const handleConfirmAppointment = async (aptId: string) => {
     try {
-      const updated = await appointmentService.changeStatus(aptId, AppointmentStatus.CONFIRMED)
+      await appointmentService.changeStatus(aptId, AppointmentStatus.CONFIRMED)
       await refetchAppointments()
       setActiveSessionAppointment(null)
       const name = patientById.get(appointments.find((a) => a.id === aptId)?.patientId ?? "")?.name
@@ -577,7 +574,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
 
         {/* En móvil, notificaciones y reportes ya viven en la barra inferior */}
         <div className="flex items-center gap-2">
-          <NotificationsButton className="hidden sm:inline-flex" />
+          <NotificationsButton className="hidden sm:inline-flex" notifications={notifications} />
           <Button asChild variant="ghost" className="hidden text-muted-foreground sm:inline-flex">
             <Link href="/reportes">
               <FileText />

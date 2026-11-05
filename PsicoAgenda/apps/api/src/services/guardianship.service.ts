@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { UserRole, type LegalGuardian, type TutoredPatient } from "@psicoagenda/shared";
-import { Prisma } from "@/generated/prisma/client";
+import type { Prisma } from "@/generated/prisma/client";
 import {
   canal_notificacion,
   estado_consentimiento,

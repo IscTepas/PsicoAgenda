@@ -93,7 +93,7 @@ describe("catálogo", () => {
   it("«Otro» siempre se guarda exigiendo texto", async () => {
     motivos.create.mockResolvedValue(OTRO);
     await createReason({ code: "otro2", label: "Otro", category: "Otro", isOther: true, requiresText: false });
-    expect(motivos.create.mock.calls[0]![0].data).toMatchObject({ es_otro: true, requiere_texto: true });
+    expect((motivos.create.mock.calls[0]![0] as { data?: unknown }).data).toMatchObject({ es_otro: true, requiere_texto: true });
   });
 
   it("no deja borrar un motivo en uso", async () => {

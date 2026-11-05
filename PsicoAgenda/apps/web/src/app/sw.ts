@@ -10,11 +10,35 @@ declare global {
 
 declare const self: ServiceWorkerGlobalScope;
 
+const API_TIMEOUT_MS = 10_000;
+
+/**
+ * Handler de red con timeout explícito. Evita que peticiones al API queden
+ * colgadas indefinidamente cuando la conexión está degradada.
+ */
+class NetworkOnlyWithTimeout extends NetworkOnly {
+  async handle(options: Parameters<NetworkOnly["handle"]>[0]): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort("timeout"), API_TIMEOUT_MS);
+
+    try {
+      return await super.handle({
+        ...options,
+        request: new Request(options.request, { signal: controller.signal }),
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   skipWaiting: true,
   clientsClaim: true,
-  navigationPreload: true,
+  // `navigationPreload` puede duplicar peticiones de navegación junto con el
+  // prefetch de Next.js; las rutas estáticas siguen precacheadas.
+  navigationPreload: false,
   runtimeCaching: [
     {
       /**
@@ -35,7 +59,7 @@ const serwist = new Serwist({
        * `/api/` identifica el API sin depender de ella.
        */
       matcher: ({ url, sameOrigin }) => !sameOrigin && url.pathname.startsWith("/api/"),
-      handler: new NetworkOnly(),
+      handler: new NetworkOnlyWithTimeout(),
     },
     ...defaultCache,
   ],

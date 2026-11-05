@@ -28,14 +28,13 @@ const createPrismaClient = () =>
     log: config.isProduction ? ["error"] : ["warn", "error"],
   });
 
-// Singleton: evita abrir un pool de conexiones nuevo en cada recarga de hot-reload.
+// Singleton: evita abrir un pool de conexiones nuevo en cada recarga de hot-reload
+// y reutiliza el pool mientras la función serverless esté caliente.
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 export const prisma: PrismaClient = globalForPrisma.prisma ?? createPrismaClient();
 
-if (!config.isProduction) {
-  globalForPrisma.prisma = prisma;
-}
+globalForPrisma.prisma = prisma;
 
 /**
  * Cierra el pool de conexiones de forma ordenada. Sin esto, `SIGINT`/`SIGTERM`

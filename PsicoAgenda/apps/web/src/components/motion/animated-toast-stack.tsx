@@ -23,6 +23,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -269,15 +270,18 @@ export function AnimatedToastStack({
   icons,
   renderToast,
 }: AnimatedToastStackProps) {
-  const [portalTarget, setPortalTarget] = useState<Element | null>(null);
   const visibleToasts = toasts.slice(-maxVisible);
   const isBottom = position.startsWith("bottom");
   const resolvedPlacement = placement ?? (fixed ? "fixed" : "static");
   const shouldPortal = portal ?? resolvedPlacement === "fixed";
 
-  useEffect(() => {
-    setPortalTarget(shouldPortal ? (portalRoot ?? document.body) : null);
-  }, [portalRoot, shouldPortal]);
+  // Calcula el portal sin setState en un efecto, evitando renders en cascada
+  // y manteniendo el mismo snapshot en SSR e hidratación.
+  const portalTarget = useSyncExternalStore(
+    () => () => {},
+    () => (shouldPortal ? (portalRoot ?? (typeof document !== "undefined" ? document.body : null)) : null),
+    () => null,
+  );
 
   const stack = (
     <ol
