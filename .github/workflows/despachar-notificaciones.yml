@@ -20,8 +20,7 @@ jobs:
         # Los reintentos absorben el corte de un redespliegue; un 401/503 constante sí falla.
         run: |
           curl --fail-with-body -sS --retry 2 --retry-delay 20 --retry-all-errors \
-            -X POST "${{ vars.API_URL }}/api/internal/despachar" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+            -X POST "${{ vars.API_URL }}/api/internal/despachar"
 
   tutelas:
     # Una vez al día (y a mano). Los permisos ya se cortan al autorizar; esto borra vínculos, audita y avisa.
@@ -32,8 +31,7 @@ jobs:
       - name: Finalizar tutelas de quienes cumplieron 18
         run: |
           curl --fail-with-body -sS --retry 2 --retry-delay 20 --retry-all-errors \
-            -X POST "${{ vars.API_URL }}/api/internal/finalizar-tutelas" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+            -X POST "${{ vars.API_URL }}/api/internal/finalizar-tutelas"
 
   salud:
     runs-on: ubuntu-latest
