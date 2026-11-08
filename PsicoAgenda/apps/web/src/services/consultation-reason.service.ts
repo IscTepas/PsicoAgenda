@@ -17,15 +17,16 @@ export const consultationReasonService = {
 }
 
 /**
- * Error del campo de motivo, o null si se puede enviar. «Otro» (y cualquier motivo
- * que pida texto) no se envía vacío; `obligatorio` aplica a las altas nuevas.
+ * Error del campo de motivos, o null si se puede enviar. Se elige uno o varios;
+ * con «Otro» el texto es obligatorio. `obligatorio` aplica a las altas nuevas.
  */
 export function errorDeMotivo(
-  motivo: Pick<ConsultationReason, "label" | "requiresText"> | undefined,
+  elegidos: Pick<ConsultationReason, "label" | "requiresText">[],
   texto: string,
   obligatorio: boolean,
 ): string | null {
-  if (!motivo) return obligatorio ? "Elige el motivo de la consulta." : null
-  if (motivo.requiresText && !texto.trim()) return `Describe el motivo para «${motivo.label}».`
+  if (elegidos.length === 0) return obligatorio ? "Elige al menos un motivo de consulta." : null
+  const otro = elegidos.find((motivo) => motivo.requiresText)
+  if (otro && !texto.trim()) return "Escribe el otro motivo de la consulta."
   return null
 }

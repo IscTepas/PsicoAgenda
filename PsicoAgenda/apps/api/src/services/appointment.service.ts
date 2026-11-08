@@ -15,7 +15,7 @@ import {
   tipo_sesion,
 } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
-import { reasonText, resolveReason } from "@/services/consultation-reason.service";
+import { reasonIdsOf, reasonLinks, reasonOtherOf, reasonText, resolveReasons } from "@/services/consultation-reason.service";
 import { assertCanActOnPatient, patientIdsForUser } from "@/services/guardianship.service";
 import { notificar, type CitaAviso } from "@/services/notification.service";
 import { AppError } from "@/utils/app-error";
@@ -25,7 +25,7 @@ import { calculateAppointmentPrice, getEffectiveDurationMinutes } from "@/utils/
 // La cita viaja siempre con su fila de honorarios: el panel muestra si ya se cobró.
 const appointmentInclude = {
   pagos_honorarios: true,
-  motivos_consulta: { select: { etiqueta: true, requiere_texto: true } },
+  citas_motivos: reasonLinks,
 } as const;
 
 type AppointmentRow = Prisma.citasGetPayload<{ include: typeof appointmentInclude }>;
@@ -37,7 +37,7 @@ export interface CreateAppointmentInput {
   durationMinutes: number;
   modality: SharedModality;
   reason?: string;
-  reasonId?: string;
+  reasonIds?: string[];
 }
 
 export interface UpdateAppointmentInput {
@@ -45,7 +45,7 @@ export interface UpdateAppointmentInput {
   durationMinutes?: number;
   modality?: SharedModality;
   reason?: string;
-  reasonId?: string;
+  reasonIds?: string[];
   notes?: string;
 }
 
@@ -201,8 +201,9 @@ export const toAppointment = (row: AppointmentRow): Appointment => {
     modality: toSharedModality(row.modalidad),
     attendanceStatus: toAttendanceStatus(row.estado),
     sessionType: SESSION_TYPES[row.tipo_sesion],
-    reason: reasonText(row.motivo, row.motivos_consulta),
-    reasonId: row.motivo_id ?? undefined,
+    reason: reasonText(row.motivo, row.citas_motivos),
+    reasonIds: reasonIdsOf(row.citas_motivos),
+    reasonOther: reasonOtherOf(row.motivo, row.citas_motivos),
     notes: row.notas_internas ?? undefined,
     // `precio` es el snapshot de la tarifa; `payment` es el estado de cobro.
     price: row.precio ?? undefined,
@@ -470,7 +471,7 @@ export async function createAppointment(
         start: input.startTime,
         durationMinutes: input.durationMinutes,
         modality: input.modality,
-        ...(await resolveReason(tx, input.reasonId, input.reason)),
+        ...(await resolveReasons(tx, input.reasonIds, input.reason)),
         // Si la agenda el propio profesional ya está confirmada; si la pide el
         // paciente (ruta antigua), queda PENDIENTE hasta que la confirme.
         status: auth.role === UserRole.PATIENT ? estado_cita.PENDIENTE : estado_cita.CONFIRMADA,
@@ -511,9 +512,9 @@ export async function insertAppointment(
     start: Date;
     durationMinutes: number;
     modality: SharedModality;
-    /** Ya validados con `resolveReason` (o copiados de una solicitud aceptada). */
+    /** Ya validados con `resolveReasons` (o copiados de una solicitud aceptada). */
     motivo: string | null;
-    motivo_id: string | null;
+    motivoIds: string[];
     status: estado_cita;
     requestId?: string;
   },
@@ -547,7 +548,7 @@ export async function insertAppointment(
       modalidad: toSchemaModality(params.modality),
       tipo_sesion: sessionType,
       motivo: params.motivo,
-      motivo_id: params.motivo_id,
+      citas_motivos: { create: params.motivoIds.map((motivo_id) => ({ motivo_id })) },
       precio: price,
       // El honorario nace con la cita, pendiente de cobro, por el precio calculado.
       pagos_honorarios: {
@@ -606,8 +607,11 @@ export async function updateAppointment(
           fin: end,
           modalidad: input.modality ? toSchemaModality(input.modality) : undefined,
           // Sin motivo nuevo en el cuerpo, el guardado queda intacto.
-          ...(input.reasonId !== undefined || input.reason !== undefined
-            ? await resolveReason(tx, input.reasonId, input.reason)
+          ...(input.reasonIds !== undefined || input.reason !== undefined
+            ? await (async () => {
+                const { motivoIds, motivo } = await resolveReasons(tx, input.reasonIds, input.reason);
+                return { motivo, citas_motivos: { deleteMany: {}, create: motivoIds.map((motivo_id) => ({ motivo_id })) } };
+              })()
             : {}),
           notas_internas: input.notes,
         },

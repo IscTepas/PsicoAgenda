@@ -860,7 +860,7 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
             </DialogHeader>
 
             {formError && (
-              <div className="p-3 rounded-xl bg-rose-50 text-rose-800 border border-rose-200 text-xs font-medium">
+              <div role="alert" className="p-3 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 text-xs font-medium">
                 {formError}
               </div>
             )}
@@ -908,7 +908,7 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label htmlFor="session-notes-textarea" className="text-xs font-semibold text-foreground block">
-                  Observaciones, Seguimiento y Notas Terapéuticas <span className="text-rose-600">*</span>
+                  Observaciones, Seguimiento y Notas Terapéuticas <span className="text-destructive">*</span>
                 </label>
 
                 {/* Snippet insertion shortcuts */}

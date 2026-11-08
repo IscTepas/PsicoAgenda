@@ -6,7 +6,7 @@ const { motivos } = vi.hoisted(() => ({
 vi.mock("@/lib/prisma", () => ({ prisma: { motivos_consulta: motivos }, disconnectPrisma: vi.fn() }));
 
 const { Prisma } = await import("@/generated/prisma/client");
-const { createReason, deleteReason, listActiveReasons, reasonText, resolveReason } = await import(
+const { createReason, deleteReason, listActiveReasons, reasonText, resolveReasons } = await import(
   "@/services/consultation-reason.service"
 );
 
@@ -31,44 +31,52 @@ const db = { motivos_consulta: motivos } as never;
 
 beforeEach(() => vi.clearAllMocks());
 
-describe("resolveReason", () => {
-  it("un motivo válido guarda la referencia y descarta el texto suelto", async () => {
-    motivos.findUnique.mockResolvedValue(fila());
-    await expect(resolveReason(db, "m-1", "algo")).resolves.toEqual({ motivo_id: "m-1", motivo: null });
+describe("resolveReasons", () => {
+  const ESTRES = fila({ id: "m-2", codigo: "estres_laboral", etiqueta: "Estrés laboral", orden: 110 });
+
+  it("varios motivos válidos se guardan todos y el texto suelto se descarta", async () => {
+    motivos.findMany.mockResolvedValue([fila(), ESTRES]);
+    await expect(resolveReasons(db, ["m-1", "m-2", "m-1"], "algo")).resolves.toEqual({
+      motivoIds: ["m-1", "m-2"],
+      motivo: null,
+    });
   });
 
-  it("rechaza un motivo inexistente", async () => {
-    motivos.findUnique.mockResolvedValue(null);
-    await expect(resolveReason(db, "m-x", undefined)).rejects.toMatchObject({ statusCode: 400 });
+  it("rechaza si alguno no existe o está inactivo", async () => {
+    motivos.findMany.mockResolvedValueOnce([fila()]);
+    await expect(resolveReasons(db, ["m-1", "m-x"], undefined)).rejects.toMatchObject({ statusCode: 400 });
+    motivos.findMany.mockResolvedValueOnce([fila({ activo: false })]);
+    await expect(resolveReasons(db, ["m-1"], undefined)).rejects.toMatchObject({ statusCode: 400 });
   });
 
-  it("rechaza un motivo inactivo", async () => {
-    motivos.findUnique.mockResolvedValue(fila({ activo: false }));
-    await expect(resolveReason(db, "m-1", undefined)).rejects.toMatchObject({ statusCode: 400 });
-  });
-
-  it("«Otro» exige texto y lo conserva", async () => {
-    motivos.findUnique.mockResolvedValue(OTRO);
-    await expect(resolveReason(db, "m-otro", "  ")).rejects.toMatchObject({ statusCode: 400 });
-    await expect(resolveReason(db, "m-otro", " Insomnio laboral ")).resolves.toEqual({
-      motivo_id: "m-otro",
+  it("«Otro» junto con otros motivos exige texto y lo conserva", async () => {
+    motivos.findMany.mockResolvedValue([fila(), OTRO]);
+    await expect(resolveReasons(db, ["m-1", "m-otro"], "  ")).rejects.toMatchObject({ statusCode: 400 });
+    await expect(resolveReasons(db, ["m-1", "m-otro"], " Insomnio laboral ")).resolves.toEqual({
+      motivoIds: ["m-1", "m-otro"],
       motivo: "Insomnio laboral",
     });
   });
 
-  it("sin motivo del catálogo acepta el texto libre (clientes anteriores)", async () => {
-    await expect(resolveReason(db, undefined, "Texto")).resolves.toEqual({ motivo_id: null, motivo: "Texto" });
-    expect(motivos.findUnique).not.toHaveBeenCalled();
+  it("sin motivos del catálogo acepta el texto libre (clientes anteriores)", async () => {
+    await expect(resolveReasons(db, [], "Texto")).resolves.toEqual({ motivoIds: [], motivo: "Texto" });
+    expect(motivos.findMany).not.toHaveBeenCalled();
   });
 });
 
 describe("reasonText", () => {
-  it("una cita histórica sin motivo_id sigue mostrando su texto", () => {
-    expect(reasonText("Seguimiento de duelo", null)).toBe("Seguimiento de duelo");
+  const enlace = (etiqueta: string, orden: number, requiere_texto = false) => ({
+    motivos_consulta: { id: etiqueta, etiqueta, requiere_texto, orden },
   });
-  it("con catálogo muestra la etiqueta; en «Otro», el texto", () => {
-    expect(reasonText(null, { etiqueta: "Ansiedad", requiere_texto: false })).toBe("Ansiedad");
-    expect(reasonText("Insomnio", { etiqueta: "Otro", requiere_texto: true })).toBe("Insomnio");
+
+  it("una cita histórica sin motivos del catálogo sigue mostrando su texto", () => {
+    expect(reasonText("Seguimiento de duelo", [])).toBe("Seguimiento de duelo");
+  });
+
+  it("une las etiquetas en el orden del catálogo y pone el texto en lugar de «Otro»", () => {
+    expect(reasonText("Miedo a manejar", [enlace("Otro", 999, true), enlace("Insomnio", 50), enlace("Ansiedad", 40)])).toBe(
+      "Ansiedad, Insomnio, Miedo a manejar",
+    );
   });
 });
 

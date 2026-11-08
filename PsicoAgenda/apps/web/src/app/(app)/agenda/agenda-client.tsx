@@ -66,7 +66,7 @@ const STATUS_FILTERS = [
   { value: "ALL", label: "Todas", dot: null },
   { value: AppointmentStatus.CONFIRMED, label: "Confirmadas", dot: "bg-primary ring-1 ring-primary-foreground/70" },
   { value: AppointmentStatus.PENDING, label: "Pendientes", dot: "bg-amber-400" },
-  { value: AppointmentStatus.CANCELLED, label: "Canceladas", dot: "bg-rose-400" },
+  { value: AppointmentStatus.CANCELLED, label: "Canceladas", dot: "bg-destructive" },
 ] as const
 
 interface StatusConfig {
@@ -94,23 +94,24 @@ const STATUS_CONFIG: Record<AppointmentStatus, StatusConfig> = {
   },
   [AppointmentStatus.CANCELLED]: {
     label: "Cancelada",
-    dotClass: "bg-rose-500",
-    badgeClass: "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800",
-    bgSoftClass: "bg-rose-50/40 hover:bg-rose-50/70 dark:bg-rose-950/20",
+    // Tokens del tema: siguen la paleta elegida y el modo oscuro.
+    dotClass: "bg-destructive",
+    badgeClass: "bg-destructive/10 text-destructive border-destructive/20",
+    bgSoftClass: "bg-destructive/[0.04] hover:bg-destructive/[0.08]",
     icon: XCircle,
   },
   [AppointmentStatus.COMPLETED]: {
     label: "Completada",
-    dotClass: "bg-slate-400",
-    badgeClass: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
-    bgSoftClass: "bg-slate-50/60 hover:bg-slate-50/90 dark:bg-slate-900/30",
+    dotClass: "bg-muted-foreground/50",
+    badgeClass: "bg-muted text-foreground/80 border-border",
+    bgSoftClass: "bg-muted/40 hover:bg-muted/60",
     icon: Check,
   },
   [AppointmentStatus.NO_SHOW]: {
     label: "No asistió",
-    dotClass: "bg-gray-400",
-    badgeClass: "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300",
-    bgSoftClass: "bg-gray-50/60 dark:bg-gray-900/30",
+    dotClass: "bg-muted-foreground/50",
+    badgeClass: "bg-muted text-foreground/80 border-border",
+    bgSoftClass: "bg-muted/40 hover:bg-muted/60",
     icon: HelpCircle,
   },
 }
@@ -803,7 +804,7 @@ export function AgendaClient() {
                             )
                           })
                         ) : (
-                          <div className="h-full flex items-center text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors group">
+                          <div className="h-full flex items-center text-xs text-muted-foreground transition-colors group">
                             <span className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
                               <Plus className="size-3" /> Espacio disponible
                             </span>
@@ -910,7 +911,7 @@ export function AgendaClient() {
                           )
                         })
                       ) : (
-                        <div className="h-28 flex flex-col items-center justify-center text-center p-3 text-muted-foreground/40">
+                        <div className="h-28 flex flex-col items-center justify-center text-center p-3 text-muted-foreground">
                           <span className="text-xs">Sin citas</span>
                         </div>
                       )}
@@ -944,7 +945,7 @@ export function AgendaClient() {
                       key={idx}
                       className={`min-h-[105px] sm:min-h-[120px] p-1.5 sm:p-2 flex flex-col transition-colors ${
                         !isCurrentMonth
-                          ? "bg-muted/20 text-muted-foreground/40"
+                          ? "bg-muted/20 text-muted-foreground"
                           : isCurrentDay
                           ? "bg-primary/[0.03]"
                           : "bg-card hover:bg-muted/10"
@@ -963,7 +964,7 @@ export function AgendaClient() {
                               ? "bg-primary text-primary-foreground shadow-2xs font-bold"
                               : isCurrentMonth
                               ? "text-foreground hover:bg-muted"
-                              : "text-muted-foreground/40"
+                              : "text-muted-foreground"
                           }`}
                           title="Ver este día"
                         >

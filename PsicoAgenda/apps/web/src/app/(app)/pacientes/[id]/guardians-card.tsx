@@ -72,7 +72,7 @@ export function GuardiansCard({ patientId, initial }: { patientId: string; initi
           <span>Tutores</span>
         </div>
         {!adding ? (
-          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAdding(true)}>
+          <Button size="sm" variant="ghost" className="h-10 text-xs sm:h-8" onClick={() => setAdding(true)}>
             <UserPlus className="size-3.5" /> Vincular
           </Button>
         ) : null}
@@ -105,7 +105,7 @@ export function GuardiansCard({ patientId, initial }: { patientId: string; initi
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="size-7"
+                    className="size-10 sm:size-8"
                     disabled={busy}
                     aria-label={`Hacer principal a ${guardian.name}`}
                     onClick={() => void run(() => guardianService.setPrimary(patientId, guardian.id), "Tutor principal actualizado")}
@@ -116,7 +116,7 @@ export function GuardiansCard({ patientId, initial }: { patientId: string; initi
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="size-7"
+                  className="size-10 sm:size-8"
                   disabled={busy}
                   aria-label={`Desvincular a ${guardian.name}`}
                   onClick={() => remove(guardian)}
@@ -137,7 +137,7 @@ export function GuardiansCard({ patientId, initial }: { patientId: string; initi
             placeholder="Correo de su cuenta (si tiene)"
             value={draft.email}
             onChange={(e) => setDraft({ ...draft, email: e.target.value })}
-            className="h-8 text-xs"
+            className="h-10 text-xs sm:h-8"
           />
           {!draft.email.trim() ? (
             <div className="grid gap-2 sm:grid-cols-2">
@@ -146,7 +146,7 @@ export function GuardiansCard({ patientId, initial }: { patientId: string; initi
                 placeholder="Nombre completo"
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                className="h-8 text-xs"
+                className="h-10 text-xs sm:h-8"
                 required
               />
               <Input
@@ -154,7 +154,7 @@ export function GuardiansCard({ patientId, initial }: { patientId: string; initi
                 placeholder="Teléfono"
                 value={draft.phone}
                 onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
-                className="h-8 text-xs"
+                className="h-10 text-xs sm:h-8"
               />
             </div>
           ) : null}
@@ -163,13 +163,13 @@ export function GuardiansCard({ patientId, initial }: { patientId: string; initi
             placeholder="Parentesco (Madre, Padre…)"
             value={draft.relationship}
             onChange={(e) => setDraft({ ...draft, relationship: e.target.value })}
-            className="h-8 text-xs"
+            className="h-10 text-xs sm:h-8"
           />
           <div className="flex justify-end gap-2">
-            <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAdding(false)}>
+            <Button type="button" size="sm" variant="ghost" className="h-10 text-xs sm:h-8" onClick={() => setAdding(false)}>
               Cancelar
             </Button>
-            <Button type="submit" size="sm" className="h-7 text-xs" disabled={busy}>
+            <Button type="submit" size="sm" className="h-10 text-xs sm:h-8" disabled={busy}>
               Guardar
             </Button>
           </div>
