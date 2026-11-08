@@ -50,6 +50,8 @@ interface ApiErrorBody {
   error?: { code?: string; message?: string; details?: unknown };
 }
 
+let cachedTokenPromise: Promise<string | null> | null = null;
+
 /**
  * Resuelve la credencial de acceso vigente en el navegador, leyéndola del cliente
  * compartido de Supabase.
@@ -59,13 +61,31 @@ interface ApiErrorBody {
  * (que importa `next/headers`, prohibido fuera de Server Components). Los Server
  * Components inyectan la credencial explícitamente (`token`), resuelta por
  * `@/lib/api-client.server`.
+ *
+ * El resultado se cachea por ráfaga: cuando varias `useQuery` lanzan peticiones en
+ * paralelo sin token inyectado, comparten la misma promesa y se evitan múltiples
+ * lecturas de cookies contra el cliente de Supabase.
  */
 async function resolveAccessToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
 
-  const { createClient } = await import("@/lib/supabase/client");
-  const { data } = await createClient().auth.getSession();
-  return data.session?.access_token ?? null;
+  if (cachedTokenPromise) return cachedTokenPromise;
+
+  cachedTokenPromise = (async () => {
+    try {
+      const { createClient } = await import("@/lib/supabase/client");
+      const { data } = await createClient().auth.getSession();
+      return data.session?.access_token ?? null;
+    } finally {
+      // El cache dura lo suficiente para deduplicar la ráfaga inicial; la siguiente
+      // llamada volverá a leer la sesión para reflejar renovaciones.
+      setTimeout(() => {
+        cachedTokenPromise = null;
+      }, 0);
+    }
+  })();
+
+  return cachedTokenPromise;
 }
 
 /**

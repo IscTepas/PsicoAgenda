@@ -8,6 +8,8 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode
 }) {
+  // Hidratar el cliente con el usuario obtenido en SSR evita que el navegador
+  // vuelva a llamar `getUser()` durante la hidratación.
   let initialUser = null
 
   if (isSupabaseConfigured()) {

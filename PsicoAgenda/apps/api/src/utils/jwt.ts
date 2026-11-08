@@ -7,6 +7,10 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   role: UserRole;
+  /** Nombre declarado en los metadatos del token, si el proveedor lo incluye. */
+  name?: string;
+  /** URL de foto declarada en los metadatos del token, si el proveedor la incluye. */
+  photoUrl?: string;
 }
 
 const AUTH_ISSUER = `${config.supabaseUrl}/auth/v1`;
@@ -58,6 +62,7 @@ const toBusinessRole = (declared: unknown): UserRole | undefined => {
 interface SessionClaims extends JWTPayload {
   email?: string;
   app_metadata?: { role?: unknown };
+  user_metadata?: { name?: unknown; photo_url?: unknown; full_name?: unknown };
 }
 
 export const verifyToken = async (token: string): Promise<AuthenticatedUser> => {
@@ -89,9 +94,23 @@ export const verifyToken = async (token: string): Promise<AuthenticatedUser> => 
     throw AppError.unauthorized("La sesión no declara un rol de aplicación");
   }
 
+  const userMetadata = payload.user_metadata ?? {};
+  const name =
+    typeof userMetadata.name === "string" && userMetadata.name.trim().length > 0
+      ? userMetadata.name
+      : typeof userMetadata.full_name === "string" && userMetadata.full_name.trim().length > 0
+        ? userMetadata.full_name
+        : undefined;
+  const photoUrl =
+    typeof userMetadata.photo_url === "string" && userMetadata.photo_url.trim().length > 0
+      ? userMetadata.photo_url
+      : undefined;
+
   return {
     id: payload.sub,
     email: payload.email ?? "",
     role,
+    ...(name !== undefined && { name }),
+    ...(photoUrl !== undefined && { photoUrl }),
   };
 };

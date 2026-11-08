@@ -21,7 +21,6 @@ import {
   Copy,
   ClipboardList,
   Save,
-  Bookmark,
   X,
 } from "lucide-react"
 import {

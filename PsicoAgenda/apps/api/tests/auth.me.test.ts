@@ -65,11 +65,18 @@ describe("getProfileById", () => {
       nombre_completo: "Dra. Ana García",
       rol: "PSICOLOGO",
       activo: true,
+      foto_perfil_url: null,
     });
 
     const { getProfileById } = await import("@/services/auth.service");
 
-    await expect(getProfileById(USER_ID)).resolves.toEqual({
+    await expect(
+      getProfileById({
+        id: USER_ID,
+        email: "ana@psicoagenda.test",
+        role: UserRole.PSYCHOLOGIST,
+      }),
+    ).resolves.toEqual({
       id: USER_ID,
       email: "ana@psicoagenda.test",
       name: "Dra. Ana García",
@@ -82,7 +89,9 @@ describe("getProfileById", () => {
 
     const { getProfileById } = await import("@/services/auth.service");
 
-    await expect(getProfileById(USER_ID)).rejects.toMatchObject({ statusCode: 401 });
+    await expect(
+      getProfileById({ id: USER_ID, email: "ana@psicoagenda.test", role: UserRole.PSYCHOLOGIST }),
+    ).rejects.toMatchObject({ statusCode: 401 });
   });
 
   it("rechaza un perfil deshabilitado por un bloqueo de la identidad", async () => {
@@ -92,10 +101,44 @@ describe("getProfileById", () => {
       nombre_completo: "Dra. Ana García",
       rol: "PSICOLOGO",
       activo: false,
+      foto_perfil_url: null,
     });
 
     const { getProfileById } = await import("@/services/auth.service");
 
-    await expect(getProfileById(USER_ID)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(
+      getProfileById({ id: USER_ID, email: "ana@psicoagenda.test", role: UserRole.PSYCHOLOGIST }),
+    ).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it("no consulta la base de datos cuando el token ya trae name y photoUrl", async () => {
+    findUnique.mockResolvedValue({ activo: true });
+
+    const { getProfileById } = await import("@/services/auth.service");
+
+    await expect(
+      getProfileById({
+        id: USER_ID,
+        email: "ana@psicoagenda.test",
+        role: UserRole.PSYCHOLOGIST,
+        name: "Dra. Ana García",
+        photoUrl: "https://example.com/photo.webp",
+      }),
+    ).resolves.toEqual({
+      id: USER_ID,
+      email: "ana@psicoagenda.test",
+      name: "Dra. Ana García",
+      role: UserRole.PSYCHOLOGIST,
+      photoUrl: "https://example.com/photo.webp",
+    });
+
+    // Solo debe haber consultado el campo `activo`, no una lectura completa del perfil.
+    expect(findUnique).toHaveBeenCalledTimes(1);
+    expect(findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: USER_ID },
+        select: { activo: true } as Record<string, unknown>,
+      }),
+    );
   });
 });

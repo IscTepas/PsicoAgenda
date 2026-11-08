@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, createClient } from "@/lib/supabase/client";
 import { readIdentity } from "@/lib/session";
-import { apiFetch } from "@/lib/api-client";
+import { useMeQuery, ME_QUERY_KEY } from "@/lib/use-me-query";
 import { withTimeout, TimeoutError, STALE_SUPABASE_AUTH_COOKIE, AUTH_CHECK_TIMEOUT_MS } from "@/lib/with-timeout";
 
 /**
@@ -30,6 +31,8 @@ interface SessionContextValue {
   logout: () => Promise<void>;
   /** Actualiza la foto del menú sin recargar (tras guardar el perfil). */
   updatePhoto: (photoUrl?: string) => void;
+  /** Token de acceso vigente, resuelto una sola vez para evitar múltiples `getSession()`. */
+  accessToken: string | null;
 }
 
 const SessionContext = React.createContext<SessionContextValue | null>(null);
@@ -44,10 +47,8 @@ export function SessionProvider({
   const isConfigured = isSupabaseConfigured();
   const [user, setUser] = React.useState<User | null>(initialUser);
   const [isLoading, setIsLoading] = React.useState(!initialUser && isConfigured);
-  // La foto se asocia al usuario al que pertenece: al cambiar de sesión no se
-  // reutiliza la imagen anterior mientras llega la nueva.
-  // Foto y nombre del perfil de la API (la BD manda sobre los metadatos de Supabase Auth).
-  const [foto, setFoto] = React.useState<{ userId: string; photoUrl?: string; name?: string } | null>(null);
+  const [accessToken, setAccessToken] = React.useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   React.useEffect(() => {
     // `isConfigured` no cambia en tiempo de ejecución: si falta configuración,
@@ -87,8 +88,20 @@ export function SessionProvider({
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       if (cancelled) return;
       setUser(session?.user ?? null);
+      setAccessToken(session?.access_token ?? null);
       setIsLoading(false);
     });
+
+    // Si no hay usuario inicial, resolvemos el token una sola vez para no repetir
+    // `getSession()` en cada `apiFetch` cuando varias queries corren en paralelo.
+    // Cuando hay `initialUser`, evitamos la segunda llamada al proveedor: el
+    // primer evento de `onAuthStateChange` (INITIAL_SESSION) traerá el token.
+    if (!initialUser) {
+      supabase.auth.getSession().then(({ data }) => {
+        if (cancelled) return;
+        setAccessToken(data.session?.access_token ?? null);
+      });
+    }
 
     return () => {
       cancelled = true;
@@ -100,50 +113,45 @@ export function SessionProvider({
     if (!isConfigured) return;
     await createClient().auth.signOut();
     setUser(null);
-  }, [isConfigured]);
+    setAccessToken(null);
+    queryClient.removeQueries({ queryKey: ME_QUERY_KEY });
+  }, [isConfigured, queryClient]);
 
-  // La foto no viaja en la sesión del proveedor: se pide al perfil de la API.
-  React.useEffect(() => {
-    if (!isConfigured || !user?.id) return;
+  // Perfil de la API, cacheado con React Query. El token inyectado evita que
+  // cada llamada a `apiFetch` vuelva a pedir la sesión a Supabase.
+  const { data: profile, isLoading: isProfileLoading } = useMeQuery(accessToken);
 
-    const userId = user.id;
-    let cancelled = false;
-
-    apiFetch<{ photoUrl?: string; name?: string }>("/auth/me")
-      .then((perfil) => {
-        if (!cancelled) setFoto({ userId, photoUrl: perfil.photoUrl, name: perfil.name });
-      })
-      .catch(() => {
-        // Sin perfil accesible se cae a las iniciales; no se rompe la sesión.
-        if (!cancelled) setFoto({ userId });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isConfigured, user?.id]);
-
-  const photoUrl = foto && foto.userId === user?.id ? foto.photoUrl : undefined;
-  const profileName = foto && foto.userId === user?.id ? foto.name : undefined;
+  const photoUrl = profile?.photoUrl;
+  const profileName = profile?.name;
 
   const updatePhoto = React.useCallback(
     (next?: string) => {
-      if (user?.id) setFoto((prev) => ({ userId: user.id, photoUrl: next, name: prev?.name }));
+      queryClient.setQueryData<ReturnType<typeof readIdentity>>(ME_QUERY_KEY, (old) => {
+        if (!old) return old;
+        return { ...old, photoUrl: next };
+      });
     },
-    [user],
+    [queryClient],
   );
 
   const value = React.useMemo<SessionContextValue>(() => {
     const identity = readIdentity(user);
 
     return {
-      user: identity ? { ...identity, name: profileName || identity.name, photoUrl } : null,
-      isLoading,
+      user: identity
+        ? {
+            ...identity,
+            name: profileName || identity.name,
+            photoUrl: photoUrl ?? identity.photoUrl,
+          }
+        : null,
+      isLoading: isLoading || isProfileLoading,
       isConfigured,
       logout,
       updatePhoto,
+      accessToken,
     };
-  }, [user, photoUrl, profileName, isLoading, isConfigured, logout, updatePhoto]);
+  }, [user, photoUrl, profileName, isLoading, isProfileLoading, isConfigured, logout, updatePhoto, accessToken]);
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
