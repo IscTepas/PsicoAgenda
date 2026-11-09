@@ -22,7 +22,6 @@ import {
   type Appointment,
   type AppointmentRequest,
   type Notification,
-  type Patient,
   type PatientProfile,
   type PsychologistProfile,
 } from "@psicoagenda/shared"
@@ -263,18 +262,11 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const fromToday = useMemo(() => startOfDay(today), [today])
   const toNextDays = useMemo(() => new Date(today.getTime() + 30 * DAY), [today])
 
-  const {
-    appointments,
-    patients,
-    pendingRequests,
-    notifications,
-  } = useDashboardData({ from: fromToday, to: toNextDays })
+  const { appointments, patients, notifications } = useDashboardData({ from: fromToday, to: toNextDays })
 
   const queryClient = useQueryClient()
   const refetchAppointments = () =>
     queryClient.invalidateQueries({ queryKey: ["appointments", "dashboard"] })
-  const refetchRequests = () =>
-    queryClient.invalidateQueries({ queryKey: ["appointment-requests", AppointmentRequestStatus.PENDING] })
 
   const patientById = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient])),

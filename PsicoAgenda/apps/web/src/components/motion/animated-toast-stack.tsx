@@ -29,7 +29,6 @@ import {
 import { createPortal } from "react-dom";
 import { EASE_OUT } from "@/lib/ease";
 import { cn } from "@/lib/utils";
-import { useHydrated } from "@/lib/use-hydrated";
 
 export type ToastStatus = "neutral" | "info" | "loading" | "success" | "error";
 export type ToastPosition =

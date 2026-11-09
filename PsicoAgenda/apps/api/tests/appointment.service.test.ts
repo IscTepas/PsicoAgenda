@@ -18,9 +18,10 @@ const { prismaMock } = vi.hoisted(() => {
   };
   const pacientes = { findUnique: vi.fn(), findFirst: vi.fn() };
   const psicologos = { findUnique: vi.fn() };
+  const bloqueos_agenda = { findFirst: vi.fn() };
   const pagos_honorarios = { create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() };
 
-  return { prismaMock: { citas, pacientes, psicologos, pagos_honorarios, $transaction: vi.fn() } };
+  return { prismaMock: { citas, pacientes, psicologos, bloqueos_agenda, pagos_honorarios, $transaction: vi.fn() } };
 });
 
 vi.mock("@/lib/prisma", () => ({
@@ -113,6 +114,7 @@ beforeEach(() => {
   prismaMock.psicologos.findUnique.mockResolvedValue({ id: PSYCH_ID });
   prismaMock.pacientes.findUnique.mockResolvedValue({ id: PATIENT_ID, psicologo_id: null });
   prismaMock.citas.findFirst.mockResolvedValue(null);
+  prismaMock.bloqueos_agenda.findFirst.mockResolvedValue(null);
 });
 
 describe("createAppointment", () => {
@@ -169,6 +171,30 @@ describe("createAppointment", () => {
         modality: AppointmentModality.IN_PERSON,
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(prismaMock.citas.create).not.toHaveBeenCalled();
+  });
+
+  it("rechaza con 409 y detalles del bloqueo cuando la agenda está bloqueada", async () => {
+    prismaMock.citas.count.mockResolvedValue(0);
+    prismaMock.bloqueos_agenda.findFirst.mockResolvedValue({
+      id: "bloqueo-1",
+      motivo: "Congreso",
+      todo_el_dia: true,
+    });
+
+    await expect(
+      createAppointment(psychologist, {
+        patientId: PATIENT_ID,
+        startTime: START,
+        durationMinutes: 60,
+        modality: AppointmentModality.IN_PERSON,
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: "AGENDA_BLOQUEADA",
+      details: { blockId: "bloqueo-1", allDay: true, reason: "Congreso" },
+    });
 
     expect(prismaMock.citas.create).not.toHaveBeenCalled();
   });

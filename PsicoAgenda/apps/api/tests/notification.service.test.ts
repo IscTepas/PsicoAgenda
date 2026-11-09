@@ -19,6 +19,8 @@ const { prismaMock, config, enviarCorreoNotificacion } = vi.hoisted(() => ({
     whatsappTemplateName: "psicoagenda_aviso_de_cita",
     whatsappTemplateLanguage: "es_MX",
     whatsappApiVersion: "v25.0",
+    // El default del config real: plantilla con 3 parámetros de cuerpo.
+    whatsappTemplateParams: 3,
   },
   enviarCorreoNotificacion: vi.fn(),
 }));
@@ -322,7 +324,7 @@ describe("despacharPendientes", () => {
     expect(body.template.language.code).toBe("es_MX");
     expect(body.template.components[0]!.parameters.map((parametro) => parametro.text)).toEqual([
       PACIENTE.nombre_completo,
-      "Mensaje",
+      "Tu cita fue confirmada",
       expect.stringContaining("2026"),
     ]);
     expect(estadosActualizados()).toEqual([estado_envio.ENVIADA]);
