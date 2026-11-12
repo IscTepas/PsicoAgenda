@@ -620,6 +620,68 @@ Los códigos de registro viven en la tabla `cache_registro` y no en la memoria d
 proceso, exactamente por la misma razón: con varias instancias, la verificación
 puede caer en una lambda que nunca vio el código.
 
+### Mantenimiento de datos operativos
+
+La base crece por datos operativos, no por historia clínica. La purga solo toca
+tres tablas y nunca elimina expedientes, citas, pagos, consentimientos,
+bitácoras, tutores ni usuarios:
+
+| Tabla | Qué se conserva | Qué se purga |
+|---|---|---|
+| `notificaciones` | `PENDIENTE` (sin importar la antigüedad) y las enviadas de los últimos 90 días | `ENVIADA`/`FALLIDA` con más de 90 días y `CANCELADA` con más de 7 |
+| `solicitudes_cita` | las que tienen cita asociada y las terminales de los últimos 12 meses | `RECHAZADA`/`CANCELADA` sin cita con más de 12 meses |
+| `cache_registro` | las entradas vigentes | las vencidas |
+
+Las solicitudes `PENDIENTE` con más de 30 días y fecha ya pasada pasan a
+`CANCELADA` (no se borran) para que dejen de ocupar la cola de atención. Los
+recordatorios pendientes de una cita se eliminan al reprogramarla, cancelarla o
+registrar asistencia; un aviso ya enviado se conserva.
+
+El disparador es `POST /api/internal/mantenimiento`, protegido con el mismo
+`CRON_SECRET` que el despacho:
+
+```bash
+curl -X POST https://psicoagenda-api.vercel.app/api/internal/mantenimiento \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+Trabaja por lotes (1 000 filas, hasta 10 lotes por tabla), es idempotente y
+responde `200` con `{ ok, eliminadas: { notificaciones, solicitudes_cita,
+cache_registro }, solicitudesExpiradas, tamanoBaseBytes, ejecutadoEn }`. Las
+mismas cuatro respuestas que el despacho: `503` si falta el secreto, `401` sin
+cabecera o con un valor distinto, `200` cuando purga.
+
+**Job en `cron-job.org`** (diario, fuera del horario de consulta):
+
+| Campo | Valor |
+|---|---|
+| URL | `https://psicoagenda-api.vercel.app/api/internal/mantenimiento` |
+| Método | `POST` |
+| Cabecera | `Authorization: Bearer <CRON_SECRET>` |
+| Horario | diario **03:30** `America/Mazatlan` |
+| Timeout | **30 s** |
+| Reintentos | activados; aviso por correo si falla |
+
+Si el job se deshabilita, no se pierde nada: los datos se acumulan y se purgan
+en la siguiente ejecución correcta.
+
+**Rotar `CRON_SECRET`:** primero en Vercel (y redesplegar la API), luego en el
+secreto de GitHub Actions y por último en `cron-job.org`. Entre pasos el
+endpoint responde `401`: es el síntoma de un secreto desincronizado.
+
+**Mantenimiento mensual de la base** (recupera espacio reutilizable y actualiza
+estadísticas; `VACUUM` no puede correr dentro de una petición HTTP):
+
+```bash
+BACKUP_DATABASE_URL="postgresql://postgres.<ref>:<clave>@...:5432/postgres" \
+  node scripts/mantenimiento-bd.mjs
+```
+
+Usa la conexión directa o el session pooler (puerto **5432**): el pooler de
+transacciones (6543) no admite `VACUUM`. La migración
+`20261103000000_purga_datos_operativos` añade los índices `(estado, creado_en)`
+y baja el umbral de autovacuum de `notificaciones` y `cache_registro`.
+
 
 El desarrollo se gestiona con cambios propuestos antes de tocar código:
 

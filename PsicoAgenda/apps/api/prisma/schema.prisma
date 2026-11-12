@@ -201,6 +201,7 @@ model notificaciones {
   usuarios           usuarios           @relation(fields: [usuario_id], references: [id])
 
   @@index([programada_para], map: "idx_notificaciones_pendientes", where: raw("(estado = 'PENDIENTE'::estado_envio)"))
+  @@index([estado, creado_en], map: "idx_notificaciones_purga")
   @@index([cita_id])
   @@index([estado, programada_para])
   @@index([usuario_id])
@@ -333,6 +334,7 @@ model solicitudes_cita {
 
   @@index([paciente_id])
   @@index([psicologo_id, estado])
+  @@index([estado, creado_en], map: "idx_solicitudes_purga")
 }
 
 /// Catálogo plano de motivos de consulta (una cita elige varios). «Otro» es una fila con es_otro y pide texto.
