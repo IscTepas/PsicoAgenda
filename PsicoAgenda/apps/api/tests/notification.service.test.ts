@@ -9,6 +9,7 @@ const { prismaMock, config, enviarCorreoNotificacion } = vi.hoisted(() => ({
       createMany: vi.fn(),
       updateMany: vi.fn(),
       update: vi.fn(),
+      deleteMany: vi.fn(),
       findMany: vi.fn(),
     },
   },
@@ -74,6 +75,7 @@ beforeEach(() => {
   prismaMock.psicologos.findUnique.mockResolvedValue({ usuarios: PSICOLOGA });
   prismaMock.notificaciones.findMany.mockResolvedValue([]);
   prismaMock.notificaciones.updateMany.mockResolvedValue({ count: 1 });
+  prismaMock.notificaciones.deleteMany.mockResolvedValue({ count: 1 });
 });
 
 describe("normalizarTelefonoWhatsapp", () => {
@@ -206,12 +208,35 @@ describe("notificar", () => {
     expect(recordatorios.map((f) => f.canal)).toEqual([WHATSAPP]);
   });
 
-  it("cancelar la cita cancela los recordatorios pendientes", async () => {
+  it("cancelar la cita elimina los recordatorios pendientes, no los marca cancelados", async () => {
     await notificar("CITA_CANCELADA_POR_PACIENTE", aviso());
 
-    expect(prismaMock.notificaciones.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { estado: estado_envio.CANCELADA } }),
-    );
+    expect(prismaMock.notificaciones.deleteMany).toHaveBeenCalledWith({
+      where: { cita_id: "cita-1", tipo: "RECORDATORIO", estado: estado_envio.PENDIENTE },
+    });
+    expect(prismaMock.notificaciones.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("un recordatorio ya enviado no se elimina al cancelar o reprogramar", async () => {
+    await notificar("CITA_MODIFICADA", { ...aviso(), cambioHorario: true });
+
+    // La condición por estado deja fuera todo lo que ya salió (ENVIADA/FALLIDA).
+    expect(prismaMock.notificaciones.deleteMany).toHaveBeenCalledWith({
+      where: { cita_id: "cita-1", tipo: "RECORDATORIO", estado: estado_envio.PENDIENTE },
+    });
+  });
+
+  it("reprogramar una cita deja exactamente los recordatorios nuevos y ninguno cancelado acumulado", async () => {
+    const nuevoInicio = new Date(Date.now() + 48 * HORA);
+
+    await notificar("CITA_MODIFICADA", { ...aviso(nuevoInicio), cambioHorario: true });
+
+    expect(prismaMock.notificaciones.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prismaMock.notificaciones.updateMany).not.toHaveBeenCalled();
+
+    const recordatorios = filasCreadas().filter((f) => f.tipo === "RECORDATORIO");
+    expect(recordatorios.length).toBeGreaterThan(0);
+    expect(recordatorios.every((f) => f.programada_para.getTime() < nuevoInicio.getTime())).toBe(true);
   });
 
   it("nunca lanza aunque falle la base", async () => {

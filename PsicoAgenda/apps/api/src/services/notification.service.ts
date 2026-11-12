@@ -488,10 +488,17 @@ async function programarRecordatorios(
   }
 }
 
+/**
+ * Elimina los recordatorios pendientes de una cita.
+ *
+ * Se borran en lugar de marcarse `CANCELADA`: un recordatorio reemplazado ya no
+ * le sirve a nadie y conservarlo acumula tuplas muertas en cada reprogramación.
+ * La condición por `estado = PENDIENTE` deja intacto un aviso ya entregado, que
+ * es constancia de lo que se envió.
+ */
 async function cancelarRecordatorios(citaId: string) {
-  await prisma.notificaciones.updateMany({
+  await prisma.notificaciones.deleteMany({
     where: { cita_id: citaId, tipo: tipo_notificacion.RECORDATORIO, estado: estado_envio.PENDIENTE },
-    data: { estado: estado_envio.CANCELADA },
   });
 }
 
