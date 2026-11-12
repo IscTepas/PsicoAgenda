@@ -421,6 +421,65 @@ function plantillaParaEvento(evento: EventoCita | "RECORDATORIO_24H" | "RECORDAT
 }
 
 /**
+ * Campos del cuerpo que se inyectan en la plantilla, según el nombre de esta.
+ * Cada plantilla puede declarar su propia lista (`WHATSAPP_TEMPLATE_BODY_*`);
+ * la genérica (`WHATSAPP_TEMPLATE_BODY`) es el valor por defecto de todas.
+ */
+function bodySpecParaPlantilla(nombre: string): string[] {
+  switch (nombre) {
+    case config.whatsappTemplatePsychologist:
+      return config.whatsappTemplateBodyPsychologist;
+    case config.whatsappTemplatePatientNotice:
+      return config.whatsappTemplateBodyPatientNotice;
+    case config.whatsappTemplatePatientCancellation:
+      return config.whatsappTemplateBodyPatientCancellation;
+    case config.whatsappTemplateReminder:
+      return config.whatsappTemplateBodyReminder;
+    default:
+      return config.whatsappTemplateBody;
+  }
+}
+
+/**
+ * Idioma de la plantilla, según su nombre. Meta rechaza el envío si el
+ * `language.code` no coincide con el idioma con el que se registró la plantilla.
+ */
+function langParaPlantilla(nombre: string): string {
+  switch (nombre) {
+    case config.whatsappTemplatePsychologist:
+      return config.whatsappTemplateLanguagePsychologist;
+    case config.whatsappTemplatePatientNotice:
+      return config.whatsappTemplateLanguagePatientNotice;
+    case config.whatsappTemplatePatientCancellation:
+      return config.whatsappTemplateLanguagePatientCancellation;
+    case config.whatsappTemplateReminder:
+      return config.whatsappTemplateLanguageReminder;
+    default:
+      return config.whatsappTemplateLanguage;
+  }
+}
+
+/**
+ * Si la plantilla usa parámetros con nombre (`{{nombre}}`) en lugar de
+ * posicionales (`{{1}}`). En las NAMED cada parámetro debe llevar su
+ * `parameter_name`; Meta rechaza el envío si falta.
+ */
+function namedParaPlantilla(nombre: string): boolean {
+  switch (nombre) {
+    case config.whatsappTemplatePsychologist:
+      return config.whatsappTemplateNamedPsychologist;
+    case config.whatsappTemplatePatientNotice:
+      return config.whatsappTemplateNamedPatientNotice;
+    case config.whatsappTemplatePatientCancellation:
+      return config.whatsappTemplateNamedPatientCancellation;
+    case config.whatsappTemplateReminder:
+      return config.whatsappTemplateNamedReminder;
+    default:
+      return config.whatsappTemplateNamed;
+  }
+}
+
+/**
  * Recordatorios de una cita activa: 24 h antes por los tres canales y 2 h antes
  * solo por WhatsApp. Siempre se reemplazan los pendientes, así que llamarlo de
  * nuevo tras mover la cita los reprograma.
@@ -597,23 +656,91 @@ export const normalizarTelefonoWhatsapp = (telefono: string | null): string | nu
 
 const localeDeIdioma = (codigo: string): string => codigo.replace("_", "-");
 
+const fechaDeAviso = (fila: FilaPendiente): Date => fila.citas?.inicio ?? fila.programada_para ?? new Date();
+
+const zonaDeAviso = (fila: FilaPendiente): string => fila.usuarios.zona_horaria || "America/Mazatlan";
+
 const formatearFechaWhatsapp = (fila: FilaPendiente): string => {
-  const fecha = fila.citas?.inicio ?? fila.programada_para ?? new Date();
-  const zona = fila.usuarios.zona_horaria || "America/Mazatlan";
   return new Intl.DateTimeFormat(localeDeIdioma(config.whatsappTemplateLanguage), {
     dateStyle: "medium",
     timeStyle: "short",
-    timeZone: zona,
-  }).format(fecha);
+    timeZone: zonaDeAviso(fila),
+  }).format(fechaDeAviso(fila));
 };
+
+const formatearFechaSolo = (fila: FilaPendiente): string =>
+  new Intl.DateTimeFormat(localeDeIdioma(config.whatsappTemplateLanguage), {
+    dateStyle: "medium",
+    timeZone: zonaDeAviso(fila),
+  }).format(fechaDeAviso(fila));
+
+const formatearHoraSolo = (fila: FilaPendiente): string =>
+  new Intl.DateTimeFormat(localeDeIdioma(config.whatsappTemplateLanguage), {
+    timeStyle: "short",
+    timeZone: zonaDeAviso(fila),
+  }).format(fechaDeAviso(fila));
+
+const modalidadWhatsapp = (fila: FilaPendiente): string =>
+  fila.citas?.modalidad === modalidad_cita.VIRTUAL
+    ? "videollamada"
+    : fila.citas?.modalidad === modalidad_cita.PRESENCIAL
+      ? "presencial"
+      : "";
+
+/** «mañana» / «en N horas» / «hoy»: cuánto falta para la cita (para recordatorios). */
+const tiempoHasta = (fila: FilaPendiente): string => {
+  const horas = (fechaDeAviso(fila).getTime() - Date.now()) / 3_600_000;
+  if (horas >= 20) return "mañana";
+  if (horas >= 1) return `en ${Math.round(horas)} horas`;
+  return "hoy";
+};
+
+/** Valor que recibe un campo del cuerpo de la plantilla (ver `parseCamposCuerpo`). */
+const textoDelCampo = (fila: FilaPendiente, campo: string): string => {
+  switch (campo) {
+    case "nombre":
+      return fila.usuarios.nombre_completo;
+    case "asunto":
+      return fila.asunto;
+    case "accion":
+      // Placeholder con nombre de las plantillas propias: resumen de la acción.
+      return fila.asunto;
+    case "mensaje":
+      return fila.mensaje;
+    case "fecha":
+      return formatearFechaSolo(fila);
+    case "hora":
+      return formatearHoraSolo(fila);
+    case "fecha_hora":
+      return formatearFechaWhatsapp(fila);
+    case "modalidad":
+      return modalidadWhatsapp(fila);
+    case "empresa":
+      return APP_NAME;
+    case "tiempohasta":
+      return tiempoHasta(fila);
+    default:
+      // Campo desconocido: se envía vacío para no desalinear los placeholders.
+      return "";
+  }
+};
+
+const construirParametrosCuerpo = (fila: FilaPendiente, campos: string[], named: boolean) =>
+  campos.map((campo) => ({
+    type: "text" as const,
+    ...(named ? { parameter_name: campo } : {}),
+    text: textoDelCampo(fila, campo),
+  }));
 
 /**
  * WhatsApp sale por la API de WhatsApp Business (Cloud API), no por un webhook.
  * Cada fila puede traer su propia plantilla (`plantilla_whatsapp`); si no, se
- * usa la plantilla única configurada globalmente. La plantilla puede recibir
- * 0 o 3 parámetros de cuerpo. Cuando admite 3, el orden es:
- * nombre del destinatario, asunto del aviso y fecha/hora de la cita.
- * Cuando admite 0, se envía la plantilla tal cual.
+ * usa la plantilla única configurada globalmente.
+ *
+ * Los parámetros del cuerpo se toman de la lista de campos asociada a la
+ * plantilla (`WHATSAPP_TEMPLATE_BODY` / `WHATSAPP_TEMPLATE_BODY_*`): cada campo
+ * se inyecta como {{1}}, {{2}}, {{3}}… en ese orden. Si la plantilla es de
+ * texto plano (`WHATSAPP_TEMPLATE_PARAMS=0`) no se envían parámetros.
  */
 async function enviarWhatsapp(fila: FilaPendiente): Promise<{ id: string; status: string }> {
   if (!config.whatsappEnabled) {
@@ -625,19 +752,15 @@ async function enviarWhatsapp(fila: FilaPendiente): Promise<{ id: string; status
     throw new Error("El destinatario no tiene un teléfono válido para WhatsApp");
   }
 
-  const parametrosCuerpo =
-    config.whatsappTemplateParams > 0
-      ? [
-          { type: "text", text: fila.usuarios.nombre_completo },
-          { type: "text", text: fila.asunto },
-          { type: "text", text: formatearFechaWhatsapp(fila) },
-        ]
-      : [];
-
   const nombrePlantilla = fila.plantilla_whatsapp || config.whatsappTemplateName;
+  const campos = bodySpecParaPlantilla(nombrePlantilla);
+  const named = namedParaPlantilla(nombrePlantilla);
+  const parametrosCuerpo =
+    config.whatsappTemplateParams === 0 ? [] : construirParametrosCuerpo(fila, campos, named);
+
   const template: Record<string, unknown> = {
     name: nombrePlantilla,
-    language: { code: config.whatsappTemplateLanguage },
+    language: { code: langParaPlantilla(nombrePlantilla) },
   };
   if (parametrosCuerpo.length > 0) {
     template.components = [{ type: "body", parameters: parametrosCuerpo }];
