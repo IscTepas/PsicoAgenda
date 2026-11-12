@@ -40,9 +40,10 @@ const whatsappApiVersion = ((process.env.WHATSAPP_API_VERSION ?? "").trim() || "
  *   - cancelaciones/rechazos al paciente
  *   - recordatorios
  *
- * Todas las plantillas por tipo esperan 3 parámetros posicionales:
- * {{1}} nombre del destinatario, {{2}} asunto del aviso, {{3}} fecha/hora.
- * La plantilla única puede configurarse con `WHATSAPP_TEMPLATE_PARAMS`.
+ * Las plantillas por tipo esperan parámetros de cuerpo posicionales; la lista
+ * de campos que se inyectan se define con `WHATSAPP_TEMPLATE_BODY` / `*_BODY_*`
+ * (por defecto {{1}} nombre, {{2}} mensaje, {{3}} fecha/hora). La plantilla
+ * única puede configurarse con `WHATSAPP_TEMPLATE_PARAMS`.
  */
 const whatsappTemplateName = (process.env.WHATSAPP_TEMPLATE_NAME ?? "").trim();
 const whatsappTemplatePsychologist =
@@ -67,6 +68,88 @@ const whatsappTemplateParams = toTemplateParams(
   process.env.WHATSAPP_TEMPLATE_PARAMS,
   whatsappTemplateName || whatsappTemplatePsychologist,
 );
+
+/**
+ * Parámetros de cuerpo de cada plantilla: lista ordenada de campos, separados
+ * por comas, que se inyectan como {{1}}, {{2}}, {{3}}… en el cuerpo de la
+ * plantilla aprobada. Campos disponibles:
+ *
+ *   nombre     → nombre completo del destinatario
+ *   asunto     → asunto del aviso
+ *   mensaje    → texto completo del aviso
+ *   fecha      → fecha de la cita (localizada)
+ *   hora       → hora de la cita (localizada)
+ *   fecha_hora → fecha y hora de la cita (localizadas)
+ *   modalidad  → «videollamada» o «presencial»
+ *   empresa    → nombre del consultorio (PsicoAgenda)
+ *   tiempohasta → «mañana», «en N horas» u «hoy» (para recordatorios)
+ *
+ * Si no se define, se usa «nombre,mensaje,fecha_hora» (el comportamiento
+ * anterior). Con `WHATSAPP_TEMPLATE_PARAMS=0` la plantilla es de texto plano y
+ * esta lista se ignora (no se envían parámetros de cuerpo). Cada tipo de aviso
+ * puede declarar su propia lista con `WHATSAPP_TEMPLATE_BODY_*`; la genérica
+ * (`WHATSAPP_TEMPLATE_BODY`) es el valor por defecto de todas.
+ */
+const CAMPOS_CUERPO_POR_DEFECTO = ["nombre", "mensaje", "fecha_hora"];
+
+const parseCamposCuerpo = (value: string | undefined): string[] | null => {
+  const campos = (value ?? "")
+    .split(",")
+    .map((campo) => campo.trim().toLowerCase())
+    .filter(Boolean);
+  return campos.length > 0 ? campos : null;
+};
+
+const whatsappTemplateBody =
+  parseCamposCuerpo(process.env.WHATSAPP_TEMPLATE_BODY) ?? CAMPOS_CUERPO_POR_DEFECTO;
+const whatsappTemplateBodyPsychologist =
+  parseCamposCuerpo(process.env.WHATSAPP_TEMPLATE_BODY_PSYCHOLOGIST) ?? whatsappTemplateBody;
+const whatsappTemplateBodyPatientNotice =
+  parseCamposCuerpo(process.env.WHATSAPP_TEMPLATE_BODY_PATIENT_NOTICE) ?? whatsappTemplateBody;
+const whatsappTemplateBodyPatientCancellation =
+  parseCamposCuerpo(process.env.WHATSAPP_TEMPLATE_BODY_PATIENT_CANCELLATION) ?? whatsappTemplateBody;
+const whatsappTemplateBodyReminder =
+  parseCamposCuerpo(process.env.WHATSAPP_TEMPLATE_BODY_REMINDER) ?? whatsappTemplateBody;
+
+/**
+ * Idioma de cada plantilla. Meta registra cada plantilla con un idioma concreto
+ * y rechaza el envío si el `language.code` no coincide. La genérica
+ * (`WHATSAPP_TEMPLATE_LANG`) vale para todas; cada tipo de aviso puede declarar
+ * el suyo con `WHATSAPP_TEMPLATE_LANG_*` (p. ej. `WHATSAPP_TEMPLATE_LANG_REMINDER`).
+ */
+const whatsappTemplateLanguagePsychologist =
+  (process.env.WHATSAPP_TEMPLATE_LANG_PSYCHOLOGIST ?? "").trim() || whatsappTemplateLanguage;
+const whatsappTemplateLanguagePatientNotice =
+  (process.env.WHATSAPP_TEMPLATE_LANG_PATIENT_NOTICE ?? "").trim() || whatsappTemplateLanguage;
+const whatsappTemplateLanguagePatientCancellation =
+  (process.env.WHATSAPP_TEMPLATE_LANG_PATIENT_CANCELLATION ?? "").trim() || whatsappTemplateLanguage;
+const whatsappTemplateLanguageReminder =
+  (process.env.WHATSAPP_TEMPLATE_LANG_REMINDER ?? "").trim() || whatsappTemplateLanguage;
+
+/**
+ * Formato de los parámetros de cada plantilla: NAMED (placeholders con nombre,
+ * `{{nombre}}`, `{{fecha}}`…) o POSITIONAL (`{{1}}`, `{{2}}`…). Meta exige, para
+ * las NAMED, que cada parámetro lleve su `parameter_name`. La genérica
+ * (`WHATSAPP_TEMPLATE_NAMED`) vale para todas; cada tipo de aviso puede declarar
+ * el suyo con `WHATSAPP_TEMPLATE_NAMED_*`.
+ */
+const parseBool = (value: string | undefined): boolean | undefined => {
+  if (!value) return undefined;
+  const v = value.trim().toLowerCase();
+  if (v === "1" || v === "true") return true;
+  if (v === "0" || v === "false") return false;
+  return undefined;
+};
+
+const whatsappTemplateNamed = parseBool(process.env.WHATSAPP_TEMPLATE_NAMED) ?? false;
+const whatsappTemplateNamedPsychologist =
+  parseBool(process.env.WHATSAPP_TEMPLATE_NAMED_PSYCHOLOGIST) ?? whatsappTemplateNamed;
+const whatsappTemplateNamedPatientNotice =
+  parseBool(process.env.WHATSAPP_TEMPLATE_NAMED_PATIENT_NOTICE) ?? whatsappTemplateNamed;
+const whatsappTemplateNamedPatientCancellation =
+  parseBool(process.env.WHATSAPP_TEMPLATE_NAMED_PATIENT_CANCELLATION) ?? whatsappTemplateNamed;
+const whatsappTemplateNamedReminder =
+  parseBool(process.env.WHATSAPP_TEMPLATE_NAMED_REMINDER) ?? whatsappTemplateNamed;
 
 /**
  * Variables que el flujo de registro necesita para funcionar a full: en
@@ -177,8 +260,25 @@ export const config = {
   whatsappTemplateReminder,
   whatsappTemplateLanguage,
   whatsappApiVersion,
-  /** Número de parámetros de cuerpo que espera la plantilla configurada. */
+  /** Número de parámetros de cuerpo que espera la plantilla configurada (0 = texto plano). */
   whatsappTemplateParams,
+  /** Lista de campos del cuerpo por plantilla; ver `parseCamposCuerpo`. */
+  whatsappTemplateBody,
+  whatsappTemplateBodyPsychologist,
+  whatsappTemplateBodyPatientNotice,
+  whatsappTemplateBodyPatientCancellation,
+  whatsappTemplateBodyReminder,
+  /** Idioma por plantilla; ver `whatsappTemplateLanguage*`. */
+  whatsappTemplateLanguagePsychologist,
+  whatsappTemplateLanguagePatientNotice,
+  whatsappTemplateLanguagePatientCancellation,
+  whatsappTemplateLanguageReminder,
+  /** Formato de parámetros (NAMED/POSITIONAL) por plantilla. */
+  whatsappTemplateNamed,
+  whatsappTemplateNamedPsychologist,
+  whatsappTemplateNamedPatientNotice,
+  whatsappTemplateNamedPatientCancellation,
+  whatsappTemplateNamedReminder,
   /**
    * Token que Meta exige al suscribir el webhook de entregas de WhatsApp.
    * Si falta, el endpoint GET de verificación responde 403.

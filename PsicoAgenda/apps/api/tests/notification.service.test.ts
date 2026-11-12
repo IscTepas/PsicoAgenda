@@ -19,9 +19,26 @@ const { prismaMock, config, enviarCorreoNotificacion } = vi.hoisted(() => ({
     whatsappAccessToken: "token-de-prueba",
     whatsappTemplateName: "psicoagenda_aviso_de_cita",
     whatsappTemplateLanguage: "es_MX",
+    whatsappTemplateLanguagePsychologist: "es_MX",
+    whatsappTemplateLanguagePatientNotice: "es_MX",
+    whatsappTemplateLanguagePatientCancellation: "es_MX",
+    whatsappTemplateLanguageReminder: "en",
+    whatsappTemplateNamed: false,
+    whatsappTemplateNamedPsychologist: false,
+    whatsappTemplateNamedPatientNotice: false,
+    whatsappTemplateNamedPatientCancellation: false,
+    whatsappTemplateNamedReminder: true,
     whatsappApiVersion: "v25.0",
-    // El default del config real: plantilla con 3 parámetros de cuerpo.
     whatsappTemplateParams: 3,
+    whatsappTemplatePsychologist: "psicoagenda_aviso_profesional",
+    whatsappTemplatePatientNotice: "psicoagenda_aviso_paciente",
+    whatsappTemplatePatientCancellation: "psicoagenda_cancelacion_paciente",
+    whatsappTemplateReminder: "psicoagenda_recordatorio",
+    whatsappTemplateBody: ["nombre", "mensaje", "fecha_hora"],
+    whatsappTemplateBodyPsychologist: ["nombre", "mensaje", "fecha_hora"],
+    whatsappTemplateBodyPatientNotice: ["nombre", "mensaje", "fecha_hora"],
+    whatsappTemplateBodyPatientCancellation: ["nombre", "mensaje", "fecha_hora"],
+    whatsappTemplateBodyReminder: ["nombre", "fecha", "empresa", "tiempohasta"],
   },
   enviarCorreoNotificacion: vi.fn(),
 }));
@@ -71,6 +88,8 @@ const filasCreadas = (): Fila[] =>
 beforeEach(() => {
   vi.clearAllMocks();
   config.whatsappEnabled = false;
+  config.whatsappTemplateParams = 3;
+  config.whatsappTemplateBody = ["nombre", "mensaje", "fecha_hora"];
   prismaMock.pacientes.findUnique.mockResolvedValue({ usuarios: PACIENTE });
   prismaMock.psicologos.findUnique.mockResolvedValue({ usuarios: PSICOLOGA });
   prismaMock.notificaciones.findMany.mockResolvedValue([]);
@@ -368,6 +387,99 @@ describe("despacharPendientes", () => {
     };
     expect(body.to).toBe("525512345678");
     expect(estadosActualizados()).toEqual([estado_envio.ENVIADA]);
+    fetchMock.mockRestore();
+  });
+
+  it("envía los parámetros del cuerpo que declara la plantilla personalizada", async () => {
+    config.whatsappEnabled = true;
+    config.whatsappTemplateBody = ["nombre", "fecha", "hora", "modalidad"];
+    prismaMock.notificaciones.findMany.mockResolvedValueOnce([
+      {
+        ...fila(WHATSAPP),
+        citas: {
+          id: "cita-1",
+          inicio: new Date("2026-11-03T16:00:00Z"),
+          fin: new Date("2026-11-03T17:00:00Z"),
+          modalidad: modalidad_cita.VIRTUAL,
+          estado: "CONFIRMADA",
+        },
+      },
+    ]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(respuestaWhatsappOk());
+
+    await despacharPendientes();
+
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body) as {
+      template: { components: Array<{ parameters: Array<{ text: string }> }> };
+    };
+    const parametros = body.template.components[0]!.parameters.map((parametro) => parametro.text);
+    expect(parametros).toHaveLength(4);
+    expect(parametros[0]).toBe(PACIENTE.nombre_completo);
+    expect(parametros[1]).toContain("2026");
+    expect(parametros[2]).toMatch(/\d{1,2}:\d{2}/);
+    expect(parametros[3]).toBe("videollamada");
+    fetchMock.mockRestore();
+  });
+
+  it("usa la lista de campos y el idioma del tipo de plantilla correspondiente", async () => {
+    config.whatsappEnabled = true;
+    // Un recordatorio resuelve a `whatsappTemplateBodyReminder` = [nombre, fecha, empresa, tiempohasta],
+    // a `whatsappTemplateLanguageReminder` = "en" y a `whatsappTemplateNamedReminder` = true
+    // (la plantilla usa placeholders con nombre).
+    prismaMock.notificaciones.findMany.mockResolvedValueOnce([
+      {
+        ...fila(WHATSAPP),
+        plantilla_whatsapp: "psicoagenda_recordatorio",
+        citas: {
+          id: "cita-1",
+          inicio: new Date(Date.now() + 2 * HORA),
+          fin: new Date(Date.now() + 3 * HORA),
+          modalidad: modalidad_cita.PRESENCIAL,
+          estado: "CONFIRMADA",
+        },
+      },
+    ]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(respuestaWhatsappOk());
+
+    await despacharPendientes();
+
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body) as {
+      template: {
+        name: string;
+        language: { code: string };
+        components: Array<{ parameters: Array<{ type: string; parameter_name: string; text: string }> }>;
+      };
+    };
+    expect(body.template.name).toBe("psicoagenda_recordatorio");
+    expect(body.template.language.code).toBe("en");
+    const parametros = body.template.components[0]!.parameters;
+    expect(parametros.map((parametro) => parametro.parameter_name)).toEqual([
+      "nombre",
+      "fecha",
+      "empresa",
+      "tiempohasta",
+    ]);
+    expect(parametros.map((parametro) => parametro.text)).toEqual([
+      PACIENTE.nombre_completo,
+      expect.any(String), // fecha localizada
+      "PsicoAgenda",
+      "en 2 horas",
+    ]);
+    fetchMock.mockRestore();
+  });
+
+  it("con una plantilla de texto plano no envía componentes de cuerpo", async () => {
+    config.whatsappEnabled = true;
+    config.whatsappTemplateParams = 0;
+    prismaMock.notificaciones.findMany.mockResolvedValueOnce([fila(WHATSAPP)]);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(respuestaWhatsappOk());
+
+    await despacharPendientes();
+
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body) as {
+      template: { components?: unknown };
+    };
+    expect(body.template.components).toBeUndefined();
     fetchMock.mockRestore();
   });
 

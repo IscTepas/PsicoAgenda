@@ -425,10 +425,11 @@ Las de `apps/api/.env.example`. En producción, además:
   `*` como comodín (`https://psicoagenda-web-*.vercel.app`) para los previews.
 - `CRON_SECRET`: sin él, `POST /api/internal/despachar` responde 503.
 - `WHATSAPP_PHONE_ID` y `WHATSAPP_ACCESS_TOKEN`: ID del número emisor y token de
-  acceso de la **API de WhatsApp Business**. Opcionalmente,
-  `WHATSAPP_TEMPLATE_NAME`, `WHATSAPP_TEMPLATE_LANG` y `WHATSAPP_API_VERSION`
-  ajustan la plantilla y la versión de Graph API. Son independientes de cualquier
-  webhook; sin las credenciales solo se entregan los canales de sistema y correo.
+  acceso de la **API de WhatsApp Business**. Opcionalmente, `WHATSAPP_TEMPLATE_*`
+  y `WHATSAPP_API_VERSION` ajustan la plantilla, sus parámetros y la versión de
+  Graph API (ver [Plantillas personalizadas de WhatsApp](#plantillas-personalizadas-de-whatsapp)).
+  Son independientes de cualquier webhook; sin las credenciales solo se entregan
+  los canales de sistema y correo.
 
 ### Entornos
 
@@ -538,20 +539,59 @@ mensajes. La salida de WhatsApp se resuelve con la **API de WhatsApp Business
    (`usuarios.telefono`, `nombre_completo` y `zona_horaria`), el mensaje del aviso
    y la fecha/hora de la cita, y llama a la API de WhatsApp Business.
 3. El teléfono se normaliza al formato internacional (E.164) y se envía como
-   destinatario. El envío usa una **plantilla aprobada** de WhatsApp Business,
-   que debe tener tres parámetros de cuerpo en este orden: nombre, mensaje y
-   fecha/hora del aviso.
+   destinatario. El envío usa una **plantilla aprobada** de WhatsApp Business; sus
+   parámetros de cuerpo se rellenan con los campos configurados (ver
+   [Plantillas personalizadas de WhatsApp](#plantillas-personalizadas-de-whatsapp)).
 4. La respuesta de la API define el estado de la fila: `2xx` la marca como
    `ENVIADA`; un error la deja `PENDIENTE` para reintentar (hasta 5 intentos) y,
    al agotarlos, `FALLIDA`.
 5. Si la persona no tiene teléfono o desactivó WhatsApp, no se crea el aviso de
    WhatsApp; los canales de sistema y correo siguen su curso normal.
 
-La configuración vive en `WHATSAPP_PHONE_ID` y `WHATSAPP_ACCESS_TOKEN`; el nombre e idioma de la
-plantilla y la versión de Graph API se pueden ajustar con
-`WHATSAPP_TEMPLATE_NAME`, `WHATSAPP_TEMPLATE_LANG` y `WHATSAPP_API_VERSION`. Sin
-las credenciales, los avisos de WhatsApp quedan `PENDIENTE` en la cola y se
+La configuración vive en `WHATSAPP_PHONE_ID` y `WHATSAPP_ACCESS_TOKEN`; el nombre, idioma,
+parámetros y versión de Graph API de las plantillas se ajustan con las variables
+`WHATSAPP_TEMPLATE_*` (ver [Plantillas personalizadas de WhatsApp](#plantillas-personalizadas-de-whatsapp)).
+Sin las credenciales, los avisos de WhatsApp quedan `PENDIENTE` en la cola y se
 entregan cuando se configuren; no se pierden ni bloquean los demás canales.
+
+### Plantillas personalizadas de WhatsApp
+
+Las plantillas las define quien administra el despliegue (no el usuario final):
+se crean y aprueban en el panel de Meta y se referencian por nombre en el
+entorno. Hay dos formas de declararlas:
+
+1. **Plantilla única** con `WHATSAPP_TEMPLATE_NAME`: todas las notificaciones usan
+   la misma plantilla (útil para probar con la plantilla de ejemplo de Meta).
+2. **Por tipo de aviso** (dejando `WHATSAPP_TEMPLATE_NAME` vacío): cada tipo usa
+   la suya. Los nombres por defecto del programa son `psicoagenda_aviso_profesional`,
+   `psicoagenda_aviso_paciente`, `psicoagenda_cancelacion_paciente` y
+   `psicoagenda_recordatorio`, y se reemplazan con
+   `WHATSAPP_TEMPLATE_PSYCHOLOGIST`, `WHATSAPP_TEMPLATE_PATIENT_NOTICE`,
+   `WHATSAPP_TEMPLATE_PATIENT_CANCELLATION` y `WHATSAPP_TEMPLATE_REMINDER`.
+
+Los parámetros del cuerpo se inyectan como `{{1}}`, `{{2}}`, `{{3}}`… a partir de
+una lista ordenada de campos separados por comas. Por defecto son
+`nombre,mensaje,fecha_hora`. La lista se configura con `WHATSAPP_TEMPLATE_BODY`
+(para todas) o con las variantes `WHATSAPP_TEMPLATE_BODY_*` por tipo. Campos
+disponibles: `nombre`, `asunto`, `accion` (= `asunto`), `mensaje`, `fecha`, `hora`,
+`fecha_hora`, `modalidad`, `empresa` y `tiempohasta`. Para una plantilla de
+**texto plano** (sin placeholders) se define `WHATSAPP_TEMPLATE_PARAMS=0`, y
+entonces no se envían parámetros de cuerpo.
+
+Meta distingue dos formatos de placeholders que hay que declarar con
+`WHATSAPP_TEMPLATE_NAMED` (y sus variantes `_*`):
+
+- **POSITIONAL** (`{{1}}`, `{{2}}`…, el valor por defecto): los parámetros se
+  envían por posición, sin `parameter_name`.
+- **NAMED** (`{{nombre}}`, `{{fecha}}`…): hay que poner `WHATSAPP_TEMPLATE_NAMED=1`
+  para que cada parámetro lleve su `parameter_name`. Si la plantilla es NAMED y
+  no se declara, Meta responde `#100 "Parameter name is missing or empty"`.
+
+El idioma se envía en `language.code` y debe coincidir con el idioma con el que
+Meta registró la plantilla. El idioma genérico es `WHATSAPP_TEMPLATE_LANG`; cada
+tipo puede declarar el suyo con `WHATSAPP_TEMPLATE_LANG_*` (p. ej.
+`WHATSAPP_TEMPLATE_LANG_REMINDER`). Esto importa cuando una plantilla quedó
+registrada en un idioma distinto de las demás.
 
 Un webhook, si algún día se configura, solo sirve para **recibir** eventos de
 Meta (estados de entrega/lectura o mensajes entrantes). Nunca sustituye a la
