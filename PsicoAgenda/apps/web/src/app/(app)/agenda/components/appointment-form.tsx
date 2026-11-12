@@ -609,6 +609,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   }, [selectedDateEfectiva, availableHours, selectedHour, slotAvailability])
 
   // El formulario está completo cuando hay paciente, fecha y una franja libre.
+  // El motivo también cuenta en las altas nuevas: si el botón se encendiera sin
+  // motivo, al pulsarlo solo saldría el error «Elige al menos un motivo», y la
+  // persona pensaría que «Guardar cita» no funciona.
+  const motivoCompleto = !errorDeMotivo(selectedReasons, reason, !isEdit)
   const formularioCompleto =
     Boolean(lockedPatientId) &&
     Boolean(selectedDateEfectiva) &&
@@ -616,7 +620,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     Boolean(modality) &&
     availableHours.includes(selectedHourEfectivo) &&
     (slotAvailability[selectedHourEfectivo]?.available ?? false) &&
-    !dayAppointmentsLoading
+    !dayAppointmentsLoading &&
+    motivoCompleto
 
   // Primer día futuro con franjas en el horario del profesional: se sugiere
   // cuando la fecha elegida no tiene disponibilidad (p. ej. un sábado).

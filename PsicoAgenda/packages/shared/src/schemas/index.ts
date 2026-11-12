@@ -31,7 +31,10 @@ export const createAppointmentSchema = z.object({
   psychologistId: z.string().uuid().optional(),
   patientId: z.string().uuid(),
   startTime: z.coerce.date(),
-  durationMinutes: z.number().int().min(45).max(60),
+  // 30–60: las sesiones de menores duran 30 minutos (getEffectiveDurationMinutes);
+  // los adultos siguen eligiendo 45/50/60 desde el formulario. El CHECK de la base
+  // ya admite 30–60.
+  durationMinutes: z.number().int().min(30).max(60),
   modality: z.enum(["in_person", "virtual"]),
   reason: z.string().optional(),
   /** Motivos del catálogo (uno o varios); «Otro» exige `reason`. */
@@ -40,7 +43,7 @@ export const createAppointmentSchema = z.object({
 
 export const updateAppointmentSchema = z.object({
   startTime: z.coerce.date().optional(),
-  durationMinutes: z.number().int().min(45).max(60).optional(),
+  durationMinutes: z.number().int().min(30).max(60).optional(),
   modality: z.enum(["in_person", "virtual"]).optional(),
   reason: z.string().optional(),
   /** Motivos del catálogo (uno o varios); «Otro» exige `reason`. */
@@ -80,7 +83,7 @@ export const updateAppointmentPaymentSchema = z.object({
 /** Solicitud del paciente: el paciente y el psicólogo salen de la sesión, no del cuerpo. */
 export const createAppointmentRequestSchema = z.object({
   startTime: z.coerce.date(),
-  durationMinutes: z.number().int().min(45).max(60),
+  durationMinutes: z.number().int().min(30).max(60),
   modality: z.enum(["in_person", "virtual"]),
   reason: z.string().optional(),
   /** Motivos del catálogo (uno o varios); «Otro» exige `reason`. */
