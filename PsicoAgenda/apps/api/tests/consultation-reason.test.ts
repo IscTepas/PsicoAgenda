@@ -42,6 +42,14 @@ describe("resolveReasons", () => {
     });
   });
 
+  it("un menor no puede llevar motivos que solo aplican a adultos", async () => {
+    motivos.findMany.mockResolvedValue([fila(), ESTRES]);
+    await expect(resolveReasons(db, ["m-1", "m-2"], undefined, true)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(resolveReasons(db, ["m-1", "m-2"], undefined, false)).resolves.toMatchObject({
+      motivoIds: ["m-1", "m-2"],
+    });
+  });
+
   it("rechaza si alguno no existe o está inactivo", async () => {
     motivos.findMany.mockResolvedValueOnce([fila()]);
     await expect(resolveReasons(db, ["m-1", "m-x"], undefined)).rejects.toMatchObject({ statusCode: 400 });

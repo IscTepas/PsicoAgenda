@@ -11,6 +11,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { estado_cita, estado_pago, estado_solicitud } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { assertNoAgendaBlock } from "@/services/agenda-block.guard";
+import { isPatientMinor } from "@/utils/age";
 import { reasonIdsOf, reasonLinks, reasonOtherOf, reasonText, resolveReasons } from "@/services/consultation-reason.service";
 import { assertCanActOnPatient, patientIdsForUser } from "@/services/guardianship.service";
 import { AppError } from "@/utils/app-error";
@@ -162,7 +163,7 @@ export async function createAppointmentRequest(
   if (input.patientId) await assertCanActOnPatient(auth, input.patientId);
   const patient = await prisma.pacientes.findUniqueOrThrow({
     where: { id: patientId },
-    select: { id: true, psicologo_id: true },
+    select: { id: true, psicologo_id: true, fecha_nacimiento: true },
   });
 
   // Red de seguridad: el registro ya asigna a la única psicóloga, pero un paciente
@@ -182,7 +183,8 @@ export async function createAppointmentRequest(
   const start = input.startTime;
   const end = new Date(start.getTime() + input.durationMinutes * 60_000);
 
-  const created = await prisma.$transaction(async (tx) => {
+  const created = await prisma
+    .$transaction(async (tx) => {
     await assertNoOverlap(tx, { psychologistId, patientId, start, end });
     await assertNoAgendaBlock(tx, { psychologistId, start, end });
 
@@ -203,12 +205,22 @@ export async function createAppointmentRequest(
         duracion_minutos: input.durationMinutes,
         modalidad: toSchemaModality(input.modality),
         tipo_sesion: await resolveSessionType(tx, patientId),
-        ...motivosDeSolicitud(await resolveReasons(tx, input.reasonIds, input.reason)),
+        ...motivosDeSolicitud(
+          await resolveReasons(tx, input.reasonIds, input.reason, isPatientMinor(patient.fecha_nacimiento)),
+        ),
         solicitante_id: auth.id,
       },
       include: requestInclude,
     });
-  });
+    })
+    .catch((error: unknown) => {
+      // Dos envíos simultáneos pasan el SELECT de arriba; el índice único
+      // `uq_solicitudes_pendiente_por_horario` detiene al segundo.
+      if ((error as { code?: string }).code === "P2002") {
+        throw AppError.conflict("Ya tienes una solicitud pendiente para ese horario");
+      }
+      throw error;
+    });
 
   await notificar("SOLICITUD_CREADA", avisoDeSolicitud(created));
 
@@ -261,7 +273,7 @@ export async function rescheduleAppointmentRequest(
 
   const patient = await prisma.pacientes.findUniqueOrThrow({
     where: { id: patientId },
-    select: { psicologo_id: true },
+    select: { psicologo_id: true, fecha_nacimiento: true },
   });
   if (!patient.psicologo_id) {
     throw AppError.badRequest("Aún no tienes un psicólogo asignado");
@@ -312,7 +324,9 @@ export async function rescheduleAppointmentRequest(
           duracion_minutos: input.durationMinutes,
           modalidad: toSchemaModality(input.modality),
           tipo_sesion: await resolveSessionType(tx, patientId),
-          ...motivosDeSolicitud(await resolveReasons(tx, input.reasonIds, input.reason)),
+          ...motivosDeSolicitud(
+            await resolveReasons(tx, input.reasonIds, input.reason, isPatientMinor(patient.fecha_nacimiento)),
+          ),
           solicitante_id: auth.id,
         },
         include: requestInclude,

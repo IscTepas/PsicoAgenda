@@ -1,4 +1,8 @@
-import type { ConsultationReason, ConsultationReasonGroup } from "@psicoagenda/shared";
+import {
+  isReasonAllowedFor,
+  type ConsultationReason,
+  type ConsultationReasonGroup,
+} from "@psicoagenda/shared";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/app-error";
@@ -50,6 +54,7 @@ export async function resolveReasons(
   db: Prisma.TransactionClient,
   reasonIds: string[] | undefined,
   text: string | undefined,
+  isMinor = false,
 ): Promise<{ motivoIds: string[]; motivo: string | null }> {
   const libre = text?.trim() || null;
   const ids = [...new Set(reasonIds ?? [])];
@@ -58,6 +63,10 @@ export async function resolveReasons(
   const motivos = await db.motivos_consulta.findMany({ where: { id: { in: ids } } });
   if (motivos.length !== ids.length || motivos.some((m) => !m.activo)) {
     throw AppError.badRequest("Alguno de los motivos elegidos ya no está disponible.");
+  }
+  const noAplica = motivos.find((m) => !isReasonAllowedFor(m.codigo, isMinor));
+  if (noAplica) {
+    throw AppError.badRequest(`«${noAplica.etiqueta}» no aplica para un menor de edad.`);
   }
   const otro = motivos.find((m) => m.requiere_texto);
   if (otro && !libre) {

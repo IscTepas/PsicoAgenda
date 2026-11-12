@@ -327,7 +327,7 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
               <Button asChild className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs h-10 px-4 shadow-2xs">
                 <Link href={`/agenda/nueva?patientId=${patient.id}`} className="flex items-center gap-2">
                   <CalendarDays className="size-4" />
-                  <span>Agendar nueva cita</span>
+                  <span>Nueva cita</span>
                 </Link>
               </Button>
             </div>

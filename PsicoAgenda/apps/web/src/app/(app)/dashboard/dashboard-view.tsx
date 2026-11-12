@@ -559,14 +559,8 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
               <div className="space-y-3 px-6 py-12 text-center">
                 <p className="text-sm font-medium text-foreground">{FILTER_EMPTY_COPY[agendaFilter]}</p>
                 <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-                  Elige otro día en el calendario o programa una nueva sesión.
+                  Elige otro día en el calendario.
                 </p>
-                <Button asChild variant="outline" size="sm" className="mt-1">
-                  <Link href="/agenda/nueva">
-                    <Plus />
-                    Nueva cita
-                  </Link>
-                </Button>
               </div>
             )}
           </div>
@@ -1077,15 +1071,9 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
                 No tienes citas próximas
               </h2>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Elige el día y horario que mejor te acomode para tu siguiente sesión.
+                Cuando solicites una cita y tu psicóloga la confirme, aparecerá aquí.
               </p>
             </div>
-            <Button asChild size="lg">
-              <Link href="/agenda/nueva">
-                <Plus />
-                Solicitar cita
-              </Link>
-            </Button>
           </div>
         </section>
       )}

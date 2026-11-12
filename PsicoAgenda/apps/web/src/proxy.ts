@@ -11,6 +11,9 @@ const PROTECTED_PREFIXES = [
   "/reportes",
   "/motivos",
   "/perfil",
+  "/citas",
+  "/costos",
+  "/bloqueos",
 ];
 
 const PUBLIC_AUTH_PATHS = ["/login", "/registro"];

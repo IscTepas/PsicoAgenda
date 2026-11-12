@@ -21,6 +21,8 @@ import { assertCanActOnPatient, patientIdsForUser } from "@/services/guardianshi
 import { notificar, type CitaAviso } from "@/services/notification.service";
 import { AppError } from "@/utils/app-error";
 import type { AuthenticatedUser } from "@/utils/jwt";
+import { toPricingRates } from "@/services/psychologist.service";
+import { isPatientMinor } from "@/utils/age";
 import { calculateAppointmentPrice, getEffectiveDurationMinutes } from "@/utils/pricing";
 
 // La cita viaja siempre con su fila de honorarios: el panel muestra si ya se cobró.
@@ -225,14 +227,6 @@ export const toAppointment = (row: AppointmentRow): Appointment => {
     updatedAt: row.actualizado_en,
   };
 };
-
-/** Menor de edad: cumple 18 años en el futuro respecto a hoy. */
-function isPatientMinor(birthDate: Date | null): boolean {
-  if (!birthDate) return false;
-  const turnsEighteen = new Date(birthDate);
-  turnsEighteen.setFullYear(turnsEighteen.getFullYear() + 18);
-  return turnsEighteen > new Date();
-}
 
 /**
  * El perfil de psicólogo cuelga del usuario y su identificador no viaja en la
@@ -473,7 +467,7 @@ export async function createAppointment(
         start: input.startTime,
         durationMinutes: input.durationMinutes,
         modality: input.modality,
-        ...(await resolveReasons(tx, input.reasonIds, input.reason)),
+        ...(await resolveReasons(tx, input.reasonIds, input.reason, isPatientMinor(patient.fecha_nacimiento))),
         // Si la agenda el propio profesional ya está confirmada; si la pide el
         // paciente (ruta antigua), queda PENDIENTE hasta que la confirme.
         status: auth.role === UserRole.PATIENT ? estado_cita.PENDIENTE : estado_cita.CONFIRMADA,
@@ -524,17 +518,23 @@ export async function insertAppointment(
   const { psychologistId, patient, start } = params;
   const sessionType = await resolveSessionType(tx, patient.id);
 
-  // Reglas de precio: menores de edad solo 30 minutos y tarifa $1000; adultos
-  // $800; +30% si la cita es el mismo día; −$100 por modalidad virtual.
+  // Reglas de precio: menores de edad solo 30 minutos; la tarifa base, el recargo
+  // por mismo día y el descuento virtual son los que configuró el psicólogo.
+  const rates = toPricingRates(
+    await tx.psicologos.findUniqueOrThrow({ where: { id: psychologistId } }),
+  );
   const isMinor = isPatientMinor(patient.fecha_nacimiento);
   const effectiveDuration = getEffectiveDurationMinutes(isMinor, params.durationMinutes);
   const end = new Date(start.getTime() + effectiveDuration * 60_000);
-  const price = calculateAppointmentPrice({
-    isMinor,
-    startTime: start,
-    modality: params.modality,
-    durationMinutes: effectiveDuration,
-  });
+  const price = calculateAppointmentPrice(
+    {
+      isMinor,
+      startTime: start,
+      modality: params.modality,
+      durationMinutes: effectiveDuration,
+    },
+    rates,
+  );
 
   await assertNoOverlap(tx, { psychologistId, patientId: patient.id, start, end });
   await assertNoAgendaBlock(tx, { psychologistId, start, end });
@@ -703,20 +703,30 @@ export async function cancelAppointment(
   // fila de honorarios PENDIENTE se borra en la misma transacción: el enum no tiene
   // estado "cancelado", así que cancelar no debe dejar una deuda colgando. Un pago ya
   // cobrado o condonado se conserva: es constancia de dinero real.
-  const updated = await prisma.$transaction(async (tx) => {
-    await tx.pagos_honorarios.deleteMany({ where: { cita_id: id, estado: estado_pago.PENDIENTE } });
+  const updated = await prisma
+    .$transaction(async (tx) => {
+      await tx.pagos_honorarios.deleteMany({ where: { cita_id: id, estado: estado_pago.PENDIENTE } });
 
-    return tx.citas.update({
-      where: { id },
-      data: {
-        estado: estado_cita.CANCELADA,
-        motivo_cancelacion: reason,
-        cancelada_por_id: auth.id,
-        cancelada_en: new Date(),
-      },
-      include: appointmentInclude,
+      return tx.citas.update({
+        // El filtro por estado hace atómica la cancelación: si otra petición ya la
+        // canceló mientras tanto, esta no encuentra fila y no pisa el motivo ni
+        // manda un segundo aviso.
+        where: { id, estado: { not: estado_cita.CANCELADA } },
+        data: {
+          estado: estado_cita.CANCELADA,
+          motivo_cancelacion: reason,
+          cancelada_por_id: auth.id,
+          cancelada_en: new Date(),
+        },
+        include: appointmentInclude,
+      });
+    })
+    .catch((error: unknown) => {
+      if ((error as { code?: string }).code === "P2025") {
+        throw AppError.conflict("La cita ya está cancelada");
+      }
+      throw error;
     });
-  });
 
   await notificar(
     auth.role === UserRole.PATIENT ? "CITA_CANCELADA_POR_PACIENTE" : "CITA_CANCELADA_POR_PSICOLOGO",

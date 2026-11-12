@@ -33,8 +33,11 @@ import {
   AppointmentModality,
   AttendanceStatus,
   UserRole,
+  DEFAULT_PRICING_RATES,
   calculateAppointmentPrice,
   getEffectiveDurationMinutes,
+  isReasonAllowedFor,
+  type AgendaBlock,
   type Appointment,
   type Patient,
   type PsychologistSchedule,
@@ -85,6 +88,7 @@ import {
 import {
   appointmentRequestService,
   appointmentService,
+  agendaBlockService,
   patientService,
   psychologistService,
   consultationReasonService,
@@ -287,9 +291,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     queryFn: consultationReasonService.listActive,
     staleTime: 10 * 60_000,
   })
-  const reasonOptions = reasonGroups.flatMap((g) => g.reasons)
-  const selectedReasons = reasonOptions.filter((r) => reasonIds.includes(r.id))
-  const needsReasonText = selectedReasons.some((r) => r.requiresText)
   const reduceMotion = useReducedMotion() ?? false
   // Un tutor puede pedir la cita para sí o para un menor que tutela.
   const [forPatientId, setForPatientId] = React.useState<string>("")
@@ -300,12 +301,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     enabled: isPatient && !isEdit,
     staleTime: 5 * 60_000,
   })
-  // Una cita histórica sin motivos del catálogo no se toca si no se eligió ninguno;
-  // el texto solo viaja con «Otro».
-  const reasonPayload = {
-    reasonIds: reasonIds.length > 0 || (initialAppointment?.reasonIds?.length ?? 0) > 0 ? reasonIds : undefined,
-    reason: needsReasonText ? reason.trim() : undefined,
-  }
 
   // Existing Appointment Status State
   const [status, setStatus] = React.useState<AppointmentStatus>(
@@ -453,6 +448,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   // Ocupación de la agenda para los meses visibles del calendario. La API
   // devuelve solo rangos ocupados del psicólogo (sin datos del paciente).
   const [ocupacion, setOcupacion] = React.useState<AppointmentOccupancySlot[]>([])
+  // Rangos en los que el profesional no atiende (vacaciones, días u horas bloqueadas).
+  const [bloqueos, setBloqueos] = React.useState<AgendaBlock[]>([])
   // El calendario muestra un mes a la vez; la ocupación se carga para el mes visible.
   const [mesVisible, setMesVisible] = React.useState<Date | null>(null)
   const mesMostrado = mesVisible ?? startOfMonth(selectedDateEfectiva ?? minimaFecha ?? ahora)
@@ -479,6 +476,16 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         if (!cancelled) setOcupacion([])
       }
     }
+
+    agendaBlockService
+      .list({ from: new Date(rangoOcupacion.from), to: new Date(rangoOcupacion.to) })
+      .then((data) => {
+        if (!cancelled) setBloqueos(data)
+      })
+      // Sin bloqueos a la vista el servidor sigue rechazando la franja al enviar.
+      .catch(() => {
+        if (!cancelled) setBloqueos([])
+      })
 
     void load()
     return () => {
@@ -513,6 +520,17 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     [ocupacion],
   )
 
+  // Una franja está bloqueada si su hora completa se cruza con algún bloqueo.
+  const estaBloqueada = React.useCallback(
+    (fecha: Date, hora: string): boolean => {
+      const inicio = new Date(fecha)
+      inicio.setHours(parseInt(hora.split(":")[0], 10), 0, 0, 0)
+      const fin = inicio.getTime() + 60 * 60_000
+      return bloqueos.some((b) => b.startTime.getTime() < fin && b.endTime.getTime() > inicio.getTime())
+    },
+    [bloqueos],
+  )
+
   const estadoDia = React.useCallback(
     (fecha: Date): EstadoDia => {
       if (!hydrated || schedule === undefined) return "disabled"
@@ -522,11 +540,14 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         minima: minimaFecha,
         maxima: maximaFecha,
         horasDelDia: horasDelDiaPara(fecha),
-        horasOcupadas: ocupadosPorDia.get(formatDateToInput(fecha)) ?? new Set<string>(),
+        horasOcupadas: new Set([
+          ...(ocupadosPorDia.get(formatDateToInput(fecha)) ?? []),
+          ...horasDelDiaPara(fecha).filter((hora) => estaBloqueada(fecha, hora)),
+        ]),
         ahora,
       })
     },
-    [hydrated, schedule, ahora, minimaFecha, maximaFecha, horasDelDiaPara, ocupadosPorDia],
+    [hydrated, schedule, ahora, minimaFecha, maximaFecha, horasDelDiaPara, ocupadosPorDia, estaBloqueada],
   )
 
   // Franjas del día según el horario de la BD, sin filtrar por hora.
@@ -559,10 +580,14 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
   // Slot Availability Map for the selected date
   const slotAvailability = React.useMemo(() => {
-    const map: Record<string, { available: boolean; conflictWith?: string }> = {}
+    const map: Record<string, { available: boolean; conflictWith?: string; blocked?: boolean }> = {}
     if (!selectedDateEfectiva) return map
 
     availableHours.forEach((hourStr) => {
+      if (estaBloqueada(selectedDateEfectiva, hourStr)) {
+        map[hourStr] = { available: false, blocked: true }
+        return
+      }
       const hourNum = parseInt(hourStr.split(":")[0], 10)
       const existing = appointments.find((apt) => {
         const aptDate = toDate(apt.startTime)
@@ -596,7 +621,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     })
 
     return map
-  }, [appointments, patients, selectedDateEfectiva, isEdit, isPatient, initialAppointment, availableHours])
+  }, [appointments, patients, selectedDateEfectiva, isEdit, isPatient, initialAppointment, availableHours, estaBloqueada])
 
   // Hora realmente elegida: sin valor por defecto. Solo cuenta la hora que la
   // persona tocó y que sigue libre en el día seleccionado.
@@ -647,19 +672,42 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   // y el payload coincidan siempre.
   const durationMinutesEfectivos = getEffectiveDurationMinutes(isMinorPatient, durationMinutes)
 
+  // Un menor no ve (ni conserva elegidos) los motivos que solo aplican a adultos.
+  const reasonOptions = reasonGroups
+    .flatMap((g) => g.reasons)
+    .filter((r) => isReasonAllowedFor(r.code, isMinorPatient))
+  const selectedReasons = reasonOptions.filter((r) => reasonIds.includes(r.id))
+  const selectedReasonIds = selectedReasons.map((r) => r.id)
+  const needsReasonText = selectedReasons.some((r) => r.requiresText)
+  // Una cita histórica sin motivos del catálogo no se toca si no se eligió ninguno;
+  // el texto solo viaja con «Otro».
+  const reasonPayload = {
+    reasonIds:
+      selectedReasonIds.length > 0 || (initialAppointment?.reasonIds?.length ?? 0) > 0 ? selectedReasonIds : undefined,
+    reason: needsReasonText ? reason.trim() : undefined,
+  }
+
+  // Tarifas del profesional: el paciente usa las de su psicólogo asignado.
+  const psicologoDeTarifas = isPatient ? patients[0]?.psychologistId : undefined
+  const { data: tarifas = DEFAULT_PRICING_RATES } = useQuery({
+    queryKey: ["tarifas", psicologoDeTarifas ?? "yo"],
+    queryFn: async () =>
+      (isPatient ? await psychologistService.getById(psicologoDeTarifas!) : await psychologistService.getMe()).rates,
+    enabled: isPatient ? Boolean(psicologoDeTarifas) : Boolean(user),
+    staleTime: 5 * 60_000,
+  })
+
   // Costo de la sesión calculado en vivo con las mismas reglas del backend.
   const previewPrice = React.useMemo(() => {
     if (!hydrated || !selectedDateEfectiva || !selectedHourEfectivo || !modality) return null
     const [hour, minute] = selectedHourEfectivo.split(":").map(Number)
     const start = new Date(selectedDateEfectiva)
     start.setHours(hour, minute, 0, 0)
-    return calculateAppointmentPrice({
-      isMinor: isMinorPatient,
-      startTime: start,
-      modality,
-      durationMinutes: durationMinutesEfectivos,
-    })
-  }, [hydrated, selectedDateEfectiva, selectedHourEfectivo, isMinorPatient, durationMinutesEfectivos, modality])
+    return calculateAppointmentPrice(
+      { isMinor: isMinorPatient, startTime: start, modality, durationMinutes: durationMinutesEfectivos },
+      tarifas,
+    )
+  }, [hydrated, selectedDateEfectiva, selectedHourEfectivo, isMinorPatient, durationMinutesEfectivos, modality, tarifas])
 
   // Autocomplete patient filter
   const filteredPatients = React.useMemo(() => {
@@ -719,7 +767,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     else if (!availableHours.includes(selectedHourEfectivo)) e.fecha = "Ese día no tiene horarios disponibles. Elige otra fecha."
     else {
       const slot = slotAvailability[selectedHourEfectivo]
-      if (slot && !slot.available) e.fecha = `Las ${selectedHourEfectivo} ya están ocupadas por ${slot.conflictWith}.`
+      if (slot?.blocked) e.fecha = `A las ${selectedHourEfectivo} no hay atención. Elige otro horario.`
+      else if (slot && !slot.available) e.fecha = `Las ${selectedHourEfectivo} ya están ocupadas por ${slot.conflictWith}.`
     }
     if (!modality) e.modalidad = "Elige si la consulta es presencial o virtual."
     // Obligatorio en las altas; al editar una cita histórica sin motivo se puede dejar igual.
@@ -938,8 +987,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   ? "Modificar cita"
                   : "Modificar cita"
                 : isPatient
-                  ? "Solicitar Cita"
-                  : "Agendar Nueva Cita"}
+                  ? "Solicitar cita"
+                  : "Nueva cita"}
             </h1>
             {isPatient && (
               <p className="text-sm text-muted-foreground">
@@ -1285,7 +1334,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                                   ? "bg-card hover:bg-muted/40 text-foreground border-border/70 hover:border-primary/40"
                                   : "bg-muted/40 text-muted-foreground/50 border-border/40 cursor-not-allowed line-through"
                               }`}
-                              title={!isAvailable ? `Ocupado por ${slot?.conflictWith}` : "Disponible"}
+                              title={slot?.blocked ? "Sin atención en este horario" : !isAvailable ? `Ocupado por ${slot?.conflictWith}` : "Disponible"}
                             >
                               <span className="text-sm font-bold">{hourStr}</span>
                               <span
@@ -1302,7 +1351,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                                     isSelected ? "bg-primary-foreground" : isAvailable ? "bg-primary" : "bg-destructive/60"
                                   }`}
                                 />
-                                {isAvailable ? "Disponible" : "Ocupado"}
+                                {isAvailable ? "Disponible" : slot?.blocked ? "Sin atención" : "Ocupado"}
                               </span>
                             </button>
                           )
@@ -1342,48 +1391,19 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 )}
               </div>
 
-              {/* Duración de la sesión */}
-              <div className="space-y-1.5 pt-3 border-t border-border/50">
-                <span className="text-xs font-medium text-muted-foreground block">
-                  Duración de la sesión:
-                </span>
-                {isMinorPatient ? (
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary text-xs font-semibold text-primary">
-                    <Clock className="size-3.5" />
-                    30 minutos (menor de edad)
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {DURATION_OPTIONS.map((mins) => (
-                      <button
-                        key={mins}
-                        type="button"
-                        onClick={() => setDurationMinutes(mins)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                          durationMinutes === mins
-                            ? "bg-primary/10 border-primary text-primary font-semibold"
-                            : "bg-card border-border/70 text-foreground hover:bg-muted/50"
-                        }`}
-                      >
-                        {mins} minutos {mins === 50 && "(Estándar)"}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* CARD 4: MODALIDAD Y MOTIVO DE CONSULTA */}
+        {/* MODALIDAD Y DURACIÓN: el formato de la sesión, justo después de elegir cuándo */}
         <Card className="border-border/70 shadow-2xs bg-card">
           <CardHeader className="pb-4">
             <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
               <FileText className="size-4 text-primary" />
-              <span>{isPatient ? "2." : "3."} Modalidad y Motivo de Consulta</span>
+              <span>{isPatient ? "2." : "3."} Modalidad y Duración</span>
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              Define el formato de atención y el objetivo de la cita.
+              Elige cómo será la sesión y cuánto dura.
             </CardDescription>
           </CardHeader>
 
@@ -1477,13 +1497,58 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               {errorDe("modalidad")}
             </div>
 
+            {/* Duración de la sesión */}
+            <div className="space-y-1.5">
+              <span className="text-xs font-medium text-muted-foreground block">
+                Duración de la sesión:
+              </span>
+              {isMinorPatient ? (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary text-xs font-semibold text-primary">
+                  <Clock className="size-3.5" />
+                  30 minutos (menor de edad)
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  {DURATION_OPTIONS.map((mins) => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => setDurationMinutes(mins)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                        durationMinutes === mins
+                          ? "bg-primary/10 border-primary text-primary font-semibold"
+                          : "bg-card border-border/70 text-foreground hover:bg-muted/50"
+                      }`}
+                    >
+                      {mins} minutos {mins === 50 && "(Estándar)"}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* MOTIVO DE CONSULTA: al final, ya con paciente, fecha y formato definidos */}
+        <Card className="border-border/70 shadow-2xs bg-card">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
+              <FileText className="size-4 text-primary" />
+              <span>{isPatient ? "3." : "4."} Motivo de Consulta</span>
+            </CardTitle>
+            <CardDescription className="text-xs text-muted-foreground">
+              {isMinorPatient ? "Cuéntanos qué quieres trabajar en la sesión del menor." : "Cuéntanos qué quieres trabajar en la sesión."}
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
             {/* Motivos de consulta: chips de selección múltiple; «Otro» abre el texto */}
             <fieldset id="campo-motivo" className="scroll-mt-24 space-y-2.5">
               <legend className="text-xs font-medium text-muted-foreground">
                 Motivo de la consulta{isEdit ? "" : " *"}
                 <span className="font-normal"> · puedes elegir varios</span>
               </legend>
-              {isEdit && reasonIds.length === 0 && initialAppointment?.reason ? (
+              {isEdit && selectedReasonIds.length === 0 && initialAppointment?.reason ? (
                 <p className="text-xs text-muted-foreground">
                   Registrado: <span className="font-medium text-foreground">{initialAppointment.reason}</span>
                 </p>
@@ -1491,7 +1556,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               <ChipGroup
                 label="Motivos de consulta"
                 options={reasonOptions.map((option) => ({ value: option.id, label: option.label }))}
-                value={reasonIds}
+                value={selectedReasonIds}
                 onValueChange={setReasonIds}
                 multiple
               />
@@ -1613,8 +1678,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                       ? "Solicitar cambio"
                       : "Guardar cambios"
                     : isPatient
-                      ? "Solicitar Cita"
-                      : "Guardar Cita"}
+                      ? "Solicitar cita"
+                      : "Guardar cita"}
               </span>
             </Button>
           </div>

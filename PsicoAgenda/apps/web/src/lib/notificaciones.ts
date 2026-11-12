@@ -75,7 +75,7 @@ export function accionesDeAviso(
     case "homework":
       return ctx.esPaciente ? { ...vacio, principal: { href: "/dashboard#tareas", label: "Ver mi tarea" } } : vacio
     case "rejection":
-      return ctx.esPaciente ? { ...vacio, principal: { href: "/agenda/nueva", label: "Pedir otro horario" } } : vacio
+      return ctx.esPaciente ? { ...vacio, principal: { href: "/agenda/nueva", label: "Solicitar otro horario" } } : vacio
     case "cancellation":
       return ctx.esPaciente
         ? { ...vacio, principal: { href: "/agenda/nueva", label: "Solicitar otra cita" } }

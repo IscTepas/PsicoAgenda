@@ -25,6 +25,10 @@ export interface CalendarProps {
   showToday?: boolean;
   /** Marca con un punto los días que cumplen el criterio (p. ej. días con citas). */
   hasMarker?: CalendarDateMatcher;
+  /** Rellena el día con la superficie neutra de "no disponible" (p. ej. un día bloqueado). Sigue siendo elegible. */
+  isFilled?: CalendarDateMatcher;
+  /** Atenúa el número sin deshabilitar el día (p. ej. un día en que no se atiende). */
+  isDimmed?: CalendarDateMatcher;
 }
 
 const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -118,6 +122,8 @@ export function Calendar({
   className,
   showToday = false,
   hasMarker,
+  isFilled,
+  isDimmed,
 }: CalendarProps) {
   const titleId = useId();
   const today = useToday();
@@ -274,13 +280,13 @@ export function Calendar({
           type="button"
           role="gridcell"
           data-date={key}
-          aria-label={date.toLocaleDateString(locale, { dateStyle: "full" })}
+          aria-label={`${date.toLocaleDateString(locale, { dateStyle: "full" })}${isFilled?.(date) ? ", bloqueado" : ""}`}
           aria-selected={selected}
           aria-current={isToday ? "date" : undefined}
           tabIndex={present && key === tabbableKey ? 0 : -1}
           disabled={isDisabled(date)}
           style={present ? numberDelay(key) : undefined}
-          className={cx(styles.day, !sameMonth(date, paneMonth) && styles.outside, selected && styles.selected, isToday && styles.today)}
+          className={cx(styles.day, !sameMonth(date, paneMonth) && styles.outside, selected && styles.selected, isToday && styles.today, isFilled?.(date) && styles.filled, isDimmed?.(date) && styles.dimmed)}
           onFocus={() => setFocusedDate(date)}
           onKeyDown={(event) => onDayKeyDown(event, date)}
           onClick={() => onChange?.(date)}

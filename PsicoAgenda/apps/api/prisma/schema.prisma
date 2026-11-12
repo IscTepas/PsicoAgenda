@@ -267,6 +267,11 @@ model psicologos {
   especialidad       String?
   anios_experiencia  Int?
   biografia          String?
+  tarifa_adulto         Int               @default(800)
+  tarifa_menor          Int               @default(1000)
+  recargo_mismo_dia_pct Int               @default(30)
+  recargo_mismo_dia_monto Int?
+  descuento_virtual     Int               @default(100)
   bloqueos_agenda    bloqueos_agenda[]
   citas              citas[]
   entradas_bitacora  entradas_bitacora[]

@@ -381,6 +381,46 @@ const nombrePerfilSchema = z
   .min(2, "El nombre es obligatorio")
   .max(120, "El nombre es demasiado largo");
 
+const montoSchema = z
+  .number({ message: "Escribe un monto" })
+  .int("Usa pesos enteros, sin centavos")
+  .min(0, "El monto no puede ser negativo")
+  .max(100_000, "El monto es demasiado alto");
+
+/** Tarifas de las citas; mismos límites que el CHECK `ck_psicologos_tarifas`. */
+export const pricingRatesSchema = z.object({
+  adultRate: montoSchema,
+  minorRate: montoSchema,
+  sameDaySurchargePercent: z
+    .number({ message: "Escribe un porcentaje" })
+    .int("Usa un porcentaje entero")
+    .min(0, "El recargo no puede ser negativo")
+    .max(300, "El recargo máximo es 300%"),
+  sameDaySurchargeAmount: montoSchema.nullable(),
+  virtualDiscount: montoSchema,
+});
+
+/** Primera y última hora de inicio que admite el horario de atención (sesiones de 07:00 a 22:00). */
+export const SCHEDULE_FIRST_HOUR = 7;
+export const SCHEDULE_LAST_HOUR = 21;
+
+/**
+ * Horario semanal completo: cada franja es una hora de un día (1 = lunes … 7 = domingo).
+ * Se guarda entero, así que no puede llegar vacío: un horario sin franjas se
+ * confundiría con "psicólogo nuevo" y se rellenaría con el horario por defecto.
+ */
+export const updatePsychologistScheduleSchema = z.object({
+  slots: z
+    .array(
+      z.object({
+        dayOfWeek: z.number().int().min(1).max(7),
+        hour: z.number().int().min(SCHEDULE_FIRST_HOUR).max(SCHEDULE_LAST_HOUR),
+      }),
+    )
+    .min(1, "Deja al menos una hora de atención en la semana")
+    .max(7 * 24),
+});
+
 export const updatePsychologistProfileSchema = z.object({
   name: nombrePerfilSchema.optional(),
   phone: telefonoSchema.optional(),
@@ -397,6 +437,7 @@ export const updatePsychologistProfileSchema = z.object({
     .optional(),
   specialty: z.string().trim().max(120, "La especialidad es demasiado larga").optional(),
   bio: z.string().trim().max(2000, "La biografía es demasiado larga").optional(),
+  rates: pricingRatesSchema.optional(),
 });
 
 export const updatePatientProfileSchema = z.object({

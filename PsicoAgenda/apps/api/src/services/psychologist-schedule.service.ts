@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto";
-import type { PsychologistSchedule, PsychologistScheduleSlot } from "@psicoagenda/shared";
+import type {
+  PsychologistSchedule,
+  PsychologistScheduleSlot,
+} from "@psicoagenda/shared";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/app-error";
 
 /** Horarios precargados por defecto: lunes a viernes, 09:00 a 19:00. */
-const DEFAULT_SLOTS: { dayOfWeek: number; startHour: number; endHour: number }[] = [
+const DEFAULT_SLOTS: {
+  dayOfWeek: number;
+  startHour: number;
+  endHour: number;
+}[] = [
   { dayOfWeek: 1, startHour: 9, endHour: 19 },
   { dayOfWeek: 2, startHour: 9, endHour: 19 },
   { dayOfWeek: 3, startHour: 9, endHour: 19 },
@@ -17,7 +24,13 @@ const hourToTime = (h: number): string => `${String(h).padStart(2, "0")}:00`;
 
 async function seedDefaultSchedule(psychologistId: string): Promise<void> {
   const rows = DEFAULT_SLOTS.flatMap(({ dayOfWeek, startHour, endHour }) => {
-    const out: { id: string; psicologo_id: string; dia_semana: number; hora_inicio: Date; hora_fin: Date }[] = [];
+    const out: {
+      id: string;
+      psicologo_id: string;
+      dia_semana: number;
+      hora_inicio: Date;
+      hora_fin: Date;
+    }[] = [];
     for (let h = startHour; h < endHour; h++) {
       out.push({
         id: randomUUID(),
@@ -30,14 +43,66 @@ async function seedDefaultSchedule(psychologistId: string): Promise<void> {
     return out;
   });
 
-  await prisma.horarios_psicologo.createMany({ data: rows, skipDuplicates: true });
+  await prisma.horarios_psicologo.createMany({
+    data: rows,
+    skipDuplicates: true,
+  });
+}
+
+/**
+ * Reemplaza el horario semanal completo por las franjas recibidas. Las citas ya
+ * agendadas fuera del horario nuevo no se tocan: el horario solo decide qué se
+ * puede pedir de ahora en adelante.
+ */
+export async function replacePsychologistSchedule(
+  psychologistId: string,
+  slots: { dayOfWeek: number; hour: number }[],
+): Promise<PsychologistSchedule> {
+  // Sin repetidos: la tabla tiene un UNIQUE por día y hora de inicio.
+  const unicos = [
+    ...new Map(slots.map((s) => [`${s.dayOfWeek}-${s.hour}`, s])).values(),
+  ];
+
+  // Dos guardados simultáneos chocarían en el UNIQUE de la tabla; en serializable
+  // el segundo espera o falla limpio (se convierte en 409) en vez de mezclar horarios.
+  await prisma
+    .$transaction(
+      [
+        prisma.horarios_psicologo.deleteMany({
+          where: { psicologo_id: psychologistId },
+        }),
+        prisma.horarios_psicologo.createMany({
+          data: unicos.map(({ dayOfWeek, hour }) => ({
+            id: randomUUID(),
+            psicologo_id: psychologistId,
+            dia_semana: dayOfWeek,
+            hora_inicio: new Date(`1970-01-01T${hourToTime(hour)}:00Z`),
+            hora_fin: new Date(`1970-01-01T${hourToTime(hour + 1)}:00Z`),
+          })),
+        }),
+      ],
+      { isolationLevel: "Serializable" },
+    )
+    .catch((error: unknown) => {
+      const code = (error as { code?: string }).code;
+      if (code === "P2002" || code === "P2034") {
+        throw AppError.conflict(
+          "El horario se estaba guardando desde otra ventana. Intenta de nuevo.",
+        );
+      }
+      throw error;
+    });
+
+  return getPsychologistSchedule(psychologistId);
 }
 
 /**
  * Devuelve la disponibilidad semanal leyendo de la BD. Si no hay filas
  * (psicologo nuevo), inserta los horarios precargados y los devuelve.
  */
-export async function getPsychologistSchedule(psychologistId: string): Promise<PsychologistSchedule> {
+export async function getPsychologistSchedule(
+  psychologistId: string,
+): Promise<PsychologistSchedule> {
   const psychologist = await prisma.psicologos.findUnique({
     where: { id: psychologistId },
     select: { id: true },
