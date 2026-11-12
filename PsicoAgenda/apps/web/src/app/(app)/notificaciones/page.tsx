@@ -2,9 +2,8 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowUpRight, BellOff, CheckCheck, ChevronRight, MapPin, Settings2, Video } from "lucide-react"
+import { ArrowUpRight, BellOff, CheckCheck, ChevronRight, Eye, MapPin, Settings2, Video } from "lucide-react"
 import {
   AppointmentModality,
   AppointmentStatus,
@@ -14,10 +13,18 @@ import {
 } from "@psicoagenda/shared"
 import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { PRACTICE } from "@/app/home-content"
 import { PageHeader } from "../components/page-header"
 import { formatAppointmentTime } from "@/lib/format"
-import { accionesDeAviso, type AccionDeAviso } from "@/lib/notificaciones"
+import { accionesDeAviso, TIPO_DE_AVISO, type AccionDeAviso } from "@/lib/notificaciones"
 import { useSession } from "@/lib/use-session"
 import { cn } from "@/lib/utils"
 import { appointmentRequestService, appointmentService, notificationService } from "@/services"
@@ -47,11 +54,12 @@ function horaDe(fecha: Date, grupo: string): string {
 }
 
 export default function NotificationsPage() {
-  const router = useRouter()
   const queryClient = useQueryClient()
   const { user } = useSession()
   const esPaciente = user?.role === UserRole.PATIENT
   const [filtro, setFiltro] = useState<Filtro>("todos")
+  // Aviso abierto en su tarjeta (se busca por id para que refleje "leído" al instante).
+  const [abiertoId, setAbiertoId] = useState<string | null>(null)
   const hoy = useMemo(() => new Date(), [])
 
   const avisos = useQuery({
@@ -118,11 +126,16 @@ export default function NotificationsPage() {
       .catch(() => void avisos.refetch())
   }
 
-  const irAPendiente = (requestId?: string) => {
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    const destino = (requestId && document.getElementById(`pendiente-${requestId}`)) || document.getElementById("por-responder")
-    destino?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" })
-  }
+  const accionesDe = (aviso: Notification) =>
+    accionesDeAviso(aviso, {
+      esPaciente,
+      ahora: hoy,
+      mapsUrl: MAPS_URL,
+      videoUrl: VIDEO_URL,
+      cita: aviso.appointmentId ? citaPorId.get(aviso.appointmentId) : undefined,
+      estadoSolicitud: aviso.requestId ? estadoPorSolicitud.get(aviso.requestId) : undefined,
+    })
+  const abierto = lista.find((n) => n.id === abiertoId) ?? null
 
   const proxima = esPaciente
     ? citas
@@ -138,11 +151,6 @@ export default function NotificationsPage() {
     <div className="mx-auto max-w-4xl space-y-8">
       <PageHeader
         title="Notificaciones"
-        description={
-          esPaciente
-            ? "Lo que pasa con tus citas, y qué hacer después."
-            : "Responde solicitudes y revisa lo que pasó con tus citas."
-        }
         actions={
           <Button variant="outline" size="sm" asChild className="h-9 rounded-xl text-xs font-medium">
             <Link href="/notificaciones/configuracion">
@@ -210,50 +218,34 @@ export default function NotificationsPage() {
                 <h3 className="px-1 text-sm font-medium text-muted-foreground">{grupo}</h3>
                 <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
                   {items.map((aviso) => {
-                    const acciones = accionesDeAviso(aviso, {
-                      esPaciente,
-                      ahora: hoy,
-                      mapsUrl: MAPS_URL,
-                      videoUrl: VIDEO_URL,
-                      cita: aviso.appointmentId ? citaPorId.get(aviso.appointmentId) : undefined,
-                      estadoSolicitud: aviso.requestId ? estadoPorSolicitud.get(aviso.requestId) : undefined,
-                    })
+                    const acciones = accionesDe(aviso)
                     const unread = !aviso.readAt
-                    const abrir = () => {
-                      marcarLeido(aviso)
-                      if (acciones.pendiente) irAPendiente(aviso.requestId)
-                      else if (acciones.principal) router.push(acciones.principal.href)
-                    }
+                    const fecha = aviso.sentAt ?? aviso.createdAt
 
                     return (
-                      <li key={aviso.id} className={cn("relative transition-colors", unread && "bg-primary/[0.03]")}>
+                      <li key={aviso.id} className={cn("transition-colors", unread && "bg-primary/[0.03]")}>
                         <button
                           type="button"
-                          onClick={abrir}
-                          className="flex w-full items-start gap-3 px-4 pt-4 pb-3 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:bg-muted/40 sm:px-5"
+                          onClick={() => {
+                            marcarLeido(aviso)
+                            setAbiertoId(aviso.id)
+                          }}
+                          className="group flex w-full items-start gap-3 px-4 py-4 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:bg-muted/40 sm:px-5"
                         >
                           <span
                             className={cn("mt-1.5 size-2 shrink-0 rounded-full", unread ? "bg-primary" : "bg-transparent")}
                             aria-hidden="true"
                           />
                           <span className="min-w-0 flex-1">
-                            <span className="flex items-baseline justify-between gap-3">
-                              <span className={cn("text-sm", unread ? "font-semibold text-foreground" : "font-medium text-foreground/80")}>
-                                {aviso.subject}
-                                {unread && <span className="sr-only"> (sin leer)</span>}
-                              </span>
-                              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                                {horaDe(aviso.sentAt ?? aviso.createdAt, grupoDe(aviso.sentAt ?? aviso.createdAt, hoy))}
-                              </span>
+                            <span className={cn("block text-sm", unread ? "font-semibold text-foreground" : "font-medium text-foreground/80")}>
+                              {aviso.subject}
+                              {unread && <span className="sr-only"> (sin leer)</span>}
                             </span>
-                            <span className="mt-0.5 block text-sm leading-relaxed text-muted-foreground">{aviso.message}</span>
-                          </span>
-                        </button>
-
-                        {(acciones.principal || acciones.extras.length > 0 || acciones.estado) && (
-                          <div className="flex flex-wrap items-center gap-2 pb-4 pl-9 pr-4 sm:pl-10 sm:pr-5">
+                            <span className="mt-0.5 line-clamp-2 block text-sm leading-relaxed text-muted-foreground">
+                              {aviso.message}
+                            </span>
                             {acciones.estado && (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-foreground/80">
+                              <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-foreground/80">
                                 <span
                                   className={cn("size-1.5 rounded-full", acciones.pendiente ? "bg-amber-500" : "bg-muted-foreground/50")}
                                   aria-hidden="true"
@@ -261,26 +253,15 @@ export default function NotificationsPage() {
                                 {acciones.estado}
                               </span>
                             )}
-                            {acciones.pendiente && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  marcarLeido(aviso)
-                                  irAPendiente(aviso.requestId)
-                                }}
-                              >
-                                Responder
-                              </Button>
-                            )}
-                            {acciones.principal && (
-                              <BotonAccion accion={acciones.principal} variante="outline" onUse={() => marcarLeido(aviso)} />
-                            )}
-                            {acciones.extras.map((accion) => (
-                              <BotonAccion key={accion.label} accion={accion} variante="ghost" onUse={() => marcarLeido(aviso)} />
-                            ))}
-                          </div>
-                        )}
+                          </span>
+                          <span className="flex shrink-0 flex-col items-end gap-2">
+                            <span className="text-xs tabular-nums text-muted-foreground">{horaDe(fecha, grupoDe(fecha, hoy))}</span>
+                            <span className="inline-flex h-8 items-center gap-1.5 rounded-[10px] border border-border bg-card px-3 text-xs font-medium text-foreground shadow-2xs transition-colors group-hover:bg-muted">
+                              <Eye className="size-3.5" aria-hidden="true" />
+                              Ver
+                            </span>
+                          </span>
+                        </button>
                       </li>
                     )
                   })}
@@ -290,8 +271,96 @@ export default function NotificationsPage() {
           </div>
         )}
       </section>
+
+      {/* Tarjeta del aviso: lo que dice, un resumen de su cita y el siguiente paso. Nunca lleva a modificar la cita. */}
+      <Dialog open={abierto !== null} onOpenChange={(open) => !open && setAbiertoId(null)}>
+        {abierto && (() => {
+          const acciones = accionesDe(abierto)
+          const cita = abierto.appointmentId ? citaPorId.get(abierto.appointmentId) : undefined
+          const inicio = cita ? new Date(cita.startTime) : null
+          const enviado = abierto.sentAt ?? abierto.createdAt
+          return (
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="text-lg font-semibold tracking-tight">Notificación</DialogTitle>
+                <DialogDescription className="sr-only">Detalle del aviso</DialogDescription>
+              </DialogHeader>
+
+              <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
+                <p className="text-base font-medium text-foreground">{abierto.subject}</p>
+                <span className="shrink-0 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-foreground/80">
+                  {TIPO_DE_AVISO[abierto.kind]}
+                </span>
+              </div>
+
+              <p className="rounded-xl border border-border bg-card px-4 py-3 text-sm leading-relaxed text-foreground">
+                {abierto.message}
+              </p>
+
+              {cita && inicio && (
+                <dl className="divide-y divide-border rounded-xl bg-muted/40 text-sm">
+                  <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                    <dt className="text-muted-foreground">Día</dt>
+                    <dd className="font-medium text-foreground">
+                      {capitalize(inicio.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" }))}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                    <dt className="text-muted-foreground">Hora</dt>
+                    <dd className="font-medium tabular-nums text-foreground">{formatAppointmentTime(inicio)}</dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                    <dt className="text-muted-foreground">Modalidad</dt>
+                    <dd className="font-medium text-foreground">
+                      {cita.modality === AppointmentModality.VIRTUAL ? "Videollamada" : "Presencial"}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-4 px-4 py-2.5">
+                    <dt className="text-muted-foreground">Estado</dt>
+                    <dd className="font-medium text-foreground">{ESTADO_CITA[cita.status]}</dd>
+                  </div>
+                </dl>
+              )}
+
+              {acciones.estado && (
+                <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <span
+                    className={cn("size-1.5 rounded-full", acciones.pendiente ? "bg-amber-500" : "bg-muted-foreground/50")}
+                    aria-hidden="true"
+                  />
+                  Solicitud: <span className="font-medium text-foreground">{acciones.estado}</span>
+                </p>
+              )}
+
+              <p className="text-right text-xs italic tabular-nums text-muted-foreground">
+                Enviado el{" "}
+                {enviado.toLocaleString("es-MX", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </p>
+
+              {(acciones.principal || acciones.extras.length > 0) && (
+                <DialogFooter className="gap-2 sm:gap-2">
+                  {acciones.extras.map((accion) => (
+                    <BotonAccion key={accion.label} accion={accion} variante="outline" onUse={() => setAbiertoId(null)} />
+                  ))}
+                  {acciones.principal && (
+                    <BotonAccion accion={acciones.principal} variante="default" onUse={() => setAbiertoId(null)} />
+                  )}
+                </DialogFooter>
+              )}
+            </DialogContent>
+          )
+        })()}
+      </Dialog>
     </div>
   )
+}
+
+const ESTADO_CITA: Record<AppointmentStatus, string> = {
+  [AppointmentStatus.CONFIRMED]: "Confirmada",
+  [AppointmentStatus.PENDING]: "Por confirmar",
+  [AppointmentStatus.COMPLETED]: "Completada",
+  [AppointmentStatus.CANCELLED]: "Cancelada",
+  [AppointmentStatus.NO_SHOW]: "No asistió",
 }
 
 function BotonAccion({
@@ -300,12 +369,12 @@ function BotonAccion({
   onUse,
 }: {
   accion: AccionDeAviso
-  variante: "outline" | "ghost"
+  variante: "outline" | "default"
   onUse: () => void
 }) {
   const Icon = accion.label === "Videollamada" ? Video : accion.label === "Cómo llegar" ? MapPin : null
   return (
-    <Button asChild size="sm" variant={variante} className={cn(variante === "ghost" && "text-muted-foreground")}>
+    <Button asChild variant={variante}>
       {accion.external ? (
         <a href={accion.href} target="_blank" rel="noopener noreferrer" onClick={onUse}>
           {Icon && <Icon />}
@@ -359,7 +428,7 @@ function ProximaCita({ cita }: { cita: Appointment }) {
           </Button>
           <Button asChild size="sm">
             <Link href={`/agenda/${cita.id}`}>
-              Ver cita
+              Modificar o cancelar
               <ChevronRight />
             </Link>
           </Button>

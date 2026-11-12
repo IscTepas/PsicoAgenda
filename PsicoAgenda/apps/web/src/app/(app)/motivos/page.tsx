@@ -10,7 +10,7 @@ export default function MotivosConsultaPage() {
     <div className="space-y-6 max-w-4xl mx-auto">
       <PageHeader
         title="Motivos de consulta"
-        description="Catálogo que se ofrece al agendar o solicitar una cita. Un motivo en uso no se borra: se desactiva."
+        description="Un motivo en uso no se borra: se desactiva."
       />
       <ReasonCatalogAdmin />
     </div>

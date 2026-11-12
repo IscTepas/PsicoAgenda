@@ -31,6 +31,7 @@ vi.mock("@/lib/prisma", () => ({ prisma: db, disconnectPrisma: vi.fn() }));
 
 const {
   addGuardian,
+  addTutoredMinor,
   assertCanActOnPatient,
   finalizarTutelasVencidas,
   isMinorOn,
@@ -215,5 +216,47 @@ describe("finalizarTutelasVencidas", () => {
     db.pacientes.findMany.mockResolvedValueOnce([]);
     expect(await finalizarTutelasVencidas()).toBe(0);
     expect(db.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("addTutoredMinor", () => {
+  const mama = yo(UserRole.PATIENT, "u-mama");
+  const cuenta = (fecha_nacimiento: Date | null = hace(35)) => ({
+    nombre_completo: "Mamá",
+    telefono: null,
+    zona_horaria: "America/Mexico_City",
+    pacientes: { fecha_nacimiento, psicologo_id: "psi-1" },
+  });
+
+  beforeEach(() => {
+    db.usuarios.findUnique.mockResolvedValue(cuenta());
+    db.tutores.upsert.mockResolvedValue({ id: "t-mama" });
+  });
+
+  it("crea al menor con la misma psicóloga y deja a quien lo registra como tutor principal", async () => {
+    const menor = await addTutoredMinor(mama, { name: " Hija Prueba ", birthDate: hace(9) });
+
+    expect(menor.name).toBe("Hija Prueba");
+    expect((db.pacientes.create.mock.calls[0]![0] as { data: { psicologo_id: string } }).data.psicologo_id).toBe("psi-1");
+    expect(db.pacientes_tutores.create).toHaveBeenCalledWith({
+      data: { paciente_id: menor.id, tutor_id: "t-mama", es_principal: true },
+    });
+    // Sin cuenta: nada sale por correo ni WhatsApp a nombre del menor.
+    expect(db.usuarios.create.mock.calls[0]![0]).toMatchObject({
+      data: { notificar_correo: false, notificar_whatsapp: false },
+    });
+  });
+
+  it("rechaza a un adulto, a un tutor menor de edad y los nombres repetidos", async () => {
+    await expect(addTutoredMinor(mama, { name: "Adulto", birthDate: hace(20) })).rejects.toMatchObject({ statusCode: 400 });
+
+    db.usuarios.findUnique.mockResolvedValueOnce(cuenta(hace(16)));
+    await expect(addTutoredMinor(mama, { name: "Hija", birthDate: hace(9) })).rejects.toMatchObject({ statusCode: 403 });
+
+    db.pacientes_tutores.findMany.mockResolvedValueOnce([
+      { pacientes: { id: "p-1", fecha_nacimiento: hace(9), usuarios: { nombre_completo: "Hija" } } },
+    ]);
+    await expect(addTutoredMinor(mama, { name: "hija", birthDate: hace(9) })).rejects.toMatchObject({ statusCode: 409 });
+    expect(db.pacientes.create).not.toHaveBeenCalled();
   });
 });

@@ -54,6 +54,7 @@ const KINDS: Record<tipo_notificacion, NotificationKind> = {
   SOLICITUD: "request",
   RECHAZO: "rejection",
   ASISTENCIA: "attendance",
+  TAREA: "homework",
 };
 
 const toNotification = (row: NotificationRow): Notification => ({

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { CheckCircle2, MapPin, Video } from "lucide-react"
+import { CheckCircle2, Loader2, MapPin, Video } from "lucide-react"
 import {
   AppointmentModality,
   AppointmentStatus,
@@ -68,7 +68,18 @@ export function PendingInbox() {
   const { toast } = useToast()
   const pending = usePendingResponses(true)
   const [detailId, setDetailId] = useState<string | null>(null)
-  const [busyId, setBusyId] = useState<string | null>(null)
+  // Qué se está respondiendo y con qué acción: ese botón muestra el giro y su texto en curso.
+  const [busy, setBusy] = useState<{ id: string; action: "accept" | "reject" | "confirm" } | null>(null)
+  const busyId = busy?.id ?? null
+  const enCurso = (id: string, action: "accept" | "reject" | "confirm", reposo: string, cargando: string) =>
+    busy?.id === id && busy.action === action ? (
+      <>
+        <Loader2 className="animate-spin" aria-hidden="true" />
+        {cargando}
+      </>
+    ) : (
+      reposo
+    )
   const [results, setResults] = useState<Record<string, string>>({})
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
 
@@ -142,7 +153,7 @@ export function PendingInbox() {
 
   const respond = async (item: Item, action: "accept" | "reject" | "confirm") => {
     if (busyId) return
-    setBusyId(item.id)
+    setBusy({ id: item.id, action })
     const name = patientById.get(item.source.patientId)?.name
     try {
       if (action === "accept") await appointmentRequestService.accept(item.id)
@@ -170,7 +181,7 @@ export function PendingInbox() {
         toast({ title: error instanceof Error ? error.message : "No se pudo responder.", status: "error" })
       }
     } finally {
-      setBusyId(null)
+      setBusy(null)
     }
   }
 
@@ -220,6 +231,7 @@ export function PendingInbox() {
               <li
                 key={item.id}
                 id={`pendiente-${item.id}`}
+                aria-busy={busyId === item.id}
                 className={cn(
                   "flex flex-col gap-3 px-4 py-3.5 transition-colors duration-700 @2xl:flex-row @2xl:items-center @2xl:gap-5 @2xl:px-5",
                   item.id === highlightedId && "bg-amber-50 dark:bg-amber-500/10",
@@ -277,7 +289,7 @@ export function PendingInbox() {
                       {item.kind === "request" ? (
                         <>
                           <Button size="sm" variant="outline" disabled={disabled} onClick={() => void respond(item, "reject")}>
-                            Rechazar
+                            {enCurso(item.id, "reject", "Rechazar", "Rechazando…")}
                           </Button>
                           <Button
                             size="sm"
@@ -285,12 +297,12 @@ export function PendingInbox() {
                             title={clash ? "Ese horario ya está ocupado" : undefined}
                             onClick={() => void respond(item, "accept")}
                           >
-                            Aceptar
+                            {enCurso(item.id, "accept", "Aceptar", "Aceptando…")}
                           </Button>
                         </>
                       ) : (
                         <Button size="sm" disabled={disabled} onClick={() => void respond(item, "confirm")}>
-                          Confirmar
+                          {enCurso(item.id, "confirm", "Confirmar", "Confirmando…")}
                         </Button>
                       )}
                     </>
@@ -381,15 +393,15 @@ export function PendingInbox() {
                 {isRequest ? (
                   <div className="flex flex-col-reverse gap-2 sm:flex-row">
                     <Button variant="outline" disabled={busyId !== null} onClick={() => void respond(detail, "reject")}>
-                      Rechazar
+                      {enCurso(detail.id, "reject", "Rechazar", "Rechazando…")}
                     </Button>
                     <Button disabled={busyId !== null || Boolean(clash)} onClick={() => void respond(detail, "accept")}>
-                      Aceptar
+                      {enCurso(detail.id, "accept", "Aceptar", "Aceptando…")}
                     </Button>
                   </div>
                 ) : (
                   <Button disabled={busyId !== null} onClick={() => void respond(detail, "confirm")}>
-                    Confirmar
+                    {enCurso(detail.id, "confirm", "Confirmar", "Confirmando…")}
                   </Button>
                 )}
               </DialogFooter>

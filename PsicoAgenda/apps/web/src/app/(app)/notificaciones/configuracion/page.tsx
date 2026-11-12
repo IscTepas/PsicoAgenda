@@ -20,7 +20,6 @@ export default function ConfiguracionRecordatoriosPage() {
 
       <PageHeader
         title="Preferencias de Notificaciones"
-        description="Elige por qué canales recibes los recordatorios de tus citas."
       />
 
       <ReminderConfigForm />

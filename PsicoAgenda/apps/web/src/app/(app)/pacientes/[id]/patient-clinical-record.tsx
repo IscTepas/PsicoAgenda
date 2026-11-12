@@ -5,22 +5,18 @@ import Link from "next/link"
 import {
   ArrowLeft,
   CalendarDays,
-  Clock,
   FileText,
   Plus,
   Phone,
   Mail,
   MapPin,
-  Video,
   User,
   Check,
   CheckCircle2,
   Lock,
-  Edit3,
   BookmarkCheck,
   Copy,
   ClipboardList,
-  Save,
   X,
 } from "lucide-react"
 import {
@@ -30,13 +26,10 @@ import {
   type Appointment,
   type ClinicalRecord,
   type Patient,
-  type PsychologistProfile,
   type SessionLogEntry,
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Textarea } from "@/components/ui/textarea"
-import { Input } from "@/components/ui/input"
 import { useHydrated } from "@/lib/use-hydrated"
 import { GuardiansCard } from "./guardians-card"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
@@ -45,7 +38,6 @@ import {
   clinicalRecordService,
   logEntryService,
   patientService,
-  psychologistService,
 } from "@/services"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/motion/tabs"
 import {
@@ -55,14 +47,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog"
+import { HojaDeSesion, LibretaSesionDialog } from "../../components/libreta-sesion"
 
 // Mismo estilo de estado que el panel y la agenda: pastilla gris + punto de color.
 const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
@@ -109,20 +94,15 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
   const [appointments, setAppointments] = React.useState<Appointment[]>([])
   const [logs, setLogs] = React.useState<SessionLogEntry[]>([])
   const [record, setRecord] = React.useState<ClinicalRecord | null>(null)
-  const [psychologist, setPsychologist] = React.useState<PsychologistProfile | null>(null)
   const [isLoading, setIsLoading] = React.useState<boolean>(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
 
-  // Bitacora modal state
-  const [isModalOpen, setIsModalOpen] = React.useState<boolean>(false)
-  const [editingLog, setEditingLog] = React.useState<SessionLogEntry | null>(null)
-  const [selectedAppointmentId, setSelectedAppointmentId] = React.useState<string>("")
-  const [sessionType, setSessionType] = React.useState<string>("Seguimiento terapéutico")
-  const [sessionNotes, setSessionNotes] = React.useState<string>("")
-  const [interventions, setInterventions] = React.useState<string>("")
-  const [homework, setHomework] = React.useState<string>("")
-  const [formError, setFormError] = React.useState<string>("")
-  const [isSaving, setIsSaving] = React.useState<boolean>(false)
+  // Hoja de bitácora abierta en la libreta (una por sesión).
+  const [libreta, setLibreta] = React.useState<{
+    appointmentId?: string
+    date: Date
+    entry: SessionLogEntry | null
+  } | null>(null)
   const [copiedPhone, setCopiedPhone] = React.useState<boolean>(false)
   const [successToast, setSuccessToast] = React.useState<string | null>(null)
 
@@ -135,19 +115,17 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
       setIsLoading(true)
       setLoadError(null)
       try {
-        const [patientRow, appointmentRows, logRows, recordRow, therapist] = await Promise.all([
+        const [patientRow, appointmentRows, logRows, recordRow] = await Promise.all([
           patientService.get(patientId),
           appointmentService.list({ patientId }),
           logEntryService.list(patientId),
           clinicalRecordService.get(patientId).catch(() => null),
-          psychologistService.getMe().catch(() => null),
         ])
         if (cancelled) return
         setPatient(patientRow)
         setAppointments(appointmentRows)
         setLogs(logRows)
         setRecord(recordRow)
-        setPsychologist(therapist)
       } catch (error) {
         if (!cancelled) {
           setLoadError(
@@ -169,102 +147,25 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
   const age = hydrated && patient ? calculateAge(patient.birthDate) : null
   const consents = record?.consents ?? []
 
-  // Associated session date for modal read-only field
-  const associatedAppointment = React.useMemo(() => {
-    if (selectedAppointmentId) {
-      return appointments.find((a) => a.id === selectedAppointmentId)
-    }
-    // Default to latest past or current appointment
-    return appointments[0] || null
-  }, [selectedAppointmentId, appointments])
-
-  const sessionDateString = React.useMemo(() => {
-    if (editingLog) {
-      return `${formatShortDate(editingLog.date)} — ${formatAppointmentTime(editingLog.date)} hrs (Sesión #${editingLog.sessionNumber})`
-    }
-    if (associatedAppointment) {
-      return `${formatShortDate(associatedAppointment.startTime)} — ${formatAppointmentTime(associatedAppointment.startTime)} hrs (Cita #${associatedAppointment.id})`
-    }
-    const now = new Date()
-    return `${formatShortDate(now)} — ${formatAppointmentTime(now)} hrs (Sesión #${logs.length + 1})`
-  }, [editingLog, associatedAppointment, logs])
-
-  // Open modal for a new log entry
-  const handleOpenNewLog = (aptId?: string) => {
-    setEditingLog(null)
-    setSelectedAppointmentId(aptId || appointments[0]?.id || "")
-    setSessionType("Seguimiento terapéutico")
-    setSessionNotes("")
-    setInterventions("")
-    setHomework("")
-    setFormError("")
-    setIsModalOpen(true)
-  }
-
-  // Open modal to edit an existing entry
-  const handleOpenEditLog = (log: SessionLogEntry) => {
-    setEditingLog(log)
-    setSelectedAppointmentId(log.appointmentId || "")
-    setSessionType(log.sessionType)
-    setSessionNotes(log.notes)
-    setInterventions(log.interventions || "")
-    setHomework(log.homework || "")
-    setFormError("")
-    setIsModalOpen(true)
-  }
-
-  // Quick insertion helpers for structured SOAP / clinical notes
-  const insertTemplateSnippet = (snippet: string) => {
-    setSessionNotes((prev) => {
-      if (!prev.trim()) return snippet
-      return `${prev}\n\n${snippet}`
-    })
-  }
-
-  // Save bitacora entry
-  const handleSaveLog = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!sessionNotes.trim()) {
-      setFormError("Las observaciones y notas de la sesión son obligatorias.")
-      return
-    }
-
-    setIsSaving(true)
-    setFormError("")
-
-    try {
-      if (editingLog) {
-        const updated = await logEntryService.update(editingLog.id, {
-          appointmentId: selectedAppointmentId || undefined,
-          sessionType,
-          notes: sessionNotes,
-          interventions,
-          homework,
-        })
-        setLogs((prev) => prev.map((item) => (item.id === editingLog.id ? updated : item)))
-        setSuccessToast("Nota de bitácora actualizada con trazabilidad.")
-      } else {
-        const created = await logEntryService.create(patientId, {
-          appointmentId: selectedAppointmentId || undefined,
-          sessionType,
-          notes: sessionNotes,
-          interventions,
-          homework,
-        })
-        setLogs((prev) => [created, ...prev])
-        setSuccessToast("Nueva nota de sesión registrada en la bitácora clínica.")
-      }
-
-      setIsModalOpen(false)
-      setTimeout(() => setSuccessToast(null), 3500)
-    } catch (error) {
-      setFormError(
-        error instanceof Error ? error.message : "No se pudo guardar la entrada de bitácora.",
-      )
-    } finally {
-      setIsSaving(false)
-    }
-  }
+  // La bitácora va por sesión: cada cita que ya llegó tiene (o espera) su hoja.
+  // Las notas viejas sin cita se conservan como hojas sueltas.
+  const sesiones = React.useMemo(() => {
+    const finDeHoy = new Date()
+    finDeHoy.setHours(23, 59, 59, 999)
+    const deCitas = appointments
+      .filter((apt) => apt.status !== AppointmentStatus.CANCELLED && apt.startTime <= finDeHoy)
+      .map((apt) => ({
+        key: apt.id,
+        date: apt.startTime,
+        appointmentId: apt.id as string | undefined,
+        entry: logs.find((log) => log.appointmentId === apt.id) ?? null,
+      }))
+    const conCita = new Set(deCitas.map((s) => s.key))
+    const sueltas = logs
+      .filter((log) => !log.appointmentId || !conCita.has(log.appointmentId))
+      .map((log) => ({ key: log.id, date: log.date, appointmentId: log.appointmentId, entry: log as SessionLogEntry | null }))
+    return [...deCitas, ...sueltas].sort((a, b) => b.date.getTime() - a.date.getTime())
+  }, [appointments, logs])
 
   // Copy emergency contact phone
   const copyEmergencyPhone = (phone?: string) => {
@@ -277,9 +178,9 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
   if (isLoading) {
     return (
       <div className="mx-auto max-w-5xl space-y-6 pb-16" aria-busy="true">
-        <div className="h-9 w-40 rounded-lg bg-muted/60" />
-        <div className="h-48 rounded-2xl border border-border/70 bg-card" />
-        <div className="h-64 rounded-2xl border border-border/70 bg-card" />
+        <div className="h-9 w-40 rounded-lg bg-muted/60 animate-pulse motion-reduce:animate-none" />
+        <div className="h-48 rounded-2xl bg-muted/50 animate-pulse motion-reduce:animate-none" />
+        <div className="h-64 rounded-2xl bg-muted/50 animate-pulse motion-reduce:animate-none" />
       </div>
     )
   }
@@ -409,7 +310,7 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
                 <div className="flex flex-wrap items-center gap-y-1 gap-x-4 text-xs text-muted-foreground pt-1">
                   <span className="flex items-center gap-1">
                     <Mail className="size-3.5" />
-                    {patient.email}
+                    {patient.email || "Sin cuenta"}
                   </span>
                   {patient.phone && (
                     <span className="flex items-center gap-1">
@@ -426,7 +327,7 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
               <Button asChild className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs h-10 px-4 shadow-2xs">
                 <Link href={`/agenda/nueva?patientId=${patient.id}`} className="flex items-center gap-2">
                   <CalendarDays className="size-4" />
-                  <span>+ Agendar Nueva Cita</span>
+                  <span>Agendar nueva cita</span>
                 </Link>
               </Button>
             </div>
@@ -517,17 +418,6 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
             </TabsTrigger>
           </TabsList>
 
-          {/* Botón "+ Nueva Entrada de Bitácora" en la barra de pestañas */}
-          {activeTab === "bitacora" && (
-            <Button
-              type="button"
-              onClick={() => handleOpenNewLog()}
-              className="h-9 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-semibold text-xs shadow-2xs gap-1.5 shrink-0"
-            >
-              <Plus className="size-4 stroke-[2.5]" />
-              <span>+ Nueva Entrada de Bitácora</span>
-            </Button>
-          )}
         </div>
 
         {/* ==================== PESTAÑA 1: DATOS GENERALES ==================== */}
@@ -653,142 +543,50 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
           </Card>
         </TabsContent>
 
-        {/* ==================== PESTAÑA 2: BITÁCORA DE SESIONES ==================== */}
+        {/* ==================== PESTAÑA 2: BITÁCORA, UNA HOJA POR SESIÓN ==================== */}
         <TabsContent value="bitacora" className="space-y-4 pt-1">
-          {/* Header Bar */}
-          <div className="flex items-center justify-between bg-card p-4 rounded-2xl border border-border/60 shadow-2xs">
-            <div>
-              <h3 className="font-heading font-semibold text-base text-foreground">
-                Bitácora Cronológica de Sesiones
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Registro de evolución clínica, intervenciones y acuerdos intersesión.
-              </p>
-            </div>
-
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              Una hoja por cada sesión, de la más reciente a la más antigua.
+            </p>
             <Button
               type="button"
-              onClick={() => handleOpenNewLog()}
-              className="h-9 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-semibold text-xs shadow-2xs gap-1.5"
+              variant="outline"
+              size="sm"
+              onClick={() => setLibreta({ date: new Date(), entry: null })}
             >
-              <Plus className="size-4 stroke-[2.5]" />
-              <span>+ Nueva Entrada de Bitácora</span>
+              <Plus />
+              Nota sin cita
             </Button>
           </div>
 
-          {/* Listado Cronológico de Notas */}
-          <div className="space-y-4">
-            {logs.length > 0 ? (
-              logs.map((log) => (
-                <Card
-                  key={log.id}
-                  className="border-border/70 shadow-2xs bg-card hover:border-primary/40 transition-all overflow-hidden"
+          {sesiones.length === 0 ? (
+            <p className="rounded-[18px] border border-dashed border-border bg-card px-5 py-8 text-center text-sm text-muted-foreground">
+              Todavía no hay sesiones. Cuando llegue la primera cita, aquí aparecerá su hoja para escribir.
+            </p>
+          ) : (
+            sesiones.map((sesion) =>
+              sesion.entry ? (
+                <HojaDeSesion key={sesion.key} entry={sesion.entry} onEdit={() => setLibreta(sesion)} />
+              ) : (
+                <div
+                  key={sesion.key}
+                  className="flex flex-col gap-3 rounded-[18px] border border-dashed border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <CardHeader className="p-4 sm:p-5 border-b border-border/50 bg-muted/15 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <div className="size-9 rounded-xl bg-primary/10 text-primary font-bold text-sm flex items-center justify-center shrink-0">
-                        #{log.sessionNumber}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <CardTitle className="text-sm font-bold font-heading text-foreground">
-                            Sesión #{log.sessionNumber} · {log.sessionType}
-                          </CardTitle>
-                          <Badge variant="outline" className="text-[10px] py-0 px-2 border-border/80">
-                            {log.modality === AppointmentModality.VIRTUAL ? (
-                              <span className="flex items-center gap-1 text-primary">
-                                <Video className="size-3" /> Virtual
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-muted-foreground">
-                                <MapPin className="size-3" /> Presencial
-                              </span>
-                            )}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground flex items-center gap-2 pt-0.5">
-                          <Clock className="size-3" />
-                          <span>{formatShortDate(log.date)}</span>
-                          <span>·</span>
-                          <span>{log.psychologistName}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleOpenEditLog(log)}
-                      className="h-8 text-xs rounded-lg border-border/80 self-end sm:self-center gap-1"
-                    >
-                      <Edit3 className="size-3.5 text-muted-foreground" />
-                      <span>Editar Nota</span>
-                    </Button>
-                  </CardHeader>
-
-                  <CardContent className="p-4 sm:p-5 space-y-3.5 text-xs text-foreground">
-                    {/* Observaciones / Notas Clínicas */}
-                    <div className="space-y-1">
-                      <span className="block text-xs font-medium text-muted-foreground">
-                        Observaciones Clínicas & Evolución:
-                      </span>
-                      <p className="leading-relaxed bg-muted/20 p-3.5 rounded-xl border border-border/40 whitespace-pre-line">
-                        {log.notes}
-                      </p>
-                    </div>
-
-                    {/* Intervenciones */}
-                    {log.interventions && (
-                      <div className="space-y-1">
-                        <span className="block text-xs font-medium text-primary">
-                          Técnicas e Intervenciones Aplicadas:
-                        </span>
-                        <p className="leading-relaxed bg-primary/[0.02] p-3 rounded-xl border border-primary/20 text-foreground">
-                          {log.interventions}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Tareas Intersesión */}
-                    {log.homework && (
-                      <div className="space-y-1">
-                        <span className="block text-xs font-medium text-muted-foreground">
-                          Acuerdos y Tareas Intersesión:
-                        </span>
-                        <p className="leading-relaxed bg-muted/15 p-3 rounded-xl border border-border/40 text-foreground italic">
-                          {log.homework}
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))
-            ) : (
-              <Card className="border-dashed border-border/80 p-8 text-center bg-card">
-                <CardContent className="flex flex-col items-center justify-center gap-3">
-                  <div className="size-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
-                    <FileText className="size-6" />
-                  </div>
                   <div>
-                    <h4 className="font-heading font-semibold text-base text-foreground">
-                      Aún no hay notas registradas en la bitácora
-                    </h4>
-                    <p className="text-xs text-muted-foreground max-w-sm mt-1">
-                      Comienza a documentar las intervenciones clínicas y observaciones terapéuticas de las sesiones del paciente.
+                    <p className="text-sm font-medium text-foreground">
+                      {formatShortDate(sesion.date)} · {formatAppointmentTime(sesion.date)}
                     </p>
+                    <p className="text-sm text-muted-foreground">Esta sesión aún no tiene hoja.</p>
                   </div>
-                  <Button
-                    type="button"
-                    onClick={() => handleOpenNewLog()}
-                    className="mt-2 rounded-xl bg-primary text-primary-foreground font-semibold text-xs h-9 px-4 shadow-2xs"
-                  >
-                    + Agregar Primera Nota
+                  <Button type="button" size="sm" onClick={() => setLibreta(sesion)}>
+                    <FileText />
+                    Escribir hoja
                   </Button>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                </div>
+              ),
+            )
+          )}
         </TabsContent>
 
         {/* ==================== PESTAÑA 3: HISTORIAL DE CITAS ==================== */}
@@ -820,10 +618,13 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => {
-                        setActiveTab("bitacora")
-                        handleOpenNewLog(apt.id)
-                      }}
+                      onClick={() =>
+                        setLibreta({
+                          appointmentId: apt.id,
+                          date: apt.startTime,
+                          entry: logs.find((log) => log.appointmentId === apt.id) ?? null,
+                        })
+                      }
                       className="h-8 text-xs rounded-lg border-border/80 hover:border-primary/50"
                     >
                       <FileText className="size-3.5 mr-1 text-primary" />
@@ -846,155 +647,21 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
         </TabsContent>
       </Tabs>
 
-      {/* 4. MODAL / FORMULARIO: FORMULARIO BITÁCORA */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-2xl p-6 bg-card border-border/80">
-          <form onSubmit={handleSaveLog} className="space-y-4">
-            <DialogHeader className="space-y-1.5">
-              <DialogTitle className="text-xl font-heading font-semibold text-foreground">
-                {editingLog ? `Modificar Sesión #${editingLog.sessionNumber}` : `Registrar Entrada en Bitácora`}
-              </DialogTitle>
-              <DialogDescription className="text-xs text-muted-foreground">
-                Documenta las observaciones, evolución y acuerdos terapéuticos para el expediente del paciente.
-              </DialogDescription>
-            </DialogHeader>
-
-            {formError && (
-              <div role="alert" className="p-3 rounded-xl bg-destructive/10 text-destructive border border-destructive/20 text-xs font-medium">
-                {formError}
-              </div>
-            )}
-
-            {/* CAMPO DE SOLO LECTURA: FECHA Y HORA ASOCIADA */}
-            <div className="p-3 rounded-xl bg-muted/40 border border-border/60 grid sm:grid-cols-2 gap-3 text-xs">
-              <div className="space-y-1">
-                <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                  <Lock className="size-3 text-muted-foreground" />
-                  Fecha y Hora de la Sesión Asociada (Solo lectura)
-                </span>
-                <p className="font-semibold text-foreground font-mono">
-                  {sessionDateString}
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-[11px] font-semibold text-muted-foreground flex items-center gap-1">
-                  <User className="size-3 text-muted-foreground" />
-                  Profesional Responsable (Solo lectura)
-                </span>
-                <p className="font-semibold text-foreground">
-                  {psychologist?.name ?? "Profesional responsable"}
-                  {psychologist?.licenseNumber ? ` · ${psychologist.licenseNumber}` : ""}
-                </p>
-              </div>
-            </div>
-
-            {/* Tipo de Sesión / Objetivo */}
-            <div className="space-y-1">
-              <label htmlFor="session-type-input" className="text-xs font-semibold text-foreground block">
-                Tipo / Objetivo de la Sesión
-              </label>
-              <Input
-                id="session-type-input"
-                type="text"
-                placeholder="Ej. Seguimiento terapéutico, Evaluación cognitiva, Psicoeducación..."
-                value={sessionType}
-                onChange={(e) => setSessionType(e.target.value)}
-                className="h-9 rounded-xl border-border/80 text-xs font-medium"
-              />
-            </div>
-
-            {/* ÁREA DE TEXTO ENRIQUECIDO / AMPLIO */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label htmlFor="session-notes-textarea" className="text-xs font-semibold text-foreground block">
-                  Observaciones, Seguimiento y Notas Terapéuticas <span className="text-destructive">*</span>
-                </label>
-
-                {/* Snippet insertion shortcuts */}
-                <div className="flex items-center gap-1 text-[10px]">
-                  <span className="text-muted-foreground hidden sm:inline">Insertar guía:</span>
-                  <button
-                    type="button"
-                    onClick={() => insertTemplateSnippet("[Subjetivo]: El paciente refiere...\n[Objetivo]: Se observa afecto...")}
-                    className="px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground font-mono text-[10px]"
-                  >
-                    SOAP
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => insertTemplateSnippet("[Intervención]: Se aplicó técnica de reestructuración cognitiva...")}
-                    className="px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground font-mono text-[10px]"
-                  >
-                    Técnica
-                  </button>
-                </div>
-              </div>
-
-              <Textarea
-                id="session-notes-textarea"
-                placeholder="Captura de forma amplia y detallada las observaciones clínicas, evolución del paciente, estado emocional y temas tratados durante la sesión..."
-                value={sessionNotes}
-                onChange={(e) => {
-                  setSessionNotes(e.target.value)
-                  if (formError) setFormError("")
-                }}
-                className="min-h-[160px] rounded-xl border-border/80 focus-visible:ring-primary/20 text-xs leading-relaxed font-sans"
-              />
-            </div>
-
-            {/* Técnicas e Intervenciones */}
-            <div className="space-y-1">
-              <label htmlFor="session-interventions-textarea" className="text-xs font-semibold text-foreground block">
-                Técnicas e Intervenciones Aplicadas (Opcional)
-              </label>
-              <Input
-                id="session-interventions-textarea"
-                type="text"
-                placeholder="Ej. Reestructuración cognitiva, desensibilización sistemática, respiración diafragmática..."
-                value={interventions}
-                onChange={(e) => setInterventions(e.target.value)}
-                className="h-9 rounded-xl border-border/80 text-xs"
-              />
-            </div>
-
-            {/* Tareas / Compromisos Intersesión */}
-            <div className="space-y-1">
-              <label htmlFor="session-homework-textarea" className="text-xs font-semibold text-foreground block">
-                Acuerdos y Tareas Intersesión para el Paciente (Opcional)
-              </label>
-              <Input
-                id="session-homework-textarea"
-                type="text"
-                placeholder="Ej. Registro ABC de pensamientos automáticos, 15 min de relajación progresiva..."
-                value={homework}
-                onChange={(e) => setHomework(e.target.value)}
-                className="h-9 rounded-xl border-border/80 text-xs"
-              />
-            </div>
-
-            <DialogFooter className="flex flex-col-reverse sm:flex-row gap-2 border-t border-border/60 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsModalOpen(false)}
-                className="h-9 rounded-xl border-border/80 text-xs"
-              >
-                Cancelar
-              </Button>
-
-              <Button
-                type="submit"
-                disabled={isSaving}
-                className="h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 font-semibold text-xs shadow-2xs gap-1.5"
-              >
-                <Save className="size-4" />
-                <span>{isSaving ? "Guardando…" : "Guardar Entrada"}</span>
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {libreta && (
+        <LibretaSesionDialog
+          key={libreta.entry?.id ?? libreta.appointmentId ?? "suelta"}
+          open
+          onOpenChange={(open) => !open && setLibreta(null)}
+          patientId={patientId}
+          patientName={patient?.name}
+          appointmentId={libreta.appointmentId}
+          sessionDate={libreta.date}
+          entry={libreta.entry}
+          onSaved={(saved, created) =>
+            setLogs((prev) => (created ? [saved, ...prev] : prev.map((log) => (log.id === saved.id ? saved : log))))
+          }
+        />
+      )}
     </div>
   )
 }

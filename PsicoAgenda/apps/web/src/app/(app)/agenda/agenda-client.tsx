@@ -61,6 +61,8 @@ import {
 import { Table, type TableColumn } from "@/components/motion/table"
 import { useSession } from "@/lib/use-session"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
+import { LibretaSesionDialog } from "../components/libreta-sesion"
+import { useDebouncedValue } from "@/lib/use-debounced-value"
 import { agendaBlockService, appointmentService, patientService } from "@/services"
 import {
   BloqueoAgendaModal,
@@ -289,6 +291,7 @@ export function AgendaClient() {
   const [blocks, setBlocks] = React.useState<AgendaBlock[]>([])
   const [blocksError, setBlocksError] = React.useState<string | null>(null)
   const [blockModalOpen, setBlockModalOpen] = React.useState(false)
+  const [libretaDe, setLibretaDe] = React.useState<Appointment | null>(null)
   // Cada apertura remonta el modal, así arranca limpio sin reiniciar el estado
   // desde un efecto.
   const [blockModalKey, setBlockModalKey] = React.useState(0)
@@ -375,6 +378,7 @@ export function AgendaClient() {
   const [view, setView] = React.useState<CalendarView>("semana")
   const [selectedStatus, setSelectedStatus] = React.useState<string>("ALL")
   const [searchQuery, setSearchQuery] = React.useState<string>("")
+  const busqueda = useDebouncedValue(searchQuery)
   const [datePickerOpen, setDatePickerOpen] = React.useState(false)
 
   const currentDayBlocks = React.useMemo(
@@ -445,8 +449,8 @@ export function AgendaClient() {
       }
 
       // Search filter
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase().trim()
+      if (busqueda.trim()) {
+        const query = busqueda.toLowerCase().trim()
         const patient = patientById(apt.patientId)
         const patientName = patient?.name?.toLowerCase() ?? ""
         const reason = apt.reason?.toLowerCase() ?? ""
@@ -464,7 +468,7 @@ export function AgendaClient() {
 
       return true
     })
-  }, [baseAppointments, selectedStatus, searchQuery, patientById])
+  }, [baseAppointments, selectedStatus, busqueda, patientById])
 
   // Próximas citas: de hoy en adelante, en orden cronológico
   const upcomingAppointments = React.useMemo(() => {
@@ -701,12 +705,12 @@ export function AgendaClient() {
             {isPatient ? (
               <>
                 Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span>{" "}
-                {todayAppointments.length === 1 ? "programada" : "programadas"} para hoy. Consulta tus sesiones programadas.
+                {todayAppointments.length === 1 ? "programada" : "programadas"} para hoy.
               </>
             ) : (
               <>
                 Tienes <span className="font-medium text-foreground">{todayAppointments.length} {todayAppointments.length === 1 ? "cita" : "citas"}</span>{" "}
-                {todayAppointments.length === 1 ? "programada" : "programadas"} para hoy. Consulta y administra tus sesiones clínicas.
+                {todayAppointments.length === 1 ? "programada" : "programadas"} para hoy.
               </>
             )}
           </p>
@@ -1328,9 +1332,6 @@ export function AgendaClient() {
                       <span className={`size-1.5 rounded-full ${status.dotClass}`} aria-hidden="true" />
                       {status.label}
                     </span>
-                    <span className="text-xs text-muted-foreground">
-                      ID: #{selectedAppointment.id}
-                    </span>
                   </div>
 
                   <DialogTitle className="text-xl font-heading font-semibold text-foreground">
@@ -1387,11 +1388,21 @@ export function AgendaClient() {
                       </div>
 
                       {patient?.id && (
-                        <Button variant="ghost" size="sm" asChild className="h-8 px-2 text-xs">
-                          <Link href={`/pacientes/${patient.id}`}>
-                            Ver Ficha
-                          </Link>
-                        </Button>
+                        <div className="flex shrink-0 flex-col items-end">
+                          <Button variant="ghost" size="sm" asChild className="h-8 px-2 text-xs">
+                            <Link href={`/pacientes/${patient.id}`}>Ver Ficha</Link>
+                          </Button>
+                          {!isPatient && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2 text-xs"
+                              onClick={() => setLibretaDe(selectedAppointment)}
+                            >
+                              Bitácora
+                            </Button>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
@@ -1578,6 +1589,18 @@ export function AgendaClient() {
         </CardContent>
       </Card>
 
+      {libretaDe && (
+        <LibretaSesionDialog
+          key={libretaDe.id}
+          open
+          onOpenChange={(open) => !open && setLibretaDe(null)}
+          patientId={libretaDe.patientId}
+          patientName={patientById(libretaDe.patientId)?.name}
+          appointmentId={libretaDe.id}
+          sessionDate={new Date(libretaDe.startTime)}
+        />
+      )}
+
       {/* Bloqueos: alta de un rango y gestión de los del periodo visible */}
       <BloqueoAgendaModal
         key={blockModalKey}
@@ -1585,6 +1608,10 @@ export function AgendaClient() {
         onOpenChange={setBlockModalOpen}
         defaultDate={currentDate}
         onCreated={handleBlockCreated}
+        onAppointmentsCancelled={(canceladas) =>
+          setAppointments((prev) => prev.map((apt) => canceladas.find((c) => c.id === apt.id) ?? apt))
+        }
+        patientName={(id) => patientById(id)?.name}
       />
       <GestionBloqueosDialog
         open={blocksDialogOpen}
