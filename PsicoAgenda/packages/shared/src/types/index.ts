@@ -197,6 +197,23 @@ export interface Appointment {
   updatedAt: Date;
 }
 
+/**
+ * Rango en el que el psicólogo no atiende. El intervalo es semiabierto
+ * `[startTime, endTime)`: un bloqueo que termina a las 11:00 no choca con una
+ * cita que empieza a las 11:00.
+ */
+export interface AgendaBlock {
+  id: string;
+  psychologistId: string;
+  startTime: Date;
+  endTime: Date;
+  /** Bandera de presentación: el rango ya viene calculado como instantes. */
+  allDay: boolean;
+  reason?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export enum AppointmentRequestStatus {
   PENDING = "pending",
   ACCEPTED = "accepted",

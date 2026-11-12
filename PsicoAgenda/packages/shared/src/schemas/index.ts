@@ -133,6 +133,61 @@ export const appointmentOccupancyQuerySchema = z
   });
 
 /**
+ * Bloqueo de agenda. El cliente calcula los instantes (incluido el día completo,
+ * que va de 00:00 local a 00:00 del día siguiente) y el servidor los guarda tal
+ * cual; `allDay` solo indica cómo presentarlo.
+ */
+export const createAgendaBlockSchema = z
+  .object({
+    startTime: z.coerce.date(),
+    endTime: z.coerce.date(),
+    allDay: z.boolean().optional().default(false),
+    reason: z
+      .string()
+      .trim()
+      .max(100, "El motivo no puede superar los 100 caracteres")
+      .optional(),
+  })
+  .refine((value) => value.endTime.getTime() > value.startTime.getTime(), {
+    message: "La fecha de fin debe ser posterior al inicio",
+    path: ["endTime"],
+  });
+
+/**
+ * Rango visible del calendario. Se aceptan `from`/`to` y sus alias
+ * `startDate`/`endDate` para no atar a los clientes a un solo vocabulario.
+ */
+export const agendaBlockListQuerySchema = z
+  .object({
+    from: z.coerce.date().optional(),
+    to: z.coerce.date().optional(),
+    startDate: z.coerce.date().optional(),
+    endDate: z.coerce.date().optional(),
+    psychologistId: z.string().uuid().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const from = value.from ?? value.startDate;
+    const to = value.to ?? value.endDate;
+
+    if (!from || !to) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Indica el rango de fechas (from/to o startDate/endDate)",
+        path: ["from"],
+      });
+      return;
+    }
+
+    if (to.getTime() <= from.getTime()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "El rango de fechas no es válido",
+        path: ["to"],
+      });
+    }
+  });
+
+/**
  * Listado de pacientes. Express entrega la query como strings, así que todo va
  * con `z.coerce.number()` (sin defaults: el servicio aplica `limit=100` y
  * deriva `offset` de `page` cuando `offset` no viene).

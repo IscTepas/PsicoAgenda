@@ -14,10 +14,11 @@ const { prismaMock, notificar } = vi.hoisted(() => {
   };
   const pacientes = { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() };
   const solicitudes_cita = { findFirst: vi.fn(), create: vi.fn() };
+  const bloqueos_agenda = { findFirst: vi.fn() };
   const pagos_honorarios = { deleteMany: vi.fn() };
 
   return {
-    prismaMock: { citas, pacientes, solicitudes_cita, pagos_honorarios, $transaction: vi.fn() },
+    prismaMock: { citas, pacientes, solicitudes_cita, bloqueos_agenda, pagos_honorarios, $transaction: vi.fn() },
     notificar: vi.fn(),
   };
 });
@@ -98,6 +99,7 @@ beforeEach(() => {
   });
   prismaMock.citas.findUnique.mockResolvedValue(currentAppointment());
   prismaMock.citas.findFirst.mockResolvedValue(null);
+  prismaMock.bloqueos_agenda.findFirst.mockResolvedValue(null);
   prismaMock.citas.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.citas.count.mockResolvedValue(1);
   prismaMock.solicitudes_cita.findFirst.mockResolvedValue(null);

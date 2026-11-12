@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import {
   Calendar as CalendarIcon,
+  CalendarOff,
   Clock,
   Plus,
   Search,
@@ -21,6 +22,7 @@ import {
   HelpCircle,
   Check,
   Loader2,
+  Lock,
   Stethoscope,
   DollarSign,
   Wallet,
@@ -30,6 +32,7 @@ import {
   AppointmentModality,
   PaymentStatus,
   UserRole,
+  type AgendaBlock,
   type Appointment,
   type Patient,
 } from "@psicoagenda/shared"
@@ -58,7 +61,11 @@ import {
 import { Table, type TableColumn } from "@/components/motion/table"
 import { useSession } from "@/lib/use-session"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
-import { appointmentService, patientService } from "@/services"
+import { agendaBlockService, appointmentService, patientService } from "@/services"
+import {
+  BloqueoAgendaModal,
+  GestionBloqueosDialog,
+} from "./components/bloqueo-agenda-modal"
 
 type CalendarView = "mes" | "semana" | "dia"
 
@@ -219,6 +226,56 @@ function getMonthDays(currentDate: Date): { date: Date; isCurrentMonth: boolean 
 // siempre comparten; su contenido se pinta ya hidratado para evitar desajustes.
 const subscribeNoop = () => () => {}
 
+function startOfDay(date: Date): Date {
+  const result = new Date(date)
+  result.setHours(0, 0, 0, 0)
+  return result
+}
+
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date)
+  result.setDate(result.getDate() + days)
+  return result
+}
+
+/** Un bloqueo toca el día si su intervalo semiabierto se cruza con él. */
+function overlapsDay(block: AgendaBlock, day: Date): boolean {
+  const dayStart = startOfDay(day)
+  const dayEnd = addDays(dayStart, 1)
+  return block.startTime.getTime() < dayEnd.getTime() && block.endTime.getTime() > dayStart.getTime()
+}
+
+/** Inicio visible del bloqueo en ese día (recortado si empezó antes). */
+function blockStartForDay(block: AgendaBlock, day: Date): Date {
+  const dayStart = startOfDay(day)
+  return block.startTime.getTime() < dayStart.getTime() ? dayStart : block.startTime
+}
+
+function blockRangeLabel(block: AgendaBlock): string {
+  return `${formatAppointmentTime(block.startTime)} – ${formatAppointmentTime(block.endTime)}`
+}
+
+/**
+ * Primera franja horaria de la vista de día en la que cae un bloqueo parcial.
+ * Evita repetir la misma tarjeta en cada hora que abarca.
+ */
+function firstHourSlotForBlock(block: AgendaBlock, day: Date): number | null {
+  const dayStart = startOfDay(day)
+
+  for (const hour of HOURLY_SLOTS) {
+    const slotStart = new Date(dayStart)
+    slotStart.setHours(hour, 0, 0, 0)
+    const slotEnd = new Date(slotStart)
+    slotEnd.setHours(hour + 1, 0, 0, 0)
+
+    if (block.startTime.getTime() < slotEnd.getTime() && block.endTime.getTime() > slotStart.getTime()) {
+      return hour
+    }
+  }
+
+  return null
+}
+
 export function AgendaClient() {
   const { user } = useSession()
   const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
@@ -229,6 +286,13 @@ export function AgendaClient() {
   const [patientsById, setPatientsById] = React.useState<Record<string, Patient>>({})
   const [isLoadingData, setIsLoadingData] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
+  const [blocks, setBlocks] = React.useState<AgendaBlock[]>([])
+  const [blocksError, setBlocksError] = React.useState<string | null>(null)
+  const [blockModalOpen, setBlockModalOpen] = React.useState(false)
+  // Cada apertura remonta el modal, así arranca limpio sin reiniciar el estado
+  // desde un efecto.
+  const [blockModalKey, setBlockModalKey] = React.useState(0)
+  const [blocksDialogOpen, setBlocksDialogOpen] = React.useState(false)
 
   // La API ya acota por rol: un paciente solo recibe sus citas. El cliente no
   // vuelve a filtrar por paciente, solo presenta lo que la sesión puede ver.
@@ -289,6 +353,22 @@ export function AgendaClient() {
     }
   }, [toast])
 
+  const handleBlockCreated = React.useCallback((block: AgendaBlock) => {
+    setBlocks((prev) =>
+      [...prev, block].sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
+    )
+    toast({
+      title: "Bloqueo creado",
+      description: block.reason ?? "Horario marcado como no disponible",
+      status: "success",
+    })
+  }, [toast])
+
+  const handleBlockDeleted = React.useCallback((id: string) => {
+    setBlocks((prev) => prev.filter((block) => block.id !== id))
+    toast({ title: "Bloqueo eliminado", status: "success" })
+  }, [toast])
+
   const baseAppointments = appointments
 
   const [currentDate, setCurrentDate] = React.useState<Date>(new Date())
@@ -296,6 +376,54 @@ export function AgendaClient() {
   const [selectedStatus, setSelectedStatus] = React.useState<string>("ALL")
   const [searchQuery, setSearchQuery] = React.useState<string>("")
   const [datePickerOpen, setDatePickerOpen] = React.useState(false)
+
+  const currentDayBlocks = React.useMemo(
+    () => blocks.filter((block) => overlapsDay(block, currentDate)),
+    [blocks, currentDate],
+  )
+
+  // Rango que se está viendo: los bloqueos se recargan al navegar o cambiar de
+  // vista, igual que haría una consulta por periodo.
+  const visibleRange = React.useMemo(() => {
+    if (view === "dia") {
+      const start = startOfDay(currentDate)
+      return { start, end: addDays(start, 1) }
+    }
+
+    if (view === "semana") {
+      const start = getStartOfWeek(currentDate)
+      return { start, end: addDays(start, 7) }
+    }
+
+    const days = getMonthDays(currentDate)
+    const start = startOfDay(days[0].date)
+    const end = addDays(startOfDay(days[days.length - 1].date), 1)
+    return { start, end }
+  }, [view, currentDate])
+
+  React.useEffect(() => {
+    let cancelled = false
+
+    agendaBlockService
+      .list({ from: visibleRange.start, to: visibleRange.end })
+      .then((rows) => {
+        if (!cancelled) {
+          setBlocks(rows)
+          setBlocksError(null)
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return
+        setBlocks([])
+        setBlocksError(
+          error instanceof Error ? error.message : "No se pudieron cargar los bloqueos",
+        )
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [visibleRange])
 
   const greetingName = user?.name ?? "Bienvenido"
 
@@ -545,6 +673,13 @@ export function AgendaClient() {
         </div>
       )}
 
+      {blocksError && (
+        <div role="alert" className="p-4 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 flex items-center gap-3">
+          <AlertCircle className="size-5 shrink-0" />
+          <p className="text-sm font-medium">{blocksError}</p>
+        </div>
+      )}
+
       {/* 1. CABECERA: Saludo al usuario, barra de búsqueda rápida y botón + Nueva Cita */}
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-border/60 pb-5">
         <div className="space-y-1">
@@ -599,6 +734,35 @@ export function AgendaClient() {
               </button>
             )}
           </div>
+
+          {/* Bloqueos de agenda: solo el psicólogo los administra */}
+          {effectiveRole === UserRole.PSYCHOLOGIST && (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setBlockModalKey((key) => key + 1)
+                  setBlockModalOpen(true)
+                }}
+                className="h-9 px-3 rounded-xl border-border/80 shadow-2xs shrink-0"
+              >
+                <CalendarOff className="size-4" />
+                <span className="font-medium">Bloquear agenda</span>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setBlocksDialogOpen(true)}
+                className="h-9 px-3 rounded-xl shrink-0"
+                aria-label="Gestionar bloqueos"
+                title="Gestionar bloqueos"
+              >
+                <Lock className="size-4" />
+                <span className="tabular-nums">{blocks.length}</span>
+              </Button>
+            </div>
+          )}
 
           {/* Botón destacado "+ Programar Cita / + Solicitar Cita" */}
           <Button asChild className="h-9 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shrink-0">
@@ -680,7 +844,10 @@ export function AgendaClient() {
               <PopoverContent align="end" className="w-80 p-4">
                 <Calendar
                   value={currentDate}
-                  hasMarker={(day) => baseAppointments.some((apt) => isSameDay(apt.startTime, day))}
+                  hasMarker={(day) =>
+                    baseAppointments.some((apt) => isSameDay(apt.startTime, day)) ||
+                    blocks.some((block) => overlapsDay(block, day))
+                  }
                   onChange={(day) => {
                     setCurrentDate(day)
                     setDatePickerOpen(false)
@@ -719,6 +886,8 @@ export function AgendaClient() {
                     </h3>
                     <p className="text-xs text-muted-foreground">
                       {filteredAppointments.filter((a) => isSameDay(a.startTime, currentDate)).length} citas agendadas para este día
+                      {currentDayBlocks.length > 0 &&
+                        ` · ${currentDayBlocks.length} ${currentDayBlocks.length === 1 ? "bloqueo" : "bloqueos"}`}
                     </p>
                   </div>
                 </div>
@@ -730,6 +899,28 @@ export function AgendaClient() {
                 )}
               </div>
 
+              {/* Bloqueos de día completo: banner por encima de la línea de horas */}
+              {currentDayBlocks.some((block) => block.allDay) && (
+                <div className="border-b border-border/60 bg-muted/10 p-3 space-y-2">
+                  {currentDayBlocks
+                    .filter((block) => block.allDay)
+                    .map((block) => (
+                      <div
+                        key={block.id}
+                        className="flex items-center gap-2 rounded-xl border border-gray-800 bg-[#242424] px-3 py-2 opacity-60 select-none"
+                      >
+                        <Lock className="size-3.5 shrink-0 text-gray-400" />
+                        <span className="truncate text-xs font-medium text-gray-300">
+                          {block.reason ?? "No disponible"}
+                        </span>
+                        <span className="ml-auto shrink-0 text-[11px] text-gray-400">
+                          Todo el día
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
+
               {/* Time Slots Timeline (08:00 - 19:00) */}
               <div className="divide-y divide-border/40">
                 {HOURLY_SLOTS.map((hour) => {
@@ -739,6 +930,12 @@ export function AgendaClient() {
                     const aptDate = apt.startTime
                     return isSameDay(aptDate, currentDate) && aptDate.getHours() === hour
                   })
+                  // Un bloqueo parcial se pinta solo en su primera franja para no
+                  // repetir la tarjeta en cada hora que abarca.
+                  const slotBlocks = currentDayBlocks.filter(
+                    (block) =>
+                      !block.allDay && firstHourSlotForBlock(block, currentDate) === hour,
+                  )
 
                   return (
                     <div
@@ -752,8 +949,24 @@ export function AgendaClient() {
 
                       {/* Hour slot content */}
                       <div className="p-2 sm:p-3 flex flex-col gap-2">
-                        {slotAppointments.length > 0 ? (
-                          slotAppointments.map((apt) => {
+                        {slotAppointments.length > 0 || slotBlocks.length > 0 ? (
+                          <>
+                            {slotBlocks.map((block) => (
+                              <div
+                                key={`block-${block.id}`}
+                                className="w-full rounded-xl border border-gray-800 bg-[#242424] p-3 opacity-60 select-none"
+                              >
+                                <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400">
+                                  <Lock className="size-3" />
+                                  <span>{blockRangeLabel(block)}</span>
+                                </div>
+                                <p className="mt-0.5 text-xs font-medium text-gray-300 line-clamp-2">
+                                  {block.reason ?? "No disponible"}
+                                </p>
+                              </div>
+                            ))}
+
+                            {slotAppointments.map((apt) => {
                             const patient = patientById(apt.patientId)
                             const status = STATUS_CONFIG[apt.status]
 
@@ -802,7 +1015,8 @@ export function AgendaClient() {
                                 </div>
                               </button>
                             )
-                          })
+                          })}
+                          </>
                         ) : (
                           <div className="h-full flex items-center text-xs text-muted-foreground transition-colors group">
                             <span className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
@@ -826,6 +1040,19 @@ export function AgendaClient() {
                 const dayAppointments = filteredAppointments.filter((apt) =>
                   isSameDay(apt.startTime, dayDate)
                 )
+                const dayBlocks = blocks.filter((block) => overlapsDay(block, dayDate))
+                const dayItems = [
+                  ...dayAppointments.map((appointment) => ({
+                    kind: "appointment" as const,
+                    at: appointment.startTime.getTime(),
+                    appointment,
+                  })),
+                  ...dayBlocks.map((block) => ({
+                    kind: "block" as const,
+                    at: blockStartForDay(block, dayDate).getTime(),
+                    block,
+                  })),
+                ].sort((a, b) => a.at - b.at)
 
                 return (
                   <div
@@ -860,17 +1087,39 @@ export function AgendaClient() {
                         </div>
                       </div>
 
-                      {dayAppointments.length > 0 && (
+                      {dayItems.length > 0 && (
                         <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-background border border-border/80 text-muted-foreground">
-                          {dayAppointments.length}
+                          {dayItems.length}
                         </span>
                       )}
                     </div>
 
-                    {/* Day Appointments List */}
+                    {/* Day Appointments & Blocks List */}
                     <div className="p-2 space-y-2 flex-1">
-                      {dayAppointments.length > 0 ? (
-                        dayAppointments.map((apt) => {
+                      {dayItems.length > 0 ? (
+                        dayItems.map((item) => {
+                          if (item.kind === "block") {
+                            const block = item.block
+
+                            return (
+                              <div
+                                key={`block-${block.id}`}
+                                className="w-full rounded-xl border border-gray-800 bg-[#242424] p-2.5 opacity-60 select-none"
+                              >
+                                <div className="flex items-center gap-1 text-[11px] font-medium text-gray-400">
+                                  <Lock className="size-3" />
+                                  <span>
+                                    {block.allDay ? "Todo el día" : blockRangeLabel(block)}
+                                  </span>
+                                </div>
+                                <p className="mt-0.5 font-heading text-xs font-medium text-gray-300 line-clamp-2">
+                                  {block.reason ?? "No disponible"}
+                                </p>
+                              </div>
+                            )
+                          }
+
+                          const apt = item.appointment
                           const patient = patientById(apt.patientId)
                           const status = STATUS_CONFIG[apt.status]
 
@@ -939,6 +1188,19 @@ export function AgendaClient() {
                   const dayAppointments = filteredAppointments.filter((apt) =>
                     isSameDay(apt.startTime, dayDate)
                   )
+                  const dayBlocks = blocks.filter((block) => overlapsDay(block, dayDate))
+                  const dayItems = [
+                    ...dayAppointments.map((appointment) => ({
+                      kind: "appointment" as const,
+                      at: appointment.startTime.getTime(),
+                      appointment,
+                    })),
+                    ...dayBlocks.map((block) => ({
+                      kind: "block" as const,
+                      at: blockStartForDay(block, dayDate).getTime(),
+                      block,
+                    })),
+                  ].sort((a, b) => a.at - b.at)
 
                   return (
                     <div
@@ -971,16 +1233,36 @@ export function AgendaClient() {
                           {dayDate.getDate()}
                         </button>
 
-                        {dayAppointments.length > 0 && (
+                        {dayItems.length > 0 && (
                           <span className="text-[10px] text-muted-foreground font-medium hidden sm:inline">
                             {dayAppointments.length} {dayAppointments.length === 1 ? "cita" : "citas"}
+                            {dayBlocks.length > 0 &&
+                              ` · ${dayBlocks.length} ${dayBlocks.length === 1 ? "bloqueo" : "bloqueos"}`}
                           </span>
                         )}
                       </div>
 
                       {/* Event Chips */}
                       <div className="space-y-1 flex-1 overflow-y-auto">
-                        {dayAppointments.slice(0, 3).map((apt) => {
+                        {dayItems.slice(0, 3).map((item) => {
+                          if (item.kind === "block") {
+                            const block = item.block
+
+                            return (
+                              <div
+                                key={`block-${block.id}`}
+                                className="w-full px-1.5 py-0.5 rounded-md border border-gray-800 bg-[#242424] text-[11px] truncate flex items-center gap-1 opacity-60 select-none"
+                                title={block.allDay ? "Todo el día · No disponible" : blockRangeLabel(block)}
+                              >
+                                <Lock className="size-3 shrink-0 text-gray-400" />
+                                <span className="truncate text-gray-300">
+                                  {block.reason ?? "No disponible"}
+                                </span>
+                              </div>
+                            )
+                          }
+
+                          const apt = item.appointment
                           const patient = patientById(apt.patientId)
                           const status = STATUS_CONFIG[apt.status]
 
@@ -1003,7 +1285,7 @@ export function AgendaClient() {
                           )
                         })}
 
-                        {dayAppointments.length > 3 && (
+                        {dayItems.length > 3 && (
                           <button
                             type="button"
                             onClick={() => {
@@ -1012,7 +1294,7 @@ export function AgendaClient() {
                             }}
                             className="text-[10px] text-primary font-medium hover:underline pl-1 block text-left"
                           >
-                            +{dayAppointments.length - 3} más
+                            +{dayItems.length - 3} más
                           </button>
                         )}
                       </div>
@@ -1295,6 +1577,21 @@ export function AgendaClient() {
           )}
         </CardContent>
       </Card>
+
+      {/* Bloqueos: alta de un rango y gestión de los del periodo visible */}
+      <BloqueoAgendaModal
+        key={blockModalKey}
+        open={blockModalOpen}
+        onOpenChange={setBlockModalOpen}
+        defaultDate={currentDate}
+        onCreated={handleBlockCreated}
+      />
+      <GestionBloqueosDialog
+        open={blocksDialogOpen}
+        onOpenChange={setBlocksDialogOpen}
+        blocks={blocks}
+        onDeleted={handleBlockDeleted}
+      />
     </div>
   )
 }

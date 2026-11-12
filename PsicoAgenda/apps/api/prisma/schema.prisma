@@ -28,6 +28,23 @@ model cache_registro {
   @@index([expira_en])
 }
 
+/// Rangos en los que el psicólogo no atiende. Un bloqueo de día completo también
+/// se guarda como instantes (`00:00` local a `00:00` del día siguiente); `todo_el_dia`
+/// solo controla cómo se presenta.
+model bloqueos_agenda {
+  id             String     @id @db.Uuid
+  psicologo_id   String     @db.Uuid
+  fecha_inicio   DateTime   @db.Timestamptz(3)
+  fecha_fin      DateTime   @db.Timestamptz(3)
+  todo_el_dia    Boolean    @default(false)
+  motivo         String?    @db.VarChar(100)
+  creado_en      DateTime   @default(now()) @db.Timestamptz(3)
+  actualizado_en DateTime   @updatedAt @db.Timestamptz(3)
+  psicologos     psicologos @relation(fields: [psicologo_id], references: [id], onDelete: Cascade)
+
+  @@index([psicologo_id, fecha_inicio])
+}
+
 model citas {
   id                 String              @id @db.Uuid
   psicologo_id       String              @db.Uuid
@@ -231,6 +248,7 @@ model psicologos {
   especialidad       String?
   anios_experiencia  Int?
   biografia          String?
+  bloqueos_agenda    bloqueos_agenda[]
   citas              citas[]
   entradas_bitacora  entradas_bitacora[]
   horarios_psicologo horarios_psicologo[]

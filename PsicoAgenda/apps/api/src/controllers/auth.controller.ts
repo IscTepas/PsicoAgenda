@@ -5,7 +5,7 @@ import type { AuthedRequest } from "@/types/express";
 export const meController: RequestHandler = async (req: AuthedRequest, res, next) => {
   try {
     // `requireAuth` ya validó la firma y garantizó que `auth` existe.
-    res.json(await getProfileById(req.auth!.id));
+    res.json(await getProfileById(req.auth!));
   } catch (error) {
     next(error);
   }

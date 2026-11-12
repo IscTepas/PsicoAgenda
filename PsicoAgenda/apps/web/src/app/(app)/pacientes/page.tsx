@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Search, X, ChevronRight, UserX } from "lucide-react"
@@ -15,7 +14,7 @@ import {
   AppointmentStatus,
   AttendanceStatus,
 } from "@psicoagenda/shared"
-import { appointmentService, patientService } from "@/services"
+import { usePatientsDirectoryData } from "./use-patients-directory-data"
 
 
 function getInitials(name: string): string {
@@ -56,27 +55,14 @@ export default function PantallaBusquedaPaciente() {
 
   const [searchQuery, setSearchQuery] = useState("")
 
-  const { data: patientsRaw = [], isLoading: loadingP, error: errP } = useQuery({
-    queryKey: ["patients", "directory", 100],
-    queryFn: () => patientService.list({ limit: 100 }),
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
-  })
+  const {
+    patients,
+    appointments,
+    isLoading: isDataLoading,
+    error,
+  } = usePatientsDirectoryData()
 
-  const { data: appointmentsAll = [], isLoading: loadingA } = useQuery({
-    queryKey: ["appointments", "patients-enrich", "90d"],
-    queryFn: () => {
-      const from = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-      return appointmentService.list({ from, limit: 200 }) // 200 es el máximo que valida la API
-    },
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
-  })
-
-  const patients = patientsRaw
-  const appointments = appointmentsAll
-  const isDataLoading = loadingP || loadingA
-  const loadError = errP ? "No se pudo cargar el directorio de pacientes." : null
+  const loadError = error ? "No se pudo cargar el directorio de pacientes." : null
 
   // Enriquecer pacientes con datos de citas calculados
   const enrichedPatients = useMemo(() => {

@@ -1,9 +1,9 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { AppointmentStatus, AttendanceStatus, type Appointment } from "@psicoagenda/shared"
-import { appointmentService, patientService } from "@/services"
+import { useReportsData } from "./use-reports-data"
 import Link from "next/link"
 import {
   CalendarDays,
@@ -152,6 +152,8 @@ function formatDate(dateStr: string, timeStr?: string): string {
 }
 
 export default function ReportsPage() {
+  const queryClient = useQueryClient()
+
   // Filtros activos
   const [defaultRange] = useState(() => reportPresets()[0].value)
   const [fromDate, setFromDate] = useState(defaultRange.from)
@@ -170,25 +172,16 @@ export default function ReportsPage() {
   const [notification, setNotification] = useState<string | null>(null)
 
   // Datos reales: citas del período aplicado y nombres de los pacientes.
-  const appointmentsQuery = useQuery({
-    queryKey: ["reports", "appointments", appliedFilters.fromDate, appliedFilters.toDate],
-    queryFn: () =>
-      appointmentService.list({
-        from: new Date(`${appliedFilters.fromDate}T00:00:00`),
-        to: new Date(`${appliedFilters.toDate}T23:59:59.999`),
-        limit: 200,
-      }),
-  })
-  const { data: patients = [] } = useQuery({
-    queryKey: ["patients", "list", 100],
-    queryFn: () => patientService.list({ limit: 100 }),
-    staleTime: 60_000,
-  })
-  const isGenerating = appointmentsQuery.isFetching
+  const {
+    appointments,
+    patients,
+    isFetching: isGenerating,
+  } = useReportsData({ fromDate: appliedFilters.fromDate, toDate: appliedFilters.toDate })
+
   const records = useMemo(() => {
     const names = new Map(patients.map((p) => [p.id, p.name]))
-    return (appointmentsQuery.data ?? []).map((apt) => toReportRow(apt, names.get(apt.patientId) ?? "Paciente"))
-  }, [appointmentsQuery.data, patients])
+    return appointments.map((apt) => toReportRow(apt, names.get(apt.patientId) ?? "Paciente"))
+  }, [appointments, patients])
 
   // El selector de rango no deja el fin antes del inicio; solo falta avisar si quedó a medias.
   const rangeError = fromDate && !toDate ? "Elige también la fecha final del período." : null
@@ -204,7 +197,9 @@ export default function ReportsPage() {
       serviceType: serviceTypeFilter,
     })
     // Mismo período: se vuelve a pedir a la API para reflejar cambios recientes.
-    if (fromDate === appliedFilters.fromDate && toDate === appliedFilters.toDate) void appointmentsQuery.refetch()
+    if (fromDate === appliedFilters.fromDate && toDate === appliedFilters.toDate) {
+      void queryClient.invalidateQueries({ queryKey: ["reports", "appointments"] })
+    }
     setNotification("Reporte generado con los criterios seleccionados.")
     setTimeout(() => setNotification(null), 3000)
   }

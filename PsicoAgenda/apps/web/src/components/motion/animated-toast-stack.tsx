@@ -23,12 +23,12 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { EASE_OUT } from "@/lib/ease";
 import { cn } from "@/lib/utils";
-import { useHydrated } from "@/lib/use-hydrated";
 
 export type ToastStatus = "neutral" | "info" | "loading" | "success" | "error";
 export type ToastPosition =
@@ -275,9 +275,13 @@ export function AnimatedToastStack({
   const resolvedPlacement = placement ?? (fixed ? "fixed" : "static");
   const shouldPortal = portal ?? resolvedPlacement === "fixed";
 
-  // El portal necesita `document`: se activa ya hidratado, sin un efecto que vuelva a renderizar.
-  const hydrated = useHydrated();
-  const portalTarget = shouldPortal && hydrated ? (portalRoot ?? document.body) : null;
+  // Calcula el portal sin setState en un efecto, evitando renders en cascada
+  // y manteniendo el mismo snapshot en SSR e hidratación.
+  const portalTarget = useSyncExternalStore(
+    () => () => {},
+    () => (shouldPortal ? (portalRoot ?? (typeof document !== "undefined" ? document.body : null)) : null),
+    () => null,
+  );
 
   const stack = (
     <ol

@@ -15,6 +15,7 @@ import {
   tipo_sesion,
 } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { assertNoAgendaBlock } from "@/services/agenda-block.guard";
 import { reasonIdsOf, reasonLinks, reasonOtherOf, reasonText, resolveReasons } from "@/services/consultation-reason.service";
 import { assertCanActOnPatient, patientIdsForUser } from "@/services/guardianship.service";
 import { notificar, type CitaAviso } from "@/services/notification.service";
@@ -535,6 +536,7 @@ export async function insertAppointment(
   });
 
   await assertNoOverlap(tx, { psychologistId, patientId: patient.id, start, end });
+  await assertNoAgendaBlock(tx, { psychologistId, start, end });
 
   return tx.citas.create({
     data: {
@@ -598,6 +600,7 @@ export async function updateAppointment(
           end,
           excludeId: row.id,
         });
+        await assertNoAgendaBlock(tx, { psychologistId: row.psicologo_id, start, end });
       }
 
       return tx.citas.update({
