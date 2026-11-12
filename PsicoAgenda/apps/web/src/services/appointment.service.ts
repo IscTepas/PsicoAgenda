@@ -184,7 +184,7 @@ export interface CreateAppointmentRequestPayload {
   durationMinutes: number
   modality: AppointmentModality
   reason?: string
-  reasonId?: string
+  reasonIds?: string[]
   /** Menor a cuyo nombre pide su tutor; sin él la solicitud es propia. */
   patientId?: string
 }

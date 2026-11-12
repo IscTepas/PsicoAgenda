@@ -51,11 +51,12 @@ export const THEME_MODES: ReadonlyArray<{ value: ThemeMode; label: string }> = [
   { value: "system", label: "Automático" },
 ];
 
-/** Paletas estéticas; `Alto contraste` va aparte por ser accesibilidad. */
+/** Paletas estéticas (la primera es la de la marca); `Alto contraste` va aparte por ser accesibilidad. */
 export const THEME_PALETTES: ReadonlyArray<{
-  value: Exclude<ThemePaletteChoice, "contraste">;
+  value: Exclude<ThemePalette, "contraste">;
   label: string;
 }> = [
+  { value: "default", label: "Original" },
   { value: "oceano", label: "Océano" },
   { value: "bosque", label: "Bosque" },
   { value: "atardecer", label: "Atardecer" },

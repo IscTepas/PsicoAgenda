@@ -524,7 +524,7 @@ export default function ReportsPage() {
               <CalendarDays className="size-3.5" />
             </div>
           </div>
-          <div className="mt-2 text-[32px] font-bold tracking-[-0.03em] tabular-nums text-foreground leading-none">
+          <div className="mt-2 text-3xl font-semibold tracking-tight tabular-nums text-foreground leading-none">
             {totalConsultations}
           </div>
           <p className="mt-1.5 text-[11px] text-muted-foreground/75 leading-tight">
@@ -542,7 +542,7 @@ export default function ReportsPage() {
               <TrendingUp className="size-3.5" />
             </div>
           </div>
-          <div className="mt-2 text-[32px] font-bold tracking-[-0.03em] tabular-nums text-foreground leading-none">
+          <div className="mt-2 text-3xl font-semibold tracking-tight tabular-nums text-foreground leading-none">
             {attendanceRate}%
           </div>
           <p className="mt-1.5 text-[11px] text-muted-foreground/75 leading-tight">
@@ -561,7 +561,7 @@ export default function ReportsPage() {
             </div>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-[32px] font-bold tracking-[-0.03em] tabular-nums text-foreground leading-none">
+            <span className="text-3xl font-semibold tracking-tight tabular-nums text-foreground leading-none">
               {totalCancelled}
             </span>
             {totalCancelled > 0 && (
@@ -585,7 +585,7 @@ export default function ReportsPage() {
               <DollarSign className="size-3.5" />
             </div>
           </div>
-          <div className="mt-2 text-[26px] font-bold tracking-[-0.03em] tabular-nums text-foreground leading-none">
+          <div className="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-foreground leading-none">
             {formatCurrency(totalFees)}
           </div>
           <p className="mt-1.5 text-[11px] text-muted-foreground/75 leading-tight">

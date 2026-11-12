@@ -38,6 +38,20 @@ describe("proxy en rutas protegidas", () => {
     expect(response.headers.get("location")).toBe("https://psicoagenda.test/login");
   });
 
+  it("borra la cookie de sesión cuando el proveedor ya revocó su refresh token", async () => {
+    getUser.mockResolvedValue({
+      data: { user: null },
+      error: { code: "refresh_token_not_found", status: 400 },
+    });
+    const request = requestFor("/dashboard");
+    request.cookies.set("sb-proyecto-prueba-auth-token", "sesion-vieja");
+
+    const response = await proxy(request);
+
+    expect(response.headers.get("location")).toBe("https://psicoagenda.test/login");
+    expect(response.cookies.get("sb-proyecto-prueba-auth-token")?.value).toBe("");
+  });
+
   it("deja pasar una petición con sesión válida", async () => {
     getUser.mockResolvedValue({ data: { user: AUTH_USER } });
 

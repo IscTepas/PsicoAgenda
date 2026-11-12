@@ -7,7 +7,6 @@ import Link from "next/link"
 import {
   Bell,
   CalendarPlus,
-  CheckCircle2,
   ChevronRight,
   FileText,
   MapPin,
@@ -43,6 +42,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
+import { usePendingResponses } from "@/lib/use-pending-responses"
 import { useHydrated } from "@/lib/use-hydrated"
 import { cn } from "@/lib/utils"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
@@ -97,11 +97,6 @@ function formatRelative(target: Date, now: Date): string {
   }
   const days = Math.round((startOfDay(target).getTime() - startOfDay(now).getTime()) / DAY)
   return days === 1 ? "mañana" : `en ${days} días`
-}
-
-function formatHourLabel(hour: number): string {
-  const h12 = hour % 12 === 0 ? 12 : hour % 12
-  return `${h12} ${hour < 12 ? "a.m." : "p.m."}`
 }
 
 // Reloj compartido: avanza cada 30 s. En el servidor no hay "ahora" (null), así
@@ -172,6 +167,9 @@ function NotificationsButton({
   const unread = notifications.filter((n) => !n.readAt)
   const items = unread.length > 0 ? unread : notifications.slice(0, 3)
   const count = unread.length
+  // A la psicóloga, lo que espera respuesta pesa más que lo no leído: se marca en ámbar.
+  const { user } = useSession()
+  const { count: pending } = usePendingResponses(user?.role === UserRole.PSYCHOLOGIST)
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -182,13 +180,19 @@ function NotificationsButton({
             "relative inline-flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.97] data-[state=open]:bg-muted data-[state=open]:text-foreground",
             className
           )}
-          aria-label={`Notificaciones (${count} sin leer)`}
+          aria-label={pending > 0 ? `Notificaciones (${pending} por responder)` : `Notificaciones (${count} sin leer)`}
           title="Notificaciones"
         >
           <Bell className="size-[18px]" />
-          {count > 0 && (
-            <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground ring-2 ring-background">
-              {count}
+          {(pending > 0 || count > 0) && (
+            <span
+              className={cn(
+                "absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums ring-2 ring-background",
+                // amber-700 con blanco pasa 4.5:1; el 500 no llegaba a 2.2:1.
+                pending > 0 ? "bg-amber-700 text-white dark:bg-amber-400 dark:text-amber-950" : "bg-primary text-primary-foreground"
+              )}
+            >
+              {pending > 0 ? pending : count}
             </span>
           )}
         </button>
@@ -214,7 +218,7 @@ function NotificationsButton({
             // Ancho según el texto (con tope en el panel), no un ancho fijo.
             className="w-max max-w-full"
             // Todas las tarjetas del mismo alto: título en una línea (con "…" si es largo) y relleno compacto.
-            classNames={{ card: "px-3.5", content: "py-2.5", title: "truncate text-[13px]" }}
+            classNames={{ card: "px-3.5", content: "py-2.5", title: "truncate text-sm" }}
           />
         ) : (
           <div className="flex items-center gap-2 rounded-3xl bg-muted px-5 py-6 text-sm font-medium text-muted-foreground">
@@ -240,118 +244,6 @@ function LiveDot({ pulsing }: { pulsing: boolean }) {
   )
 }
 
-const TIMELINE_TONE: Record<AppointmentStatus, string> = {
-  [AppointmentStatus.CONFIRMED]: "bg-primary text-primary-foreground hover:bg-primary/90",
-  [AppointmentStatus.PENDING]:
-    "bg-amber-100 text-amber-900 ring-1 ring-inset ring-amber-300 hover:bg-amber-200/70 dark:bg-amber-500/20 dark:text-amber-100 dark:ring-amber-500/40",
-  [AppointmentStatus.COMPLETED]: "bg-muted-foreground/15 text-muted-foreground hover:bg-muted-foreground/25",
-  [AppointmentStatus.NO_SHOW]: "bg-muted-foreground/15 text-muted-foreground hover:bg-muted-foreground/25",
-  [AppointmentStatus.CANCELLED]: "hidden",
-}
-
-/**
- * La jornada como una barra: cada cita ocupa su hora real, los huecos libres se
- * ven a simple vista y la línea de "ahora" avanza sola.
- */
-function DayTimeline({
-  appointments,
-  patientById,
-  now,
-  highlightId,
-  onSelect,
-}: {
-  appointments: Appointment[]
-  patientById: Map<string, Patient>
-  now: Date | null
-  highlightId?: string
-  onSelect: (apt: Appointment) => void
-}) {
-  const visible = appointments.filter((apt) => apt.status !== AppointmentStatus.CANCELLED)
-
-  const startHour = Math.min(8, ...visible.map((apt) => new Date(apt.startTime).getHours()))
-  const endHour = Math.max(
-    20,
-    ...visible.map((apt) => {
-      const end = getEndTime(apt)
-      return end.getHours() + (end.getMinutes() > 0 ? 1 : 0)
-    })
-  )
-  const span = endHour - startHour
-  const toPct = (d: Date) =>
-    Math.min(100, Math.max(0, ((d.getHours() + d.getMinutes() / 60 - startHour) / span) * 100))
-
-  const nowPct = now ? toPct(now) : null
-  const hourMarks: number[] = []
-  for (let h = startHour + (startHour % 2); h <= endHour; h += 2) hourMarks.push(h)
-
-  return (
-    <div className="@container space-y-2">
-      <div className="relative h-12 overflow-hidden rounded-xl bg-muted/60">
-        {/* Tiempo transcurrido, apenas sombreado */}
-        {nowPct !== null && (
-          <div
-            className="absolute inset-y-0 left-0 bg-foreground/[0.035]"
-            style={{ width: `${nowPct}%` }}
-            aria-hidden="true"
-          />
-        )}
-
-        {visible.map((apt) => {
-          const start = new Date(apt.startTime)
-          const left = toPct(start)
-          const width = Math.max(toPct(getEndTime(apt)) - left, 3)
-          const patientName = patientById.get(apt.patientId)?.name ?? "Paciente"
-
-          return (
-            <button
-              key={apt.id}
-              type="button"
-              onClick={() => onSelect(apt)}
-              title={`${formatAppointmentTime(start)} · ${patientName} · ${STATUS_META[apt.status].label}`}
-              aria-label={`${formatAppointmentTime(start)}, ${patientName}, ${STATUS_META[apt.status].label}`}
-              className={cn(
-                "absolute inset-y-1.5 flex items-center overflow-hidden rounded-lg px-2 text-left text-[11px] font-medium transition-[background-color,transform] duration-150 active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-                TIMELINE_TONE[apt.status],
-                apt.id === highlightId && "outline-2 outline-offset-2 outline-primary"
-              )}
-              style={{ left: `${left}%`, width: `${width}%` }}
-            >
-              <span className="truncate">{patientName.split(" ")[0]}</span>
-            </button>
-          )
-        })}
-
-        {nowPct !== null && nowPct > 0 && nowPct < 100 && (
-          <div
-            className="pointer-events-none absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground"
-            style={{ left: `${nowPct}%` }}
-            aria-hidden="true"
-          >
-            <span className="absolute left-1/2 top-0 size-2 -translate-x-1/2 rounded-full bg-foreground" />
-          </div>
-        )}
-      </div>
-
-      <div className="relative h-4 text-[10px] tabular-nums text-muted-foreground" aria-hidden="true">
-        {hourMarks.map((h) => (
-          <span
-            key={h}
-            className={cn(
-              "absolute whitespace-nowrap",
-              h === startHour ? "" : h === endHour ? "-translate-x-full" : "-translate-x-1/2",
-              // En anchos angostos, una etiqueta cada 4 h para que no se encimen
-              (h - hourMarks[0]) % 4 !== 0 && "hidden @lg:inline"
-            )}
-            style={{ left: `${((h - startHour) / span) * 100}%` }}
-          >
-            {formatHourLabel(h)}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 type AgendaFilter = "all" | "confirmed" | "pending"
 
 const FILTER_EMPTY_COPY: Record<AgendaFilter, string> = {
@@ -366,10 +258,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const [agendaFilter, setAgendaFilter] = useState<AgendaFilter>("all")
   const [activeSessionAppointment, setActiveSessionAppointment] = useState<Appointment | null>(null)
   const { toast } = useToast()
-  // Una respuesta a la vez: evita aceptar dos veces con doble clic.
-  const [answeringRequestId, setAnsweringRequestId] = useState<string | null>(null)
   const listRef = useRef<HTMLElement>(null)
-
   const today = useMemo(() => new Date(), [])
   const fromToday = useMemo(() => startOfDay(today), [today])
   const toNextDays = useMemo(() => new Date(today.getTime() + 30 * DAY), [today])
@@ -424,30 +313,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
     openToday.find((apt) => new Date(apt.startTime) <= clock && clock < getEndTime(apt)) ?? null
   const upcomingAppointment = openToday.find((apt) => new Date(apt.startTime) > clock) ?? null
   const focusAppointment = currentAppointment ?? upcomingAppointment
-  const focusPatient = focusAppointment ? patientById.get(focusAppointment.patientId) : undefined
-  // Sesiones que ya terminaron pero siguen abiertas: falta registrar asistencia.
-  const unregisteredToday = openToday.filter((apt) => getEndTime(apt) <= clock)
-
-  const tomorrow = new Date(today.getTime() + DAY)
-  const tomorrowAppointments = appointmentsOn(tomorrow).filter(isOpenAppointment)
-
-  const todayConfirmed = todayAppointments.filter((a) => a.status === AppointmentStatus.CONFIRMED).length
-  const todayPending = todayAppointments.filter((a) => a.status === AppointmentStatus.PENDING).length
-  const lastOpenToday = openToday[openToday.length - 1]
-
-  // Cola de confirmación: pendientes de hoy en adelante.
-  const pendingQueue = useMemo(
-    () =>
-      appointments
-        .filter(
-          (apt) =>
-            apt.status === AppointmentStatus.PENDING &&
-            new Date(apt.startTime) >= startOfDay(today)
-        )
-        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-        .slice(0, 4),
-    [appointments, today]
-  )
 
   // Lista: el día elegido en el calendario (hoy por defecto)
   const isViewingToday = isSameDay(selectedCalendarDate, today)
@@ -476,17 +341,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
     setAgendaFilter("all")
   }
 
-  const scrollToList = () => {
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    listRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" })
-  }
-
-  const showPendingToday = () => {
-    selectDay(today)
-    setAgendaFilter("pending")
-    scrollToList()
-  }
-
   const showNotice = (message: string, status: "success" | "error" = "success") => {
     toast({ title: message, status })
   }
@@ -511,29 +365,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
       showNotice(name ? `Cita con ${name} confirmada.` : "Cita confirmada.")
     } catch {
       showNotice("No se pudo confirmar la cita. Intenta de nuevo.", "error")
-    }
-  }
-
-  const handleAnswerRequest = async (requestId: string, accept: boolean) => {
-    if (answeringRequestId) return
-    setAnsweringRequestId(requestId)
-    const name = patientById.get(pendingRequests.find((r) => r.id === requestId)?.patientId ?? "")?.name
-    try {
-      if (accept) {
-        await appointmentRequestService.accept(requestId)
-        await refetchAppointments()
-      } else {
-        await appointmentRequestService.reject(requestId)
-      }
-      await refetchRequests()
-      const verb = accept ? "con" : "de"
-      const who = name ? ` ${verb} ${name}` : ""
-      showNotice(accept ? `Cita${who} agendada y confirmada.` : `Solicitud${who} rechazada.`)
-    } catch (error) {
-      await refetchRequests()
-      showNotice(error instanceof Error ? error.message : "No se pudo responder la solicitud.", "error")
-    } finally {
-      setAnsweringRequestId(null)
     }
   }
 
@@ -591,174 +422,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
       </header>
 
 
-      {/* TU DÍA: qué sigue + la jornada completa de un vistazo */}
-      <section aria-label="Tu día" className="@container overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex flex-col gap-5 p-5 sm:p-6 @3xl:flex-row @3xl:items-center @3xl:justify-between">
-          {focusAppointment ? (
-            <>
-              <div className="min-w-0 space-y-3">
-                <p className="flex flex-wrap items-center gap-x-2 text-sm font-medium text-primary">
-                  <LiveDot pulsing={Boolean(currentAppointment)} />
-                  <span className="whitespace-nowrap">{currentAppointment ? "En curso" : "Siguiente cita"}</span>
-                  {now && (
-                    <span className="whitespace-nowrap font-normal text-muted-foreground">
-                      ·{" "}
-                      {currentAppointment
-                        ? `termina ${formatRelative(getEndTime(currentAppointment), now)}`
-                        : formatRelative(new Date(focusAppointment.startTime), now)}
-                    </span>
-                  )}
-                </p>
-
-                <div className="flex items-center gap-4">
-                  <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                    {getInitials(focusPatient?.name ?? "Paciente")}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-xl font-semibold tracking-tight text-foreground">
-                      {focusPatient?.name ?? "Paciente"}
-                    </p>
-                    <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
-                      <span className="tabular-nums">
-                        {formatAppointmentTime(new Date(focusAppointment.startTime))} –{" "}
-                        {formatAppointmentTime(getEndTime(focusAppointment))}
-                      </span>
-                      <span aria-hidden="true">·</span>
-                      <ModalityLabel modality={focusAppointment.modality} />
-                      {focusAppointment.reason && (
-                        <>
-                          <span aria-hidden="true" className="hidden sm:inline">·</span>
-                          <span className="hidden truncate sm:inline">{focusAppointment.reason}</span>
-                        </>
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                {focusAppointment.status === AppointmentStatus.PENDING && (
-                  <p className="text-sm text-amber-700 dark:text-amber-400">
-                    Esta cita aún no está confirmada.
-                  </p>
-                )}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 @3xl:shrink-0">
-                {focusAppointment.modality === AppointmentModality.VIRTUAL && (
-                  <Button
-                    variant="outline"
-                    onClick={() => window.open("https://meet.google.com/psi-diag-ses", "_blank")}
-                  >
-                    <Video />
-                    Videollamada
-                  </Button>
-                )}
-                <Button asChild variant="outline">
-                  <Link href={`/pacientes/${focusAppointment.patientId}`}>Expediente</Link>
-                </Button>
-                <Button onClick={() => setActiveSessionAppointment(focusAppointment)}>
-                  {currentAppointment ? "Registrar sesión" : "Iniciar sesión"}
-                </Button>
-              </div>
-            </>
-          ) : unregisteredToday.length > 0 ? (
-            <>
-              <div className="min-w-0 space-y-1.5">
-                <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-400">
-                  <span className="size-2 rounded-full bg-amber-500" aria-hidden="true" />
-                  Falta registrar asistencia
-                </p>
-                <p className="text-xl font-semibold tracking-tight text-foreground">
-                  {unregisteredToday.length === 1
-                    ? "Tienes 1 sesión de hoy sin registrar"
-                    : `Tienes ${unregisteredToday.length} sesiones de hoy sin registrar`}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Toca cada bloque de la línea del día, o empieza por la primera.
-                </p>
-              </div>
-              <Button
-                className="@3xl:shrink-0"
-                onClick={() => setActiveSessionAppointment(unregisteredToday[0])}
-              >
-                Registrar {patientById.get(unregisteredToday[0].patientId)?.name?.split(" ")[0] ?? "sesión"}
-              </Button>
-            </>
-          ) : (
-            <div className="space-y-1.5">
-              <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <CheckCircle2 className="size-4 text-primary" />
-                Día completado
-              </p>
-              <p className="text-xl font-semibold tracking-tight text-foreground">
-                No te quedan citas por hoy
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {tomorrowAppointments.length > 0
-                  ? `Mañana: ${tomorrowAppointments.length} ${tomorrowAppointments.length === 1 ? "cita" : "citas"}, la primera a las ${formatAppointmentTime(new Date(tomorrowAppointments[0].startTime))}`
-                  : "Mañana no tienes citas programadas."}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-4 border-t border-border bg-muted/20 px-5 py-5 sm:px-6">
-          <DayTimeline
-            appointments={todayAppointments}
-            patientById={patientById}
-            now={now}
-            highlightId={focusAppointment?.id}
-            onSelect={setActiveSessionAppointment}
-          />
-
-          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm">
-            <p className="flex flex-wrap items-center gap-x-1.5 text-muted-foreground">
-              <span>
-                <span className="font-semibold tabular-nums text-foreground">{todayAppointments.length}</span>{" "}
-                {todayAppointments.length === 1 ? "cita" : "citas"} hoy
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>
-                <span className="font-semibold tabular-nums text-foreground">{todayConfirmed}</span>{" "}
-                {todayConfirmed === 1 ? "confirmada" : "confirmadas"}
-              </span>
-              {todayPending > 0 && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <button
-                    type="button"
-                    onClick={showPendingToday}
-                    className="rounded-md font-medium text-amber-700 underline-offset-4 hover:underline dark:text-amber-400"
-                  >
-                    {todayPending} por confirmar
-                  </button>
-                </>
-              )}
-              {lastOpenToday && getEndTime(lastOpenToday) > clock && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span>Libre desde las {formatAppointmentTime(getEndTime(lastOpenToday))}</span>
-                </>
-              )}
-            </p>
-
-            <div className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
-              <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-sm bg-primary" />
-                Confirmada
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-sm bg-amber-300 dark:bg-amber-500/60" />
-                Por confirmar
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="size-2 rounded-sm bg-muted-foreground/30" />
-                Completada
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
         {/* Citas del día elegido. Las filas se adaptan al ancho de la tarjeta
             (container queries), no al de la ventana. */}
@@ -802,6 +465,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                   const patient = patientById.get(apt.patientId)
                   const patientName = patient?.name || "Paciente"
                   const isNext = isViewingToday && apt.id === focusAppointment?.id
+                  const isLive = isNext && apt.id === currentAppointment?.id
                   const isClosed = !isOpenAppointment(apt)
                   const isUnregistered = isViewingToday && !isClosed && getEndTime(apt) <= clock
 
@@ -840,8 +504,14 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                               <span className="text-xs font-normal text-muted-foreground">Menor</span>
                             )}
                             {isNext && (
-                              <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
-                                Siguiente
+                              <span className="flex items-center gap-1.5 rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                {isLive && (
+                                  <span className="relative flex size-1.5" aria-hidden="true">
+                                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary-foreground opacity-70 motion-reduce:hidden" />
+                                    <span className="relative inline-flex size-1.5 rounded-full bg-primary-foreground" />
+                                  </span>
+                                )}
+                                {isLive ? "En curso" : "Siguiente"}
                               </span>
                             )}
                           </p>
@@ -895,7 +565,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
           </div>
         </section>
 
-        <div className="grid content-start gap-6 sm:grid-cols-2 xl:grid-cols-1">
+        <div className="content-start">
           {/* Mini-calendario: tocar un día muestra sus citas en la lista */}
           <aside className="space-y-4 rounded-2xl border border-border bg-card p-5">
             <Calendar
@@ -927,91 +597,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
             </div>
           </aside>
 
-          {/* Por confirmar: lo que necesita una respuesta, con la acción a la mano */}
-          <aside className="space-y-3 rounded-2xl border border-border bg-card p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold tracking-tight text-foreground">Por confirmar</h2>
-              {pendingRequests.length + pendingQueue.length > 0 && (
-                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-amber-800 dark:bg-amber-500/20 dark:text-amber-200">
-                  {pendingRequests.length + pendingQueue.length}
-                </span>
-              )}
-            </div>
-
-            {pendingRequests.length + pendingQueue.length > 0 ? (
-              <ul className="space-y-1">
-                {pendingRequests.map((request) => {
-                  const start = new Date(request.startTime)
-                  const patientName = patientById.get(request.patientId)?.name ?? "Paciente"
-                  return (
-                    <li
-                      key={request.id}
-                      className="-mx-2 flex items-center gap-2 rounded-xl px-2 py-2 animate-in fade-in duration-200"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium text-foreground">{patientName}</p>
-                        <p className="text-xs tabular-nums text-muted-foreground">
-                          Solicitud · {isSameDay(start, today) ? "Hoy" : capitalize(formatShortDate(start))} ·{" "}
-                          {formatAppointmentTime(start)}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={answeringRequestId !== null}
-                        onClick={() => handleAnswerRequest(request.id, false)}
-                      >
-                        Rechazar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={answeringRequestId !== null}
-                        onClick={() => handleAnswerRequest(request.id, true)}
-                      >
-                        Aceptar
-                      </Button>
-                    </li>
-                  )
-                })}
-                {pendingQueue.map((apt) => {
-                  const start = new Date(apt.startTime)
-          const patientName = patientById.get(apt.patientId)?.name ?? "Paciente"
-                  return (
-                    <li
-                      key={apt.id}
-                      className="-mx-2 flex items-center gap-3 rounded-xl px-2 py-2 animate-in fade-in duration-200"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => selectDay(start)}
-                        className="min-w-0 flex-1 text-left"
-                        title="Ver ese día"
-                      >
-                        <p className="truncate text-sm font-medium text-foreground">{patientName}</p>
-                        <p className="text-xs tabular-nums text-muted-foreground">
-                          {isSameDay(start, today) ? "Hoy" : capitalize(formatShortDate(start))} ·{" "}
-                          {formatAppointmentTime(start)}
-                        </p>
-                      </button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleConfirmAppointment(apt.id)}
-                      >
-                        Confirmar
-                      </Button>
-                    </li>
-                  )
-                })}
-              </ul>
-            ) : (
-              <p className="flex items-center gap-2 py-2 text-sm text-muted-foreground">
-                <CheckCircle2 className="size-4 text-primary" />
-                Todas tus próximas citas están confirmadas.
-              </p>
-            )}
-          </aside>
         </div>
       </div>
 

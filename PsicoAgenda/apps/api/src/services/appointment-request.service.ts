@@ -9,7 +9,7 @@ import {
 import type { Prisma } from "@/generated/prisma/client";
 import { estado_cita, estado_pago, estado_solicitud } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
-import { reasonText, resolveReason } from "@/services/consultation-reason.service";
+import { reasonIdsOf, reasonLinks, reasonOtherOf, reasonText, resolveReasons } from "@/services/consultation-reason.service";
 import { assertCanActOnPatient, patientIdsForUser } from "@/services/guardianship.service";
 import { AppError } from "@/utils/app-error";
 import type { AuthenticatedUser } from "@/utils/jwt";
@@ -30,7 +30,7 @@ import {
 // La relación 1:1 con la cita creada al aceptar viaja con la solicitud.
 const requestInclude = {
   citas: { select: { id: true } },
-  motivos_consulta: { select: { etiqueta: true, requiere_texto: true } },
+  solicitudes_motivos: reasonLinks,
 } as const;
 
 type RequestRow = Prisma.solicitudes_citaGetPayload<{ include: typeof requestInclude }>;
@@ -42,7 +42,7 @@ export interface CreateAppointmentRequestInput {
   durationMinutes: number;
   modality: AppointmentModality;
   reason?: string;
-  reasonId?: string;
+  reasonIds?: string[];
 }
 
 export interface RescheduleAppointmentRequestInput extends CreateAppointmentRequestInput {
@@ -78,13 +78,20 @@ const toSchemaRequestStatus = (status: AppointmentRequestStatus): estado_solicit
 };
 
 const avisoDeSolicitud = (
-  row: Pick<RequestRow, "paciente_id" | "psicologo_id" | "inicio_solicitado" | "duracion_minutos" | "modalidad">,
+  row: Pick<RequestRow, "id" | "paciente_id" | "psicologo_id" | "inicio_solicitado" | "duracion_minutos" | "modalidad">,
 ): CitaAviso => ({
+  solicitudId: row.id,
   pacienteId: row.paciente_id,
   psicologoId: row.psicologo_id,
   inicio: row.inicio_solicitado,
   duracionMinutos: row.duracion_minutos,
   modalidad: row.modalidad,
+});
+
+/** Columnas de motivo de una solicitud: el texto de «Otro» y los enlaces al catálogo. */
+const motivosDeSolicitud = ({ motivoIds, motivo }: { motivoIds: string[]; motivo: string | null }) => ({
+  motivo,
+  solicitudes_motivos: { create: motivoIds.map((motivo_id) => ({ motivo_id })) },
 });
 
 /** Si hay exactamente una psicóloga, se la asigna al paciente y devuelve su id; si no, null. */
@@ -103,8 +110,9 @@ const toAppointmentRequest = (row: RequestRow): AppointmentRequest => ({
   startTime: row.inicio_solicitado,
   durationMinutes: row.duracion_minutos,
   modality: toSharedModality(row.modalidad),
-  reason: reasonText(row.motivo, row.motivos_consulta),
-  reasonId: row.motivo_id ?? undefined,
+  reason: reasonText(row.motivo, row.solicitudes_motivos),
+  reasonIds: reasonIdsOf(row.solicitudes_motivos),
+  reasonOther: reasonOtherOf(row.motivo, row.solicitudes_motivos),
   status: toSharedRequestStatus(row.estado),
   appointmentId: row.citas?.id,
   createdAt: row.creado_en,
@@ -190,7 +198,7 @@ export async function createAppointmentRequest(
         duracion_minutos: input.durationMinutes,
         modalidad: toSchemaModality(input.modality),
         tipo_sesion: await resolveSessionType(tx, patientId),
-        ...(await resolveReason(tx, input.reasonId, input.reason)),
+        ...motivosDeSolicitud(await resolveReasons(tx, input.reasonIds, input.reason)),
         solicitante_id: auth.id,
       },
       include: requestInclude,
@@ -298,7 +306,7 @@ export async function rescheduleAppointmentRequest(
           duracion_minutos: input.durationMinutes,
           modalidad: toSchemaModality(input.modality),
           tipo_sesion: await resolveSessionType(tx, patientId),
-          ...(await resolveReason(tx, input.reasonId, input.reason)),
+          ...motivosDeSolicitud(await resolveReasons(tx, input.reasonIds, input.reason)),
           solicitante_id: auth.id,
         },
         include: requestInclude,
@@ -325,7 +333,7 @@ async function requirePendingRequestOfPsychologist(
 ) {
   const row = await tx.solicitudes_cita.findUnique({
     where: { id },
-    include: { pacientes: { select: { id: true, fecha_nacimiento: true } } },
+    include: { pacientes: { select: { id: true, fecha_nacimiento: true } }, solicitudes_motivos: reasonLinks },
   });
 
   if (!row) {
@@ -380,7 +388,7 @@ export async function acceptAppointmentRequest(
         durationMinutes: request.duracion_minutos,
         modality: toSharedModality(request.modalidad),
         motivo: request.motivo,
-        motivo_id: request.motivo_id,
+        motivoIds: reasonIdsOf(request.solicitudes_motivos),
         status: estado_cita.CONFIRMADA,
         requestId: request.id,
       });

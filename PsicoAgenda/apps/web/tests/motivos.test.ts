@@ -8,18 +8,19 @@ const OTRO = { label: "Otro", requiresText: true }
 const ANSIEDAD = { label: "Ansiedad", requiresText: false }
 
 describe("errorDeMotivo", () => {
-  it("no deja enviar «Otro» vacío", () => {
-    expect(errorDeMotivo(OTRO, "   ", true)).toMatch(/Describe/)
-    expect(errorDeMotivo(OTRO, "Insomnio", true)).toBeNull()
+  it("no deja enviar «Otro» vacío, aunque haya otros motivos elegidos", () => {
+    expect(errorDeMotivo([ANSIEDAD, OTRO], "   ", true)).toMatch(/otro motivo/)
+    expect(errorDeMotivo([ANSIEDAD, OTRO], "Miedo a manejar", true)).toBeNull()
   })
 
-  it("un motivo normal no pide texto", () => {
-    expect(errorDeMotivo(ANSIEDAD, "", true)).toBeNull()
+  it("uno o varios motivos normales no piden texto", () => {
+    expect(errorDeMotivo([ANSIEDAD], "", true)).toBeNull()
+    expect(errorDeMotivo([ANSIEDAD, { label: "Insomnio", requiresText: false }], "", true)).toBeNull()
   })
 
-  it("en un alta el motivo es obligatorio; al editar una cita histórica no", () => {
-    expect(errorDeMotivo(undefined, "", true)).toMatch(/Elige/)
-    expect(errorDeMotivo(undefined, "", false)).toBeNull()
+  it("en un alta hay que elegir al menos uno; al editar una cita histórica no", () => {
+    expect(errorDeMotivo([], "", true)).toMatch(/al menos un motivo/)
+    expect(errorDeMotivo([], "", false)).toBeNull()
   })
 })
 

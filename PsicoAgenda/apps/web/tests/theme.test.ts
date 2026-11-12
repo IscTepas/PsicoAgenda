@@ -44,9 +44,10 @@ describe("resolveTheme", () => {
 });
 
 describe("catálogo de temas", () => {
-  it("tiene tres modos, seis paletas estéticas y la de accesibilidad aparte", () => {
+  it("tiene tres modos, la paleta original, seis estéticas y la de accesibilidad aparte", () => {
     expect(THEME_MODES.map((m) => m.value)).toEqual(["light", "dark", "system"]);
     expect(THEME_PALETTES.map((p) => p.value)).toEqual([
+      "default",
       "oceano",
       "bosque",
       "atardecer",
@@ -60,7 +61,7 @@ describe("catálogo de temas", () => {
   it("las paletas del selector cubren todo el catálogo de paletas elegibles", () => {
     const valores = [...THEME_PALETTES.map((p) => p.value), THEME_ACCESSIBILITY.value];
 
-    expect(valores.sort()).toEqual([...THEME_PALETTE_CHOICES].sort());
+    expect(valores.sort()).toEqual(["default", ...THEME_PALETTE_CHOICES].sort());
     expect([...THEME_PALETTE_VALUES].sort()).toEqual(["default", ...THEME_PALETTE_CHOICES].sort());
     expect([...THEME_MODE_VALUES]).toEqual(["light", "dark", "system"]);
   });

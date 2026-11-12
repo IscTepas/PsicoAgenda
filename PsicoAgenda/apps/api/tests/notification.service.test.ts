@@ -190,6 +190,16 @@ describe("notificar", () => {
     expect(filasCreadas().every((f) => f.usuario_id === PACIENTE.id)).toBe(true);
   });
 
+  it("el aviso de una solicitud guarda a cuál se refiere (para llevar a responderla)", async () => {
+    await notificar("SOLICITUD_CREADA", { ...aviso(), citaId: undefined, solicitudId: "s-1" });
+
+    const { data } = prismaMock.notificaciones.createMany.mock.calls[0]![0] as {
+      data: { solicitud_id: string | null }[];
+    };
+    expect(data.length).toBeGreaterThan(0);
+    expect(data.every((fila) => fila.solicitud_id === "s-1")).toBe(true);
+  });
+
   it("una solicitud nueva avisa a la psicóloga por sistema, correo y WhatsApp", async () => {
     await notificar("SOLICITUD_CREADA", { ...aviso(), citaId: undefined });
 
