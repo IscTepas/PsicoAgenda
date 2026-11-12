@@ -95,6 +95,8 @@ export const createAppointmentRequestSchema = z.object({
  */
 export const rescheduleAppointmentRequestSchema = createAppointmentRequestSchema.extend({
   appointmentId: z.string().uuid(),
+  /** Por qué se cambia la fecha; queda como motivo de cancelación de la cita original. */
+  changeReason: z.string().trim().min(3).max(200).optional(),
 });
 
 export const appointmentRequestListQuerySchema = z.object({
@@ -313,6 +315,13 @@ export const addGuardianSchema = z
     path: ["name"],
   });
 
+/** Un paciente adulto da de alta a un menor a su cargo (sin cuenta propia). */
+export const addTutoredMinorSchema = z.object({
+  name: z.string().trim().min(2, "Escribe el nombre completo").max(120),
+  birthDate: z.coerce.date(),
+  relationship: z.string().trim().max(40).optional(),
+});
+
 export const guardianParamsSchema = z.object({
   id: z.string().uuid("Identificador inválido"),
   tutorId: z.string().uuid("Identificador inválido"),
@@ -439,6 +448,13 @@ export const createLogEntrySchema = z.object({
   notes: z.string().min(1, "Las observaciones de la sesión son obligatorias"),
   interventions: z.string().optional(),
   homework: z.string().optional(),
+  // Con `id` se conserva la tarea (y si ya se hizo); sin `id` es nueva y se avisa al paciente.
+  tasks: z
+    .array(z.object({ id: z.string().uuid().optional(), text: z.string().trim().min(1).max(300) }))
+    .max(20)
+    .optional(),
 });
+
+export const taskDoneSchema = z.object({ done: z.boolean() });
 
 export const updateLogEntrySchema = createLogEntrySchema.partial();

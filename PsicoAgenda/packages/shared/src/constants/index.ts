@@ -1,5 +1,8 @@
 export const APP_NAME = "PsicoAgenda";
 
+/** Prefijo del motivo de cancelación cuando la cita se canceló por un cambio de fecha del paciente. */
+export const CAMBIO_DE_FECHA_PREFIJO = "Cambio de fecha: ";
+
 export const DEFAULT_APPOINTMENT_DURATION = 50; // minutos
 export const MIN_APPOINTMENT_DURATION = 45;
 export const MAX_APPOINTMENT_DURATION = 60;

@@ -206,6 +206,7 @@ export const toAppointment = (row: AppointmentRow): Appointment => {
     reasonIds: reasonIdsOf(row.citas_motivos),
     reasonOther: reasonOtherOf(row.motivo, row.citas_motivos),
     notes: row.notas_internas ?? undefined,
+    cancellationReason: row.motivo_cancelacion ?? undefined,
     // `precio` es el snapshot de la tarifa; `payment` es el estado de cobro.
     price: row.precio ?? undefined,
     payment: payment

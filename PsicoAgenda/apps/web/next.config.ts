@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   // Oculta el indicador flotante de desarrollo (el círculo con "N").
   // Los errores de compilación y de runtime siguen mostrándose.
   devIndicators: false,
+  // next/image sirve AVIF y, si el navegador no lo soporta, WebP (nunca el PNG original).
+  images: { formats: ["image/avif", "image/webp"] },
   // Silencia el registro de cada petición en desarrollo (GET /perfil 200 in …).
   // Los errores y los mensajes de compilación siguen visibles.
   logging: {

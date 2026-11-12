@@ -4,6 +4,7 @@ import { useState, useMemo } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { AppointmentStatus, AttendanceStatus, type Appointment } from "@psicoagenda/shared"
 import { useReportsData } from "./use-reports-data"
+import { resumenDeMotivos, type ConteoDeMotivo } from "@/lib/motivos-cambio"
 import Link from "next/link"
 import {
   CalendarDays,
@@ -84,6 +85,36 @@ const SERVICE_TYPE_LABELS: Record<ReportAppointment["serviceType"], string> = {
 }
 
 const pad = (n: number) => String(n).padStart(2, "0")
+
+function ListaDeMotivos({ titulo, motivos }: { titulo: string; motivos: ConteoDeMotivo[] }) {
+  const total = motivos.reduce((suma, m) => suma + m.veces, 0)
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-foreground">
+        {titulo} <span className="font-normal tabular-nums text-muted-foreground">({total})</span>
+      </h3>
+      {motivos.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">Ninguna en este período.</p>
+      ) : (
+        <ol className="mt-2 space-y-2">
+          {motivos.slice(0, 5).map((m) => (
+            <li key={m.motivo} className="text-sm">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 break-words text-foreground">{m.motivo}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  {m.veces} · {Math.round((m.veces / total) * 100)}%
+                </span>
+              </div>
+              <div className="mt-1 h-1.5 rounded-full bg-muted" aria-hidden="true">
+                <div className="h-full rounded-full bg-primary" style={{ width: `${(m.veces / total) * 100}%` }} />
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
 
 /** Cita de la API → fila del reporte (fecha y hora en la zona local). */
 function toReportRow(apt: Appointment, patientName: string): ReportAppointment {
@@ -222,6 +253,8 @@ export default function ReportsPage() {
   }, [appliedFilters, records])
 
   // Cálculo de KPIs
+  // Por qué se cancelan o se mueven las citas del período (no depende de los filtros de la tabla).
+  const motivos = useMemo(() => resumenDeMotivos(appointments), [appointments])
   const totalConsultations = filteredRecords.length
   const totalAttended = filteredRecords.filter((r) => r.status === "attended").length
   const totalCancelled = filteredRecords.filter(
@@ -354,7 +387,7 @@ export default function ReportsPage() {
       {/* CABECERA CON ACCIÓN PRINCIPAL SUPERIOR DERECHA */}
       <PageHeader
         title="Reportes de Práctica Clínica"
-        description={`Análisis administrativo y financiero • Período: ${formatDate(
+        description={`Período: ${formatDate(
           appliedFilters.fromDate
         )} al ${formatDate(appliedFilters.toDate)}`}
         actions={
@@ -593,6 +626,19 @@ export default function ReportsPage() {
           </p>
         </div>
       </div>
+
+      {(motivos.cancelaciones.length > 0 || motivos.cambios.length > 0) && (
+        <section aria-labelledby="motivos-titulo" className="rounded-2xl border border-border bg-card p-5">
+          <h2 id="motivos-titulo" className="text-base font-semibold text-foreground">
+            Por qué se cancelan o se cambian las citas
+          </h2>
+          <p className="text-sm text-muted-foreground">Motivos más usados en el período, del más frecuente al menos.</p>
+          <div className="mt-4 grid gap-6 md:grid-cols-2">
+            <ListaDeMotivos titulo="Cancelaciones" motivos={motivos.cancelaciones} />
+            <ListaDeMotivos titulo="Cambios de fecha" motivos={motivos.cambios} />
+          </div>
+        </section>
+      )}
 
       {/* TABLA DE RESULTADOS REQUERIDA */}
       <div className="rounded-2xl border border-border/50 bg-card shadow-xs overflow-hidden">

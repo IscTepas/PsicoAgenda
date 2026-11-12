@@ -2,6 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { AgregarMenorDialog } from "./agregar-menor-dialog"
+import { ParentescoSelect } from "@/components/parentesco-select"
+import { MOTIVOS_DE_CAMBIO } from "@/lib/motivos-cambio"
+import { useUnsavedChanges } from "@/lib/use-unsaved-changes"
+import { useDebouncedValue } from "@/lib/use-debounced-value"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeft,
@@ -9,7 +15,6 @@ import {
   Clock,
   User,
   Search,
-  Check,
   CheckCircle2,
   AlertCircle,
   XCircle,
@@ -122,15 +127,6 @@ const DAYS_NAMES = [
 
 function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value)
-}
-
-// Mismo estilo de estado que el panel y la agenda: pastilla gris + punto de color.
-const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
-  [AppointmentStatus.CONFIRMED]: { label: "Confirmada", dot: "bg-primary" },
-  [AppointmentStatus.PENDING]: { label: "Pendiente", dot: "bg-amber-500" },
-  [AppointmentStatus.CANCELLED]: { label: "Cancelada", dot: "bg-destructive" },
-  [AppointmentStatus.COMPLETED]: { label: "Completada", dot: "bg-muted-foreground/50" },
-  [AppointmentStatus.NO_SHOW]: { label: "No asistió", dot: "bg-muted-foreground/50" },
 }
 
 // Colores del preview de la fecha según la disponibilidad real del día.
@@ -258,6 +254,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   // Form State
   const [selectedPatientId, setSelectedPatientId] = React.useState<string>(defaultPatientId)
   const [patientSearch, setPatientSearch] = React.useState<string>("")
+  const busquedaPaciente = useDebouncedValue(patientSearch, 200)
   const [isPatientDropdownOpen, setIsPatientDropdownOpen] = React.useState<boolean>(false)
 
   // Date and Time State. Desde la agenda se puede llegar con ?fecha=AAAA-MM-DD&hora=HH:00
@@ -296,6 +293,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const reduceMotion = useReducedMotion() ?? false
   // Un tutor puede pedir la cita para sí o para un menor que tutela.
   const [forPatientId, setForPatientId] = React.useState<string>("")
+  const [agregarMenorOpen, setAgregarMenorOpen] = React.useState(false)
   const { data: tutored = [] } = useQuery({
     queryKey: ["pacientes", "tutelados"],
     queryFn: patientService.listTutored,
@@ -321,6 +319,11 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const [isCancelModalOpen, setIsCancelModalOpen] = React.useState<boolean>(false)
   const [cancellationReason, setCancellationReason] = React.useState<string>("")
   const [cancelError, setCancelError] = React.useState<string>("")
+  // Motivo del cambio de fecha (paciente); viaja con la solicitud.
+  const [changeReason, setChangeReason] = React.useState<string>("")
+  // Hubo interacción con el formulario: al salir se pregunta antes de perderla.
+  const [tocado, setTocado] = React.useState(false)
+  const unsaved = useUnsavedChanges(tocado)
 
   // Reagendamiento del paciente: el envío abre una confirmación y, al aceptar,
   // se cancela la cita actual y se crea la solicitud en una sola llamada.
@@ -660,15 +663,15 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
   // Autocomplete patient filter
   const filteredPatients = React.useMemo(() => {
-    if (!patientSearch.trim()) return patients
-    const q = patientSearch.toLowerCase().trim()
+    if (!busquedaPaciente.trim()) return patients
+    const q = busquedaPaciente.toLowerCase().trim()
     return patients.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.email.toLowerCase().includes(q) ||
         (p.phone && p.phone.includes(q))
     )
-  }, [patients, patientSearch])
+  }, [patients, busquedaPaciente])
 
   // Estado del preview: verde si hay franjas libres, ámbar si el día está lleno
   // y rojo si el día no tiene horario o la fecha no está permitida.
@@ -847,13 +850,15 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     try {
       await appointmentRequestService.reschedule({
         appointmentId: initialAppointment.id,
+        changeReason: changeReason.trim(),
         ...draft,
       })
+      setTocado(false)
       setIsRescheduleModalOpen(false)
-      notifySuccess("Solicitud de reagendamiento enviada. Tu cita anterior fue cancelada.")
+      notifySuccess("Solicitud de cambio enviada. Tu cita anterior fue cancelada.")
       setTimeout(() => router.push("/dashboard"), 900)
     } catch (error) {
-      toast({ title: error instanceof Error ? error.message : "No se pudo reagendar la cita", status: "error" })
+      toast({ title: error instanceof Error ? error.message : "No se pudo modificar la cita", status: "error" })
     } finally {
       setIsSubmitting(false)
     }
@@ -862,7 +867,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   // Confirm Cancellation
   const handleConfirmCancel = async () => {
     if (!cancellationReason.trim()) {
-      setCancelError("Debes especificar un motivo para cancelar la cita.")
+      setCancelError("Elige el motivo de la cancelación.")
       return
     }
 
@@ -872,6 +877,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     try {
       await appointmentService.cancel(initialAppointment.id, cancellationReason.trim())
       setStatus(AppointmentStatus.CANCELLED)
+      setTocado(false)
       setIsCancelModalOpen(false)
       notifySuccess("La cita ha sido cancelada correctamente.")
       setTimeout(() => {
@@ -929,33 +935,21 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground font-heading">
               {isEdit
                 ? isPatient
-                  ? "Reagendar cita"
+                  ? "Modificar cita"
                   : "Modificar cita"
                 : isPatient
                   ? "Solicitar Cita"
                   : "Agendar Nueva Cita"}
             </h1>
-            <p className="text-sm text-muted-foreground">
-              {isEdit
-                ? isPatient
-                  ? "Elige un nuevo horario. Tu cita actual se cancelará al enviar la solicitud."
-                  : "Ajusta la fecha, la hora o los datos de la sesión."
-                : isPatient
-                  ? "Elige fecha, hora y modalidad. Tu psicólogo confirmará la solicitud."
-                  : "Programa una nueva consulta clínica definiendo paciente, fecha, hora y modalidad."}
-            </p>
+            {isPatient && (
+              <p className="text-sm text-muted-foreground">
+                {isEdit
+                  ? "Tu cita actual se cancelará al enviar la solicitud."
+                  : "Tu psicóloga confirmará la solicitud."}
+              </p>
+            )}
           </div>
 
-          {/* Estado de la cita (solo visible si la cita ya existe) */}
-          {isEdit && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground font-medium">Estado actual:</span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-foreground/80">
-                <span className={`size-1.5 rounded-full ${STATUS_PILL[status].dot}`} aria-hidden="true" />
-                {STATUS_PILL[status].label}
-              </span>
-            </div>
-          )}
         </div>
       </div>
 
@@ -967,7 +961,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       )}
 
       {isLoadingData && !loadError && (
-        <p className="text-xs text-muted-foreground">Cargando datos de la agenda…</p>
+        <div className="space-y-2" aria-busy="true" aria-label="Cargando datos de la agenda">
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="h-4 w-32" />
+        </div>
       )}
 
       {/* SECCIÓN DESTACADA: REGISTRAR ASISTENCIA (Solo si es el día de la cita y no es paciente) */}
@@ -1024,7 +1021,14 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       )}
 
       {/* Main Form */}
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form
+        onSubmit={handleSubmit}
+        onInput={() => setTocado(true)}
+        onClick={(event) => {
+          if ((event.target as Element).closest("button, [role='option']")) setTocado(true)
+        }}
+        className="space-y-6"
+      >
         {/* CARD 1: SELECCIÓN DEL PACIENTE (solo psicólogo/admin; el paciente ya sabe quién es) */}
         {!isPatient && (
         // overflow-visible: la lista de resultados sale por debajo de la tarjeta; el Card la recortaba.
@@ -1063,7 +1067,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                       </span>
                     </div>
                     <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-3 mt-0.5">
-                      <span>{selectedPatient.email}</span>
+                      <span>{selectedPatient.email || "Sin cuenta"}</span>
                       {selectedPatient.phone && <span>· {selectedPatient.phone}</span>}
                     </div>
                   </div>
@@ -1085,7 +1089,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                     Cambiar paciente
                   </Button>
                   <Button variant="ghost" size="sm" asChild className="h-8 text-xs text-primary">
-                    <Link href={`/pacientes/${selectedPatient.id}`} target="_blank">
+                    <Link href={`/pacientes/${selectedPatient.id}`}>
                       Ver expediente
                     </Link>
                   </Button>
@@ -1167,7 +1171,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                                 {patient.name}
                               </div>
                               <div className="text-xs text-muted-foreground">
-                                {patient.email} {patient.phone ? `· ${patient.phone}` : ""}
+                                {[patient.email, patient.phone].filter(Boolean).join(" · ") || "Sin cuenta"}
                               </div>
                             </div>
                           </div>
@@ -1384,9 +1388,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           </CardHeader>
 
           <CardContent className="space-y-4">
-            {tutored.length > 0 ? (
+            {isPatient && !isEdit ? (
               <div className="space-y-1.5">
                 <span className="text-xs font-medium text-muted-foreground block">¿Para quién es la cita?</span>
+                {tutored.length > 0 && (
                 <Select value={forPatientId || "yo"} onValueChange={(value) => setForPatientId(value === "yo" ? "" : value)}>
                   <SelectTrigger id="appointment-for-patient" aria-label="Para quién es la cita" className="w-full">
                     <SelectValue placeholder="Para mí" />
@@ -1395,11 +1400,27 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                     <SelectItem value="yo">Para mí</SelectItem>
                     {tutored.map((minor) => (
                       <SelectItem key={minor.id} value={minor.id}>
-                        {`${minor.name} (tutelado)`}
+                        {`${minor.name} (menor a tu cargo)`}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  {tutored.length > 0 ? "¿Es para otro menor? " : "Es para ti. ¿La cita es para tu hijo o hija? "}
+                  <button
+                    type="button"
+                    onClick={() => setAgregarMenorOpen(true)}
+                    className="rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Agregar a un menor a tu cargo
+                  </button>
+                </p>
+                <AgregarMenorDialog
+                  open={agregarMenorOpen}
+                  onOpenChange={setAgregarMenorOpen}
+                  onAdded={(menor) => setForPatientId(menor.id)}
+                />
               </div>
             ) : null}
 
@@ -1526,77 +1547,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           </CardContent>
         </Card>
 
-        {/* CARD 5: SECCIÓN DE ESTADO (Solo visible si la cita ya existe y es psicólogo) */}
-        {isEdit && !isPatient && (
-          <Card className="border-border/70 shadow-2xs bg-card">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
-                <CheckCircle2 className="size-4 text-primary" />
-                <span>5. Estado de la Cita</span>
-              </CardTitle>
-              <CardDescription className="text-xs text-muted-foreground">
-                Actualiza el estado administrativo de la consulta según su progreso.
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setStatus(AppointmentStatus.PENDING)}
-                  className={`p-2.5 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
-                    status === AppointmentStatus.PENDING
-                      ? "bg-amber-700 text-white border-amber-700 shadow-2xs dark:bg-amber-400 dark:text-amber-950 dark:border-amber-400"
-                      : "bg-card border-border/70 text-foreground hover:bg-muted/40"
-                  }`}
-                >
-                  <AlertCircle className="size-3.5" />
-                  <span>Pendiente</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setStatus(AppointmentStatus.CONFIRMED)}
-                  className={`p-2.5 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
-                    status === AppointmentStatus.CONFIRMED
-                      ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                      : "bg-card border-border/70 text-foreground hover:bg-muted/40"
-                  }`}
-                >
-                  <CheckCircle2 className="size-3.5" />
-                  <span>Confirmada</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setStatus(AppointmentStatus.COMPLETED)}
-                  className={`p-2.5 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
-                    status === AppointmentStatus.COMPLETED
-                      ? "bg-foreground text-background border-foreground shadow-2xs"
-                      : "bg-card border-border/70 text-foreground hover:bg-muted/40"
-                  }`}
-                >
-                  <Check className="size-3.5" />
-                  <span>Completada</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsCancelModalOpen(true)}
-                  className={`p-2.5 rounded-xl border text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
-                    status === AppointmentStatus.CANCELLED
-                      ? "bg-destructive text-white border-destructive shadow-2xs"
-                      : "bg-card border-border/70 text-destructive hover:bg-destructive/5"
-                  }`}
-                >
-                  <XCircle className="size-3.5" />
-                  <span>Cancelada</span>
-                </button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
         {/* CARD: COSTO DE LA SESIÓN (calculado en vivo) */}
         {previewPrice !== null && (
           <Card className="border-primary/30 bg-primary/[0.03] shadow-2xs">
@@ -1625,21 +1575,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
         {/* FOOTER DE BOTONES DE ACCIÓN */}
         <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-4 border-t border-border/60">
-          {/* Botones secundarios en modo edición */}
           {isEdit ? (
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                onClick={() => setIsCancelModalOpen(true)}
-                disabled={isSubmitting || status === AppointmentStatus.CANCELLED}
-                className="h-10 px-3.5 rounded-xl text-xs font-medium gap-1.5"
-              >
-                <XCircle className="size-4" />
-                <span>Cancelar Cita</span>
-              </Button>
-            </div>
+            <span />
           ) : (
             <Button
               type="button"
@@ -1651,17 +1588,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
             </Button>
           )}
 
-          {/* Botón Principal */}
           <div className="flex items-center gap-2 justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => router.push("/agenda")}
-              className="h-10 px-4 rounded-xl text-xs border-border/80 hidden sm:inline-flex"
-            >
-              Cancelar
-            </Button>
-
             <Button
               type="submit"
               disabled={!formularioCompleto || isSubmitting}
@@ -1694,6 +1621,50 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         </div>
       </form>
 
+      {/* Cancelar es otra cosa que cambiar la fecha: vive aparte, debajo del formulario. */}
+      {isEdit && status !== AppointmentStatus.CANCELLED && (
+        <section
+          aria-labelledby="cancelar-cita-titulo"
+          className="flex flex-col gap-3 rounded-2xl border border-destructive/30 bg-destructive/[0.03] p-5 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <h2 id="cancelar-cita-titulo" className="text-sm font-semibold text-foreground">
+              ¿Ya no puedes asistir?
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Cancelar libera el horario y no pide una fecha nueva. Si solo quieres otro día, cambia la fecha arriba.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => setIsCancelModalOpen(true)}
+            disabled={isSubmitting}
+            className="shrink-0"
+          >
+            <XCircle />
+            Cancelar cita
+          </Button>
+        </section>
+      )}
+
+      <Dialog open={unsaved.pendingHref !== null} onOpenChange={(open) => !open && unsaved.stay()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Tienes cambios sin guardar</DialogTitle>
+            <DialogDescription>Si sales ahora se pierde lo que cambiaste en esta cita. ¿Qué quieres hacer?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={unsaved.leave}>
+              Salir sin guardar
+            </Button>
+            <Button type="button" onClick={unsaved.stay}>
+              Continuar editando
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* MODAL DE CANCELACIÓN (PIDE MOTIVO OBLIGATORIO) */}
       <Dialog open={isCancelModalOpen} onOpenChange={setIsCancelModalOpen}>
         <DialogContent className="sm:max-w-md p-6 bg-card border-border/80">
@@ -1705,24 +1676,25 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               Cancelar Cita
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Para cancelar esta sesión clínica, ingresa obligatoriamente el motivo para el registro histórico del paciente.
+Elige el motivo. Se le avisa a la otra parte y queda en el historial de la cita.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3 py-2">
             <div className="space-y-1">
-              <label htmlFor="cancel-reason-textarea" className="text-xs font-semibold text-foreground block">
-                Motivo de cancelación <span className="text-destructive">*</span>
-              </label>
-              <Textarea
-                id="cancel-reason-textarea"
-                placeholder="Ej. Paciente notificó incompatibilidad laboral con 24h de anticipación..."
+              <p className="text-xs font-semibold text-foreground">Motivo de cancelación</p>
+              <ParentescoSelect
                 value={cancellationReason}
-                onChange={(e) => {
-                  setCancellationReason(e.target.value)
+                onChange={(value) => {
+                  setCancellationReason(value)
                   if (cancelError) setCancelError("")
                 }}
-                className="min-h-[85px] rounded-xl text-xs"
+                opciones={MOTIVOS_DE_CAMBIO}
+                placeholder="Elige el motivo"
+                ariaLabel="Motivo de cancelación"
+                otroPlaceholder="Escribe el motivo"
+                maxLength={200}
+                invalid={Boolean(cancelError)}
               />
               {cancelError && (
                 <p role="alert" className="text-xs text-destructive font-medium">{cancelError}</p>
@@ -1743,7 +1715,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               onClick={() => setIsCancelModalOpen(false)}
               className="h-9 rounded-xl border-border/80 text-xs"
             >
-              Volver
+              Mantener cita
             </Button>
             <Button
               type="button"
@@ -1752,7 +1724,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               disabled={isSubmitting}
               className="h-9 rounded-xl text-xs font-semibold"
             >
-              {isSubmitting ? "Cancelando..." : "Confirmar Cancelación"}
+              {isSubmitting ? "Cancelando…" : "Cancelar cita"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1772,7 +1744,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
               <RefreshCw className="size-5" />
             </div>
             <DialogTitle className="text-lg font-heading font-semibold text-foreground">
-              Reagendar cita
+              Solicitar cambio de fecha
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
               {initialAppointment && rescheduleDraft
@@ -1780,6 +1752,20 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                 : "Tu cita actual se cancelará y enviaremos una solicitud con el nuevo horario."}
             </DialogDescription>
           </DialogHeader>
+
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-foreground">¿Por qué cambias la fecha?</p>
+            <ParentescoSelect
+              value={changeReason}
+              onChange={setChangeReason}
+              opciones={MOTIVOS_DE_CAMBIO}
+              placeholder="Elige el motivo"
+              ariaLabel="Motivo del cambio de fecha"
+              otroPlaceholder="Escribe el motivo"
+              maxLength={200}
+              disabled={isSubmitting}
+            />
+          </div>
 
           <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-xs border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900">
             La franja actual se liberará de inmediato. Si la solicitud no se acepta, podrás pedir otro horario.
@@ -1798,7 +1784,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
             <Button
               type="button"
               onClick={handleConfirmReschedule}
-              disabled={isSubmitting}
+              disabled={isSubmitting || changeReason.trim().length < 3}
               className="h-9 rounded-xl text-xs font-semibold"
             >
               {isSubmitting ? "Enviando..." : "Solicitar cambio"}
@@ -1814,8 +1800,11 @@ export function AppointmentForm(props: AppointmentFormProps) {
   return (
     <React.Suspense
       fallback={
-        <div className="flex h-64 items-center justify-center rounded-2xl border border-border/60 bg-card p-8 text-center text-sm text-muted-foreground">
-          Cargando formulario de cita...
+        <div className="mx-auto max-w-6xl space-y-6" aria-busy="true" aria-label="Cargando formulario de cita">
+          <Skeleton className="h-9 w-56" />
+          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="h-72 rounded-2xl" />
+          <Skeleton className="h-48 rounded-2xl" />
         </div>
       }
     >

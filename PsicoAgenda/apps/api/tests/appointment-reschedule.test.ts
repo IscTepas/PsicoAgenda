@@ -124,7 +124,7 @@ describe("rescheduleAppointmentRequest", () => {
       estado: "CANCELADA",
       cancelada_por_id: PATIENT_USER_ID,
     });
-    expect(String(cancel.data.motivo_cancelacion)).toContain("Reagendamiento");
+    expect(String(cancel.data.motivo_cancelacion)).toContain("Cambio de fecha");
     expect(cancel.data.cancelada_en).toBeInstanceOf(Date);
 
     const created = lastCallArg(prismaMock.solicitudes_cita.create) as {
@@ -151,7 +151,7 @@ describe("rescheduleAppointmentRequest", () => {
       pacienteId: PATIENT_ID,
       psicologoId: PSYCH_ID,
     });
-    expect(String(avisoCancelacion?.motivoCancelacion)).toContain("Reagendamiento");
+    expect(String(avisoCancelacion?.motivoCancelacion)).toContain("Cambio de fecha");
 
     const llamadaSolicitud = notificar.mock.calls[1] as unknown[] | undefined;
     expect(llamadaSolicitud?.[0]).toBe("SOLICITUD_CREADA");

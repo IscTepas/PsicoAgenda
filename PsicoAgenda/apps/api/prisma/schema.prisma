@@ -127,6 +127,7 @@ model entradas_bitacora {
   expedientes_clinicos expedientes_clinicos  @relation(fields: [expediente_id], references: [id])
   psicologos           psicologos            @relation(fields: [psicologo_id], references: [id])
   revisiones_bitacora  revisiones_bitacora[]
+  tareas_sesion        tareas_sesion[]
 
   @@index([cita_id])
   @@index([expediente_id, fecha_sesion])
@@ -222,8 +223,26 @@ model pacientes {
   pacientes_tutores          pacientes_tutores[]
   usuarios                   usuarios                     @relation(fields: [usuario_id], references: [id])
   solicitudes_cita           solicitudes_cita[]
+  tareas_sesion              tareas_sesion[]
 
   @@index([psicologo_id])
+}
+
+/// Tareas que la psicóloga deja en la hoja de bitácora de una sesión; el paciente las marca como hechas.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tareas_sesion {
+  id                String            @id @db.Uuid
+  entrada_id        String            @db.Uuid
+  paciente_id       String            @db.Uuid
+  texto             String
+  orden             Int               @default(0)
+  hecha_en          DateTime?         @db.Timestamptz(3)
+  creado_en         DateTime          @default(now()) @db.Timestamptz(3)
+  entradas_bitacora entradas_bitacora @relation(fields: [entrada_id], references: [id], onDelete: Cascade)
+  pacientes         pacientes         @relation(fields: [paciente_id], references: [id], onDelete: Cascade)
+
+  @@index([entrada_id])
+  @@index([paciente_id, hecha_en])
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -496,6 +515,7 @@ enum tipo_notificacion {
   SOLICITUD
   RECHAZO
   ASISTENCIA
+  TAREA
 }
 
 enum tipo_reporte {

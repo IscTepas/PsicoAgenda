@@ -4,6 +4,9 @@ import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from "reac
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { MisTareas } from "./mis-tareas"
+import { LibretaSesionDialog } from "../components/libreta-sesion"
+import { BorradoresDeBitacora } from "../components/borradores-bitacora"
 import {
   Bell,
   CalendarPlus,
@@ -256,6 +259,7 @@ type SessionUser = ReturnType<typeof useSession>["user"]
 function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const [agendaFilter, setAgendaFilter] = useState<AgendaFilter>("all")
   const [activeSessionAppointment, setActiveSessionAppointment] = useState<Appointment | null>(null)
+  const [libretaDe, setLibretaDe] = useState<Appointment | null>(null)
   const { toast } = useToast()
   const listRef = useRef<HTMLElement>(null)
   const today = useMemo(() => new Date(), [])
@@ -349,13 +353,19 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   }
 
   const handleConfirmAppointment = async (aptId: string) => {
+    const claves = { queryKey: ["appointments", "dashboard"] }
+    const previas = queryClient.getQueriesData<Appointment[]>(claves)
+    queryClient.setQueriesData<Appointment[]>(claves, (lista) =>
+      lista?.map((apt) => (apt.id === aptId ? { ...apt, status: AppointmentStatus.CONFIRMED } : apt)),
+    )
+    setActiveSessionAppointment(null)
     try {
       await appointmentService.changeStatus(aptId, AppointmentStatus.CONFIRMED)
-      await refetchAppointments()
-      setActiveSessionAppointment(null)
+      void refetchAppointments()
       const name = patientById.get(appointments.find((a) => a.id === aptId)?.patientId ?? "")?.name
       showNotice(name ? `Cita con ${name} confirmada.` : "Cita confirmada.")
     } catch {
+      for (const [clave, datos] of previas) queryClient.setQueryData(clave, datos)
       showNotice("No se pudo confirmar la cita. Intenta de nuevo.", "error")
     }
   }
@@ -377,15 +387,17 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   if (!hydrated) {
     return (
       <div className="mx-auto max-w-6xl space-y-8" aria-busy="true">
-        <div className="h-[86px] border-b border-border/60" />
-        <div className="h-[66px] rounded-2xl border border-border/60 bg-card" />
-        <div className="h-[420px] rounded-xl border border-border/70 bg-card" />
+        <div className="h-[86px] rounded-xl bg-muted/50 animate-pulse motion-reduce:animate-none" />
+        <div className="h-[66px] rounded-2xl bg-muted/50 animate-pulse motion-reduce:animate-none" />
+        <div className="h-[420px] rounded-xl bg-muted/50 animate-pulse motion-reduce:animate-none" />
       </div>
     )
   }
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
+      <BorradoresDeBitacora />
+
       {/* Encabezado: saludo + acciones principales */}
       <header className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
         <div className="space-y-1">
@@ -525,6 +537,9 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                           <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
                             <Link href={`/pacientes/${apt.patientId}`}>Expediente</Link>
                           </Button>
+                          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setLibretaDe(apt)}>
+                            Bitácora
+                          </Button>
                           {isViewingToday && !isClosed ? (
                             <Button size="sm" onClick={() => setActiveSessionAppointment(apt)}>
                               {isUnregistered ? "Registrar" : "Iniciar"}
@@ -593,6 +608,18 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
       </div>
 
       {/* Iniciar sesión / registrar asistencia */}
+      {libretaDe && (
+        <LibretaSesionDialog
+          key={libretaDe.id}
+          open
+          onOpenChange={(open) => !open && setLibretaDe(null)}
+          patientId={libretaDe.patientId}
+          patientName={patientById.get(libretaDe.patientId)?.name}
+          appointmentId={libretaDe.id}
+          sessionDate={new Date(libretaDe.startTime)}
+        />
+      )}
+
       {activeSessionAppointment && (
         <Dialog
           open={Boolean(activeSessionAppointment)}
@@ -646,6 +673,19 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                 Unirse a la videollamada
               </Button>
             )}
+
+            {/* La nota de la sesión se escribe (o se retoma) desde aquí, sin buscarla en el expediente. */}
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setLibretaDe(activeSessionAppointment)
+                setActiveSessionAppointment(null)
+              }}
+            >
+              <FileText />
+              Escribir en la bitácora
+            </Button>
 
             <DialogFooter className="gap-2 sm:gap-2">
               <Button variant="ghost" onClick={() => setActiveSessionAppointment(null)}>
@@ -830,9 +870,9 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
   if (!hydrated || isLoading) {
     return (
       <div className="mx-auto max-w-4xl space-y-8" aria-busy="true">
-        <div className="h-[86px] border-b border-border/60" />
-        <div className="h-[66px] rounded-2xl border border-border/60 bg-card" />
-        <div className="h-[420px] rounded-xl border border-border/70 bg-card" />
+        <div className="h-[86px] rounded-xl bg-muted/50 animate-pulse motion-reduce:animate-none" />
+        <div className="h-[66px] rounded-2xl bg-muted/50 animate-pulse motion-reduce:animate-none" />
+        <div className="h-[420px] rounded-xl bg-muted/50 animate-pulse motion-reduce:animate-none" />
       </div>
     )
   }
@@ -863,9 +903,6 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
           <h1 className="font-heading text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
             {friendlyGreeting}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            Aquí tienes tu próxima sesión y lo que necesitas para llegar con todo listo.
-          </p>
         </div>
 
         <div className="hidden items-center gap-2 sm:flex">
@@ -920,6 +957,8 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
           </ul>
         </section>
       )}
+
+      <MisTareas />
 
       {/* Próxima cita */}
       {nextAppointment && nextStart ? (
@@ -1011,7 +1050,7 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
               className="flex-1 sm:flex-none"
               onClick={() => setRescheduleModalOpen(true)}
             >
-              Reagendar
+              Modificar cita
             </Button>
             <Button
               variant="ghost"
@@ -1111,12 +1150,12 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
         Solicitar cita
       </Link>
 
-      {/* Reagendar */}
+      {/* Modificar cita */}
       {nextAppointment && (
         <Dialog open={rescheduleModalOpen} onOpenChange={setRescheduleModalOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle className="text-lg font-semibold tracking-tight">Reagendar cita</DialogTitle>
+              <DialogTitle className="text-lg font-semibold tracking-tight">Modificar cita</DialogTitle>
               <DialogDescription>
                 Tu cita actual es el {formatHeroDate(nextAppointment.startTime).toLowerCase()} a las{" "}
                 {/* La hora ya termina en "p.m.": sin punto extra. */}
