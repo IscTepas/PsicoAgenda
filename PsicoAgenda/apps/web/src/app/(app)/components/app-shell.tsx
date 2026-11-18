@@ -6,9 +6,8 @@ import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import { UserRole } from "@psicoagenda/shared"
 import { Wordmark } from "@/components/brand/wordmark"
-import { motion } from "motion/react"
-import { DesktopSidebar, Sidebar, SidebarLink, useSidebar } from "@/components/ui/sidebar"
-import { Button } from "@/components/ui/button"
+import { SharedLayoutBg } from "@/components/motion/shared-layout-bg"
+import { NotificationsButton } from "./campana-notificaciones"
 import { ToastProvider } from "@/components/toast-provider"
 import { navItemsForRole } from "@/lib/navigation"
 import { borrarTodosLosBorradores } from "@/lib/borradores-bitacora"
@@ -42,24 +41,6 @@ const ICONS_BY_HREF: Record<string, LucideIcon> = {
 
 const SOLO_EN_RIEL = ["/citas"]
 
-const ROLE_LABELS: Record<UserRole, string> = {
-  [UserRole.PSYCHOLOGIST]: "Psicólogo/a",
-  [UserRole.PATIENT]: "Paciente",
-  [UserRole.ADMIN]: "Administrador",
-}
-
-function getInitials(name: string): string {
-  const initials = name
-    .split(" ")
-    .filter(Boolean)
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase()
-
-  return initials || "?"
-}
-
 /** Una sección queda activa también en sus subpáginas (/agenda/nueva → Agenda). */
 function isActivePath(pathname: string, href: string): boolean {
   return pathname === href || (href !== "/dashboard" && pathname.startsWith(`${href}/`))
@@ -68,10 +49,7 @@ function isActivePath(pathname: string, href: string): boolean {
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ToastProvider>
-      {/* Sidebar de Aceternity: se abre al pasar el mouse (o al enfocarla con el teclado). */}
-      <Sidebar>
-        <ShellContent>{children}</ShellContent>
-      </Sidebar>
+      <ShellContent>{children}</ShellContent>
     </ToastProvider>
   )
 }
@@ -79,8 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function ShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
-  const { user, isLoading, logout } = useSession()
-  const { open } = useSidebar()
+  const { user, logout } = useSession()
 
   const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
   const filteredNav = React.useMemo(() => navItemsForRole(effectiveRole), [effectiveRole])
@@ -93,7 +70,6 @@ function ShellContent({ children }: { children: React.ReactNode }) {
     void logout().finally(() => router.push("/login"))
   }
 
-  const displayName = user?.name || "Tu cuenta"
 
   return (
     <>
@@ -105,145 +81,87 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         Saltar al contenido
       </a>
 
-      {/* Escritorio: barra lateral. En móvil manda la barra inferior de abajo. */}
-      <DesktopSidebar className="justify-between gap-6">
-        <div className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
-          <Link
-            href="/dashboard"
-            // Posición fija: 12 del riel + 8 + 16 = 36, el centro del riel contraído.
-            className="flex h-10 min-w-0 items-center gap-2.5 rounded-lg px-2 font-semibold tracking-tight text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
-          >
-            <Image
-              src="/images/psicoagenda-icon.png"
-              alt=""
-              width={32}
-              height={28}
-              className="h-7 w-8 shrink-0 object-contain"
-              priority
-            />
-            <motion.span
-              initial={false}
-              animate={{ opacity: open ? 1 : 0 }}
-              transition={{ duration: open ? 0.18 : 0.08, delay: open ? 0.06 : 0 }}
-            >
-              <Wordmark className="whitespace-nowrap text-[15px]" />
-            </motion.span>
-          </Link>
-
-          <nav aria-label="Secciones" className="mt-6 flex flex-col gap-1">
-            {/* Perfil y configuración viven en la tarjeta de cuenta de abajo, no en la lista. */}
-            {filteredNav.filter((item) => item.href !== "/perfil").map((item) => {
-              const Icon = ICONS_BY_HREF[item.href] ?? PanelLeft
-              return (
-                <SidebarLink
-                  key={item.href}
-                  active={isActivePath(pathname, item.href)}
-                  badge={badgeOf(item.href)}
-                  link={{ label: item.label, href: item.href, icon: <Icon className="size-[18px] shrink-0" /> }}
-                />
-              )
-            })}
-          </nav>
-        </div>
-
-        {/* Tarjeta de cuenta (estilo Discord): la foto y el nombre solo informan; el engrane lleva a la configuración. */}
-        <div
-          // Posición fija como el resto: la foto queda en 12 + 8 + 16 = 36 con el riel contraído.
-          className="flex items-center gap-2.5 overflow-hidden rounded-xl bg-muted/40 p-2"
-          title={!open ? displayName : undefined}
-        >
-          <span className="relative shrink-0">
-            {user?.photoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- la foto llega como data URL del perfil
-              <img
-                src={user.photoUrl}
-                alt=""
-                className="size-8 rounded-full border border-border/60 object-cover"
-              />
-            ) : (
-              <span className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                {getInitials(displayName)}
-              </span>
-            )}
-            {/* Sesión activa */}
-            <span
-              aria-hidden="true"
-              className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-card bg-emerald-500"
-            />
-          </span>
-          <motion.span
-            initial={false}
-            animate={{ opacity: open ? 1 : 0 }}
-            transition={{ duration: open ? 0.18 : 0.08, delay: open ? 0.06 : 0 }}
-            className="min-w-0 flex-1"
-          >
-            <span className="block truncate text-xs font-semibold text-foreground">
-              {isLoading ? "Cargando…" : displayName}
-            </span>
-            <span className="block truncate text-[11px] text-muted-foreground">{ROLE_LABELS[effectiveRole]}</span>
-          </motion.span>
-          <motion.span
-            initial={false}
-            animate={{ opacity: open ? 1 : 0 }}
-            transition={{ duration: open ? 0.18 : 0.08, delay: open ? 0.06 : 0 }}
-            className={cn("shrink-0", !open && "pointer-events-none")}
-          >
-            <Link
-              href="/perfil"
-              aria-label="Configuración"
-              title="Configuración"
-              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
-            >
-              <Settings className="size-[18px]" />
-            </Link>
-          </motion.span>
-          <motion.span
-            initial={false}
-            animate={{ opacity: open ? 1 : 0 }}
-            transition={{ duration: open ? 0.18 : 0.08, delay: open ? 0.06 : 0 }}
-            className={cn("shrink-0", !open && "pointer-events-none")}
-          >
-            <button
-              type="button"
-              onClick={handleLogout}
-              aria-label="Cerrar sesión"
-              title="Cerrar sesión"
-              tabIndex={open ? 0 : -1}
-              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
-            >
-              <LogOut className="size-[18px]" />
-            </button>
-          </motion.span>
-        </div>
-      </DesktopSidebar>
-
-      {/* Contenido */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="material scroll-edge sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b md:hidden border-border/40 bg-background/75 px-4 backdrop-blur-xl backdrop-saturate-150 lg:px-6">
-          <Link href="/dashboard" aria-label="Inicio" className="flex items-center gap-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
-            <Image src="/images/psicoagenda-icon.png" alt="" width={28} height={24} className="h-6 w-7 object-contain" />
-            <Wordmark className="text-[15px]" />
-          </Link>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-11 rounded-lg text-muted-foreground hover:text-foreground"
-            onClick={handleLogout}
-            aria-label="Cerrar sesión"
-            title="Cerrar sesión"
-          >
-            <LogOut className="size-4" />
-          </Button>
+        {/* Cabecera flotante: logo, secciones al centro (la pastilla sigue al cursor) y la cuenta a la derecha.
+            En móvil las secciones viven en la barra inferior. */}
+        {/* La franja de la cabecera no recibe clics (lo de abajo sigue usable); solo la cápsula sí.
+            El degradado esconde el contenido que pasa por debajo al bajar en la página. */}
+        <header className="pointer-events-none sticky top-0 z-30 print:hidden bg-gradient-to-b from-background from-60% to-transparent px-3 pb-4 pt-3 md:px-6">
+          <div className="material pointer-events-auto mx-auto flex h-14 max-w-6xl items-center justify-between gap-3 rounded-full border border-border/50 bg-background/80 pl-4 pr-2 shadow-sm backdrop-blur-xl backdrop-saturate-150">
+            <Link
+              href="/dashboard"
+              aria-label="Inicio"
+              className="flex shrink-0 items-center gap-2 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+            >
+              <Image src="/images/psicoagenda-icon.png" alt="" width={28} height={24} className="h-6 w-7 object-contain" priority />
+              <Wordmark className="whitespace-nowrap text-[15px]" />
+            </Link>
+
+            <nav aria-label="Secciones" className="hidden min-w-0 md:block">
+              <SharedLayoutBg
+                className="flex-row items-center"
+                inset={0}
+                pillClassName="rounded-full bg-muted"
+              >
+                {filteredNav
+                  // La campana va a la derecha, junto a cerrar sesión.
+                  .filter((item) => item.href !== "/notificaciones")
+                  .map((item) => {
+                    const Icon = ICONS_BY_HREF[item.href] ?? PanelLeft
+                    const isActive = isActivePath(pathname, item.href)
+                    const badge = badgeOf(item.href)
+                    return (
+                      <div key={item.href}>
+                        <Link
+                          href={item.href}
+                          aria-current={isActive ? "page" : undefined}
+                          title={item.label}
+                          className={cn(
+                            "flex h-10 items-center gap-2 rounded-full px-3.5 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/40",
+                            isActive ? "text-primary" : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          <span className="relative">
+                            <Icon className="size-[18px] shrink-0" aria-hidden="true" />
+                            {badge > 0 && (
+                              <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-700 px-1 text-[10px] font-semibold tabular-nums text-white ring-2 ring-background dark:bg-amber-400 dark:text-amber-950">
+                                {badge}
+                                <span className="sr-only"> pendientes</span>
+                              </span>
+                            )}
+                          </span>
+                          {/* Con poco ancho solo íconos; desde pantallas grandes, con su nombre. */}
+                          <span className="hidden lg:inline">{item.label}</span>
+                        </Link>
+                      </div>
+                    )
+                  })}
+              </SharedLayoutBg>
+            </nav>
+
+            <div className="flex shrink-0 items-center gap-1">
+              <NotificationsButton className="rounded-full" />
+              <button
+                type="button"
+                onClick={handleLogout}
+                aria-label="Cerrar sesión"
+                title="Cerrar sesión"
+                className="flex size-10 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-3 focus-visible:ring-ring/40"
+              >
+                <LogOut className="size-[18px]" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
         </header>
 
-        <main id="contenido" tabIndex={-1} className="flex-1 scroll-mt-14 p-4 pb-24 outline-none md:scroll-mt-0 md:px-6 md:pt-8 md:pb-8 lg:px-8">
+        <main id="contenido" tabIndex={-1} className="flex-1 scroll-mt-20 p-4 pb-24 outline-none md:px-6 md:pt-4 md:pb-8 lg:px-8">
           {children}
         </main>
       </div>
 
       {/* Barra inferior (móvil), material translúcido con margen para la zona segura */}
       <nav
-        className="material fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-border/60 bg-background/80 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl backdrop-saturate-150 md:hidden"
+        className="material fixed inset-x-0 bottom-0 z-40 flex print:hidden items-stretch justify-around border-t border-border/60 bg-background/80 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl backdrop-saturate-150 md:hidden"
         aria-label="Secciones"
       >
         {/* La barra solo tiene lugar para seis: los ajustes de citas se abren desde Configuración. */}

@@ -63,6 +63,8 @@
 .day.today .dayNumber::after { content: ""; position: absolute; top: calc(100% + 4px); left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: currentColor; }
 .day.selected, .day.today { font-weight: 500; }
 .day.selected { color: var(--accent-foreground); }
+/* El día elegido se rellena también por sí mismo (tras el deslizamiento del disco): si la animación no corre, igual queda marcado. */
+.day.selected::before { background: var(--accent); transition-delay: 220ms; }
 .day:disabled { cursor: default; color: var(--text-muted); }
 .day:disabled .dayNumber { opacity: .42; }
 .day.outside:disabled .dayNumber { opacity: .3; }

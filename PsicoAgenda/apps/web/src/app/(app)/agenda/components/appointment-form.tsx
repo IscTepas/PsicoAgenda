@@ -633,21 +633,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
       : ""
   }, [selectedDateEfectiva, availableHours, selectedHour, slotAvailability])
 
-  // El formulario está completo cuando hay paciente, fecha y una franja libre.
-  // El motivo también cuenta en las altas nuevas: si el botón se encendiera sin
-  // motivo, al pulsarlo solo saldría el error «Elige al menos un motivo», y la
-  // persona pensaría que «Guardar cita» no funciona.
-  const motivoCompleto = !errorDeMotivo(selectedReasons, reason, !isEdit)
-  const formularioCompleto =
-    Boolean(lockedPatientId) &&
-    Boolean(selectedDateEfectiva) &&
-    Boolean(selectedHourEfectivo) &&
-    Boolean(modality) &&
-    availableHours.includes(selectedHourEfectivo) &&
-    (slotAvailability[selectedHourEfectivo]?.available ?? false) &&
-    !dayAppointmentsLoading &&
-    motivoCompleto
-
   // Primer día futuro con franjas en el horario del profesional: se sugiere
   // cuando la fecha elegida no tiene disponibilidad (p. ej. un sábado).
   const nextAvailableDate = React.useMemo(() => {
@@ -682,6 +667,22 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     .flatMap((g) => g.reasons)
     .filter((r) => isReasonAllowedFor(r.code, isMinorPatient))
   const selectedReasons = reasonOptions.filter((r) => reasonIds.includes(r.id))
+
+  // El formulario está completo cuando hay paciente, fecha y una franja libre.
+  // El motivo también cuenta en las altas nuevas: si el botón se encendiera sin
+  // motivo, al pulsarlo solo saldría el error «Elige al menos un motivo», y la
+  // persona pensaría que «Guardar cita» no funciona.
+  const motivoCompleto = !errorDeMotivo(selectedReasons, reason, !isEdit)
+  const formularioCompleto =
+    Boolean(lockedPatientId) &&
+    Boolean(selectedDateEfectiva) &&
+    Boolean(selectedHourEfectivo) &&
+    Boolean(modality) &&
+    availableHours.includes(selectedHourEfectivo) &&
+    (slotAvailability[selectedHourEfectivo]?.available ?? false) &&
+    !dayAppointmentsLoading &&
+    motivoCompleto
+
   const selectedReasonIds = selectedReasons.map((r) => r.id)
   const needsReasonText = selectedReasons.some((r) => r.requiresText)
   // Una cita histórica sin motivos del catálogo no se toca si no se eligió ninguno;

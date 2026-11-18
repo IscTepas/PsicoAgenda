@@ -274,6 +274,8 @@ export interface SelectTriggerProps {
   id?: string;
   "aria-describedby"?: string;
   "aria-invalid"?: boolean | "true" | "false";
+  /** Nombre accesible cuando no hay una etiqueta visible que lo dé. */
+  "aria-label"?: string;
 }
 
 export function SelectTrigger({
@@ -282,6 +284,7 @@ export function SelectTrigger({
   id,
   "aria-describedby": describedBy,
   "aria-invalid": invalid,
+  "aria-label": ariaLabel,
 }: SelectTriggerProps) {
   const ctx = useSelectContext("SelectTrigger");
   const { setTriggerId } = ctx;
@@ -312,6 +315,7 @@ export function SelectTrigger({
       aria-describedby={describedBy}
       aria-invalid={invalid}
       onClick={() => ctx.setOpen(!ctx.open)}
+      aria-label={ariaLabel}
       onKeyDown={(event) => {
         if (
           !ctx.open &&

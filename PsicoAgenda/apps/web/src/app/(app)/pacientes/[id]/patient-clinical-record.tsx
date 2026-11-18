@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -86,9 +87,12 @@ function calculateAge(birthDate?: Date): number | null {
 
 interface PatientClinicalRecordProps {
   patientId: string
+  /** Dentro de la ficha de Pacientes: sin "Volver" ni la cabecera con nombre (ya están arriba). */
+  embebido?: boolean
 }
 
-export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps) {
+export function PatientClinicalRecord({ patientId, embebido = false }: PatientClinicalRecordProps) {
+  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = React.useState<string>("datos")
   const [patient, setPatient] = React.useState<Patient | null>(null)
   const [appointments, setAppointments] = React.useState<Appointment[]>([])
@@ -116,7 +120,12 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
       setLoadError(null)
       try {
         const [patientRow, appointmentRows, logRows, recordRow] = await Promise.all([
-          patientService.get(patientId),
+          // Misma clave que la ficha de Pacientes: si ya lo pidió (o lo está pidiendo), no se repite.
+          queryClient.fetchQuery({
+            queryKey: ["patients", "detalle", patientId],
+            queryFn: () => patientService.get(patientId),
+            staleTime: 60_000,
+          }),
           appointmentService.list({ patientId }),
           logEntryService.list(patientId),
           clinicalRecordService.get(patientId).catch(() => null),
@@ -141,7 +150,7 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
     return () => {
       cancelled = true
     }
-  }, [patientId])
+  }, [patientId, queryClient])
 
   const hydrated = useHydrated()
   const age = hydrated && patient ? calculateAge(patient.birthDate) : null
@@ -173,6 +182,15 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
     navigator.clipboard.writeText(phone)
     setCopiedPhone(true)
     setTimeout(() => setCopiedPhone(false), 2000)
+  }
+
+  if (isLoading && embebido) {
+    return (
+      <div className="space-y-5" aria-busy="true" aria-label="Cargando expediente">
+        <div className="h-9 w-72 rounded-full bg-muted/50 animate-pulse motion-reduce:animate-none" />
+        <div className="h-40 rounded-xl bg-muted/40 animate-pulse motion-reduce:animate-none" />
+      </div>
+    )
   }
 
   if (isLoading) {
@@ -210,9 +228,15 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-16">
+    <div
+      className={
+        embebido
+          ? "space-y-5 [&_[data-slot=card]]:gap-3 [&_[data-slot=card]]:rounded-none [&_[data-slot=card]]:border-0 [&_[data-slot=card]]:bg-transparent [&_[data-slot=card]]:py-0 [&_[data-slot=card]]:shadow-none [&_[data-slot=card]]:ring-0 [&_[data-slot=card-content]]:px-0 [&_[data-slot=card-header]]:border-0 [&_[data-slot=card-header]]:bg-transparent [&_[data-slot=card-header]]:px-0 [&_[data-slot=card-header]]:pb-0"
+          : "space-y-6 max-w-5xl mx-auto pb-16"
+      }
+    >
       {/* 1. NAVEGACIÓN SUPERIOR / RETORNO */}
-      <div className="flex items-center justify-between">
+      <div className={embebido ? "hidden" : "flex items-center justify-between"}>
         <Button
           variant="ghost"
           size="sm"
@@ -255,9 +279,12 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
       )}
 
       {/* 2. CABECERA DE PERFIL DEL PACIENTE */}
+      {embebido ? (
+        patient.isMinor && <GuardiansCard patientId={patient.id} initial={patient.guardians ?? []} />
+      ) : (
       <Card className="border-border/70 shadow-2xs bg-card overflow-hidden">
         <CardContent className="p-6">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+          <div className={embebido ? "hidden" : "flex flex-col md:flex-row md:items-start md:justify-between gap-6"}>
             {/* Información principal del Paciente */}
             <div className="flex items-start gap-4">
               <div className="size-16 rounded-2xl bg-primary/10 text-primary font-bold text-xl flex items-center justify-center shrink-0 shadow-2xs font-heading">
@@ -334,7 +361,7 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
           </div>
 
           {/* CAMPO RESALTADO: CONTACTO DE EMERGENCIA (Y TUTOR LEGAL) */}
-          <div className="mt-6 pt-5 border-t border-border/60 grid sm:grid-cols-2 gap-3">
+          <div className={embebido ? "grid sm:grid-cols-2 gap-3" : "mt-6 pt-5 border-t border-border/60 grid sm:grid-cols-2 gap-3"}>
             {/* Contacto de Emergencia Resaltado */}
             <div className="p-3.5 rounded-xl border border-amber-300/80 bg-amber-50/50 dark:bg-amber-950/20 dark:border-amber-800/60 flex items-start justify-between gap-3">
               <div className="space-y-1 min-w-0">
@@ -392,7 +419,7 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
                 <div className="space-y-0.5">
                   <span className="text-xs font-medium text-muted-foreground">Ubicación y Domicilio</span>
                   <p className="text-xs font-medium text-foreground">
-                    {patient.address || "Ciudad de México, México"}
+                    {patient.address || "Sin domicilio registrado"}
                   </p>
                 </div>
                 <MapPin className="size-4 text-muted-foreground" />
@@ -401,20 +428,21 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
           </div>
         </CardContent>
       </Card>
+      )}
 
       {/* 3. NAVEGACIÓN INTERNA (PESTAÑAS) */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-2">
+        <div className={embebido ? "flex items-center" : "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/60 pb-2"}>
           {/* El indicador (color primario) se desliza entre pestañas; la lista hace scroll si no cabe. */}
           <TabsList className="border border-border/60" wrapperClassName="min-w-0 max-w-full">
             <TabsTrigger value="datos" className="text-xs font-semibold">
-              Información General y Antecedentes
+              Antecedentes
             </TabsTrigger>
             <TabsTrigger value="bitacora" className="text-xs font-semibold">
-              Bitácora de Sesiones ({logs.length})
+              Bitácora ({logs.length})
             </TabsTrigger>
             <TabsTrigger value="citas" className="text-xs font-semibold">
-              Historial de Citas ({appointments.length})
+              Citas ({appointments.length})
             </TabsTrigger>
           </TabsList>
 
@@ -629,11 +657,6 @@ export function PatientClinicalRecord({ patientId }: PatientClinicalRecordProps)
                     >
                       <FileText className="size-3.5 mr-1 text-primary" />
                       Documentar en Bitácora
-                    </Button>
-                    <Button variant="ghost" size="sm" asChild className="h-8 text-xs">
-                      <Link href={`/agenda/${apt.id}`}>
-                        Gestionar
-                      </Link>
                     </Button>
                   </div>
                 </CardContent>

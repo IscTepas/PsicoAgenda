@@ -2,13 +2,11 @@
 
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { MisTareas } from "./mis-tareas"
 import { LibretaSesionDialog } from "../components/libreta-sesion"
 import { BorradoresDeBitacora } from "../components/borradores-bitacora"
 import {
-  Bell,
   CalendarPlus,
   ChevronRight,
   FileText,
@@ -24,15 +22,11 @@ import {
   UserRole,
   type Appointment,
   type AppointmentRequest,
-  type Notification,
   type PatientProfile,
   type PsychologistProfile,
 } from "@psicoagenda/shared"
-import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs"
 import { Calendar } from "@/components/arc/calendar/calendar"
-import { NotificationStack } from "@/components/motion/notification-stack"
 import { PRACTICE } from "@/app/home-content"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/toast-provider"
 import {
@@ -44,11 +38,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
-import { usePendingResponses } from "@/lib/use-pending-responses"
 import { useHydrated } from "@/lib/use-hydrated"
 import { cn } from "@/lib/utils"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
-import { appointmentRequestService, appointmentService, notificationService, patientService, psychologistService } from "@/services"
+import { appointmentRequestService, appointmentService, patientService, psychologistService } from "@/services"
 import { useDashboardData } from "./use-dashboard-data"
 
 const MINUTE = 60_000
@@ -145,95 +138,6 @@ function ModalityLabel({ modality }: { modality: AppointmentModality }) {
   )
 }
 
-/**
- * Campana del inicio: abre debajo una pila animada con los títulos de los avisos
- * sin leer (o de los recientes si todo está leído) que se despliega hacia abajo;
- * "Ver todas" lleva a Notificaciones.
- */
-function NotificationsButton({
-  className,
-  notifications: propNotifications,
-}: {
-  className?: string
-  notifications?: Notification[]
-}) {
-  const router = useRouter()
-  const [open, setOpen] = useState(false)
-  const { data: queryNotifications = [] } = useQuery<Notification[]>({
-    queryKey: ["notifications", "bell"],
-    queryFn: () => notificationService.list(undefined, 20),
-    staleTime: 30_000,
-    enabled: propNotifications === undefined,
-  })
-  const notifications = propNotifications ?? queryNotifications
-  const unread = notifications.filter((n) => !n.readAt)
-  const items = unread.length > 0 ? unread : notifications.slice(0, 3)
-  const count = unread.length
-  // A la psicóloga, lo que espera respuesta pesa más que lo no leído: se marca en ámbar.
-  const { user } = useSession()
-  const { count: pending } = usePendingResponses(user?.role === UserRole.PSYCHOLOGIST)
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "relative inline-flex size-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:scale-[0.97] data-[state=open]:bg-muted data-[state=open]:text-foreground",
-            className
-          )}
-          aria-label={pending > 0 ? `Notificaciones (${pending} por responder)` : `Notificaciones (${count} sin leer)`}
-          title="Notificaciones"
-        >
-          <Bell className="size-[18px]" />
-          {(pending > 0 || count > 0) && (
-            <span
-              className={cn(
-                "absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold tabular-nums ring-2 ring-background",
-                // amber-700 con blanco pasa 4.5:1; el 500 no llegaba a 2.2:1.
-                pending > 0 ? "bg-amber-700 text-white dark:bg-amber-400 dark:text-amber-950" : "bg-primary text-primary-foreground"
-              )}
-            >
-              {pending > 0 ? pending : count}
-            </span>
-          )}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        sideOffset={8}
-        className="w-max max-w-[min(18rem,calc(100vw-2rem))] border-0 bg-transparent p-0 shadow-none"
-      >
-        {items.length > 0 ? (
-          <NotificationStack
-            direction="down"
-            // Solo el título de cada aviso; el detalle está en Notificaciones.
-            items={items.map((n) => ({ id: n.id, title: <span title={n.subject}>{n.subject}</span> }))}
-            maxVisible={3}
-            showCount={false}
-            collapsedLabel="Ver todas"
-            expandedLabel="Ver todas"
-            onViewAll={() => {
-              setOpen(false)
-              router.push("/notificaciones")
-            }}
-            // Ancho según el texto (con tope en el panel), no un ancho fijo.
-            className="w-max max-w-full"
-            // Todas las tarjetas del mismo alto: título en una línea (con "…" si es largo) y relleno compacto.
-            classNames={{ card: "px-3.5", content: "py-2.5", title: "truncate text-sm" }}
-          />
-        ) : (
-          <div className="flex items-center gap-2 rounded-3xl bg-muted px-5 py-6 text-sm font-medium text-muted-foreground">
-            <Bell className="size-4" aria-hidden="true" />
-            Estás al día: no tienes avisos.
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-
 /** Indicador "en vivo": late solo mientras una sesión está en curso. */
 function LiveDot({ pulsing }: { pulsing: boolean }) {
   return (
@@ -248,12 +152,6 @@ function LiveDot({ pulsing }: { pulsing: boolean }) {
 
 type AgendaFilter = "all" | "confirmed" | "pending"
 
-const FILTER_EMPTY_COPY: Record<AgendaFilter, string> = {
-  all: "No hay citas este día",
-  confirmed: "No hay citas confirmadas este día",
-  pending: "No hay citas por confirmar este día",
-}
-
 type SessionUser = ReturnType<typeof useSession>["user"]
 
 function PsychologistDashboardView({ user }: { user: SessionUser }) {
@@ -266,11 +164,22 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const fromToday = useMemo(() => startOfDay(today), [today])
   const toNextDays = useMemo(() => new Date(today.getTime() + 30 * DAY), [today])
 
-  const { appointments, patients, notifications } = useDashboardData({ from: fromToday, to: toNextDays })
+  // Desde 60 días atrás: tocar un día pasado en el calendario también muestra sus citas.
+  const desdeHistorial = useMemo(() => new Date(fromToday.getTime() - 60 * DAY), [fromToday])
+  const { appointments, patients } = useDashboardData({ from: desdeHistorial, to: toNextDays })
 
   const queryClient = useQueryClient()
   const refetchAppointments = () =>
     queryClient.invalidateQueries({ queryKey: ["appointments", "dashboard"] })
+
+  // Las siguientes 5 citas después de hoy (sin canceladas): "Próximos días".
+  const proximosDias = useMemo(() => {
+    const manana = new Date(fromToday.getTime() + DAY)
+    return appointments
+      .filter((apt) => new Date(apt.startTime) >= manana && apt.status !== AppointmentStatus.CANCELLED)
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+      .slice(0, 5)
+  }, [appointments, fromToday])
 
   const patientById = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient])),
@@ -313,8 +222,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   // Lista: el día elegido en el calendario (hoy por defecto)
   const isViewingToday = isSameDay(selectedCalendarDate, today)
   const dayAppointments = appointmentsOn(selectedCalendarDate)
-  const dayConfirmed = dayAppointments.filter((a) => a.status === AppointmentStatus.CONFIRMED).length
-  const dayPending = dayAppointments.filter((a) => a.status === AppointmentStatus.PENDING).length
   const filteredDayAppointments = dayAppointments.filter((apt) => {
     if (agendaFilter === "confirmed") return apt.status === AppointmentStatus.CONFIRMED
     if (agendaFilter === "pending") return apt.status === AppointmentStatus.PENDING
@@ -378,12 +285,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
     })
   )
 
-  const filters: { value: AgendaFilter; label: string; count: number }[] = [
-    { value: "all", label: "Todas", count: dayAppointments.length },
-    { value: "confirmed", label: "Confirmadas", count: dayConfirmed },
-    { value: "pending", label: "Por confirmar", count: dayPending },
-  ]
-
   if (!hydrated) {
     return (
       <div className="mx-auto max-w-6xl space-y-8" aria-busy="true">
@@ -407,16 +308,8 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
           </h1>
         </div>
 
-        {/* En móvil, notificaciones y reportes ya viven en la barra inferior */}
         <div className="flex items-center gap-2">
-          <NotificationsButton className="hidden sm:inline-flex" notifications={notifications} />
-          <Button asChild variant="ghost" className="hidden text-muted-foreground sm:inline-flex">
-            <Link href="/reportes">
-              <FileText />
-              Generar reporte
-            </Link>
-          </Button>
-          <Button asChild className="flex-1 sm:flex-none">
+          <Button asChild className="flex-1 active:scale-[0.97] sm:flex-none">
             <Link href="/agenda/nueva">
               <Plus />
               Nueva cita
@@ -444,22 +337,11 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
               )}
             </div>
 
-            {/* Control segmentado: el indicador se desliza a la opción elegida */}
-            <Tabs
-              value={agendaFilter}
-              onValueChange={(next) => setAgendaFilter(next as AgendaFilter)}
-              variant="segment"
-              className="self-start @lg:self-auto"
-            >
-              <TabsList aria-label="Filtrar citas del día" className="bg-muted p-1">
-                {filters.map((filter) => (
-                  <TabsTrigger key={filter.value} value={filter.value} className="px-3 py-1.5 text-xs">
-                    {filter.label}
-                    <span className="ml-1.5 tabular-nums opacity-70">{filter.count}</span>
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+            {dayAppointments.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {dayAppointments.length === 1 ? "1 cita" : `${dayAppointments.length} citas`}
+              </p>
+            )}
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-border bg-card">
@@ -556,17 +438,25 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                 })}
               </ul>
             ) : (
-              <div className="space-y-3 px-6 py-12 text-center">
-                <p className="text-sm font-medium text-foreground">{FILTER_EMPTY_COPY[agendaFilter]}</p>
-                <p className="mx-auto max-w-sm text-sm text-muted-foreground">
-                  Elige otro día en el calendario.
+              <div className="space-y-1 px-6 py-10 text-center">
+                <p className="text-sm font-medium text-foreground">
+                  {isViewingToday ? "Hoy no tienes citas." : "Sin citas este día."}
                 </p>
+                {proximosDias[0] && selectedCalendarDate >= fromToday ? (
+                  <p className="text-sm text-muted-foreground">
+                    La siguiente es el {formatShortDate(new Date(proximosDias[0].startTime))} a las{" "}
+                    {formatAppointmentTime(new Date(proximosDias[0].startTime))} con{" "}
+                    {patientById.get(proximosDias[0].patientId)?.name ?? "un paciente"}.
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Elige otro día en el calendario.</p>
+                )}
               </div>
             )}
           </div>
         </section>
 
-        <div className="content-start">
+        <div className="content-start space-y-6">
           {/* Mini-calendario: tocar un día muestra sus citas en la lista */}
           <aside className="space-y-4 rounded-2xl border border-border bg-card p-5">
             <Calendar
@@ -597,6 +487,37 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
               </Link>
             </div>
           </aside>
+
+          {/* Próximos días: lo que viene después de hoy. */}
+      {proximosDias.length > 0 && (
+        <section aria-labelledby="proximos-dias" className="space-y-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 id="proximos-dias" className="text-sm font-semibold text-foreground">
+              Próximos días
+            </h2>
+          </div>
+          <ul className="divide-y divide-border/50 overflow-hidden rounded-2xl border border-border/60 bg-card">
+            {proximosDias.map((apt) => (
+              <li key={apt.id}>
+                <Link
+                  href={`/agenda/${apt.id}`}
+                  className="flex items-center gap-3 px-4 py-2.5 outline-none transition-colors duration-150 hover:bg-muted/40 focus-visible:bg-muted/50"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {patientById.get(apt.patientId)?.name ?? "Paciente"}
+                    </span>
+                    <span className="block text-xs tabular-nums text-muted-foreground">
+                      {formatShortDate(new Date(apt.startTime))} · {formatAppointmentTime(new Date(apt.startTime))}
+                    </span>
+                  </span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
         </div>
       </div>
@@ -900,7 +821,6 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
         </div>
 
         <div className="hidden items-center gap-2 sm:flex">
-          <NotificationsButton />
           <Button asChild>
             <Link href="/agenda/nueva">
               <Plus />
