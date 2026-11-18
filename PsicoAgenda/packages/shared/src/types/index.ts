@@ -1,3 +1,5 @@
+import type { PricingRates } from "../pricing/index.js";
+
 export enum UserRole {
   PSYCHOLOGIST = "psychologist",
   PATIENT = "patient",
@@ -94,6 +96,8 @@ export interface Psychologist extends User {
   licenseNumber: string;
   specialty?: string;
   bio?: string;
+  /** Tarifas con las que se calcula el costo de sus citas. */
+  rates: PricingRates;
 }
 
 /** Preferencias de cuenta que aplican a cualquier rol. */

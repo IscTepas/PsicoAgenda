@@ -17,7 +17,7 @@ const { prismaMock } = vi.hoisted(() => {
     count: vi.fn(),
   };
   const pacientes = { findUnique: vi.fn(), findFirst: vi.fn() };
-  const psicologos = { findUnique: vi.fn() };
+  const psicologos = { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() };
   const bloqueos_agenda = { findFirst: vi.fn() };
   const pagos_honorarios = { create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() };
 
@@ -108,10 +108,20 @@ function paymentRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// Tarifas por defecto del perfil (las de la migración).
+const TARIFAS = {
+  tarifa_adulto: 800,
+  tarifa_menor: 1000,
+  recargo_mismo_dia_pct: 30,
+  recargo_mismo_dia_monto: null,
+  descuento_virtual: 100,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.$transaction.mockImplementation((cb: (tx: unknown) => unknown) => cb(prismaMock));
   prismaMock.psicologos.findUnique.mockResolvedValue({ id: PSYCH_ID });
+  prismaMock.psicologos.findUniqueOrThrow.mockResolvedValue(TARIFAS);
   prismaMock.pacientes.findUnique.mockResolvedValue({ id: PATIENT_ID, psicologo_id: null });
   prismaMock.citas.findFirst.mockResolvedValue(null);
   prismaMock.bloqueos_agenda.findFirst.mockResolvedValue(null);
@@ -227,6 +237,41 @@ describe("createAppointment", () => {
     ).rejects.toMatchObject({ statusCode: 403 });
 
     expect(prismaMock.citas.create).not.toHaveBeenCalled();
+  });
+
+  it("cobra con las tarifas que configuró el psicólogo", async () => {
+    prismaMock.psicologos.findUniqueOrThrow.mockResolvedValue({ ...TARIFAS, tarifa_adulto: 950, descuento_virtual: 150 });
+    prismaMock.citas.count.mockResolvedValue(0);
+    prismaMock.citas.create.mockResolvedValue(appointmentRow());
+
+    await createAppointment(psychologist, {
+      patientId: PATIENT_ID,
+      startTime: START,
+      durationMinutes: 60,
+      modality: AppointmentModality.VIRTUAL,
+    });
+
+    const { data } = lastCallArg(prismaMock.citas.create) as { data: { precio?: number } };
+    expect(data.precio).toBe(800);
+  });
+
+  it("el recargo del mismo día puede ser un monto fijo en vez de porcentaje", async () => {
+    prismaMock.psicologos.findUniqueOrThrow.mockResolvedValue({ ...TARIFAS, recargo_mismo_dia_monto: 250 });
+    prismaMock.citas.count.mockResolvedValue(0);
+    prismaMock.citas.create.mockResolvedValue(appointmentRow());
+
+    // Hoy, una hora adelante: mismo día salvo en la última hora antes de medianoche.
+    const hoy = new Date();
+    hoy.setHours(hoy.getHours() < 23 ? hoy.getHours() + 1 : 23, 59, 0, 0);
+    await createAppointment(psychologist, {
+      patientId: PATIENT_ID,
+      startTime: hoy,
+      durationMinutes: 60,
+      modality: AppointmentModality.IN_PERSON,
+    });
+
+    const { data } = lastCallArg(prismaMock.citas.create) as { data: { precio?: number } };
+    expect(data.precio).toBe(1050);
   });
 
   it("crea el honorario pendiente con el precio calculado", async () => {

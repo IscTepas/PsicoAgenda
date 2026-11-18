@@ -1,4 +1,4 @@
-import { UserRole, type PsychologistProfile } from "@psicoagenda/shared";
+import { UserRole, type PricingRates, type PsychologistProfile } from "@psicoagenda/shared";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { AuthenticatedUser } from "@/utils/jwt";
@@ -9,6 +9,20 @@ const psychologistInclude = {
 } satisfies Prisma.psicologosInclude;
 
 type PsychologistRow = Prisma.psicologosGetPayload<{ include: typeof psychologistInclude }>;
+
+/** Columnas de tarifas → forma compartida con el cálculo de precios. */
+export const toPricingRates = (
+  row: Pick<
+    PsychologistRow,
+    "tarifa_adulto" | "tarifa_menor" | "recargo_mismo_dia_pct" | "recargo_mismo_dia_monto" | "descuento_virtual"
+  >,
+): PricingRates => ({
+  adultRate: row.tarifa_adulto,
+  minorRate: row.tarifa_menor,
+  sameDaySurchargePercent: row.recargo_mismo_dia_pct,
+  sameDaySurchargeAmount: row.recargo_mismo_dia_monto,
+  virtualDiscount: row.descuento_virtual,
+});
 
 function toProfile(row: PsychologistRow): PsychologistProfile {
   const { usuarios: user } = row;
@@ -22,6 +36,7 @@ function toProfile(row: PsychologistRow): PsychologistProfile {
     licenseNumber: row.cedula_profesional,
     specialty: row.especialidad ?? undefined,
     bio: row.biografia ?? undefined,
+    rates: toPricingRates(row),
     timeZone: user.zona_horaria,
     photoUrl: user.foto_perfil_url ?? undefined,
     notifyWhatsapp: user.notificar_whatsapp,
@@ -83,6 +98,7 @@ export interface UpdatePsychologistProfileInput {
   licenseNumber?: string;
   specialty?: string;
   bio?: string;
+  rates?: PricingRates;
 }
 
 export async function updateMyPsychologistProfile(
@@ -115,6 +131,13 @@ export async function updateMyPsychologistProfile(
     if (input.licenseNumber !== undefined) psychologistData.cedula_profesional = input.licenseNumber;
     if (input.specialty !== undefined) psychologistData.especialidad = emptyToNull(input.specialty);
     if (input.bio !== undefined) psychologistData.biografia = emptyToNull(input.bio);
+    if (input.rates) {
+      psychologistData.tarifa_adulto = input.rates.adultRate;
+      psychologistData.tarifa_menor = input.rates.minorRate;
+      psychologistData.recargo_mismo_dia_pct = input.rates.sameDaySurchargePercent;
+      psychologistData.recargo_mismo_dia_monto = input.rates.sameDaySurchargeAmount;
+      psychologistData.descuento_virtual = input.rates.virtualDiscount;
+    }
 
     return tx.psicologos.update({
       where: { id: existing.id },

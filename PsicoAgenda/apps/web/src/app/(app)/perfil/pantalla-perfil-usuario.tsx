@@ -18,6 +18,7 @@ import {
 import { TIMEZONES, UserRole } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import {
   Select,
@@ -714,6 +715,13 @@ export function PantallaPerfilUsuario() {
           </div>
         </div>
       </form>
+
+      {/* En móvil el menú no muestra los ajustes de citas: se llega desde aquí. */}
+      {effectiveRole === UserRole.PSYCHOLOGIST && (
+        <Button asChild variant="outline" className="h-11 w-full rounded-xl md:hidden">
+          <Link href="/citas">Configuración de citas: disponibilidad y costos</Link>
+        </Button>
+      )}
 
       {/* Salir con cambios sin guardar */}
       <Dialog open={unsaved.pendingHref !== null} onOpenChange={(open) => !open && unsaved.stay()}>

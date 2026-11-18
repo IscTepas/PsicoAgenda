@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import {
   Calendar as CalendarIcon,
-  CalendarOff,
   Clock,
   Plus,
   Search,
@@ -64,10 +63,6 @@ import { formatAppointmentTime, formatShortDate } from "@/lib/format"
 import { LibretaSesionDialog } from "../components/libreta-sesion"
 import { useDebouncedValue } from "@/lib/use-debounced-value"
 import { agendaBlockService, appointmentService, patientService } from "@/services"
-import {
-  BloqueoAgendaModal,
-  GestionBloqueosDialog,
-} from "./components/bloqueo-agenda-modal"
 
 type CalendarView = "mes" | "semana" | "dia"
 
@@ -290,12 +285,7 @@ export function AgendaClient() {
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [blocks, setBlocks] = React.useState<AgendaBlock[]>([])
   const [blocksError, setBlocksError] = React.useState<string | null>(null)
-  const [blockModalOpen, setBlockModalOpen] = React.useState(false)
   const [libretaDe, setLibretaDe] = React.useState<Appointment | null>(null)
-  // Cada apertura remonta el modal, así arranca limpio sin reiniciar el estado
-  // desde un efecto.
-  const [blockModalKey, setBlockModalKey] = React.useState(0)
-  const [blocksDialogOpen, setBlocksDialogOpen] = React.useState(false)
 
   // La API ya acota por rol: un paciente solo recibe sus citas. El cliente no
   // vuelve a filtrar por paciente, solo presenta lo que la sesión puede ver.
@@ -354,22 +344,6 @@ export function AgendaClient() {
     } finally {
       setPaymentUpdating(false)
     }
-  }, [toast])
-
-  const handleBlockCreated = React.useCallback((block: AgendaBlock) => {
-    setBlocks((prev) =>
-      [...prev, block].sort((a, b) => a.startTime.getTime() - b.startTime.getTime()),
-    )
-    toast({
-      title: "Bloqueo creado",
-      description: block.reason ?? "Horario marcado como no disponible",
-      status: "success",
-    })
-  }, [toast])
-
-  const handleBlockDeleted = React.useCallback((id: string) => {
-    setBlocks((prev) => prev.filter((block) => block.id !== id))
-    toast({ title: "Bloqueo eliminado", status: "success" })
   }, [toast])
 
   const baseAppointments = appointments
@@ -739,40 +713,11 @@ export function AgendaClient() {
             )}
           </div>
 
-          {/* Bloqueos de agenda: solo el psicólogo los administra */}
-          {effectiveRole === UserRole.PSYCHOLOGIST && (
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setBlockModalKey((key) => key + 1)
-                  setBlockModalOpen(true)
-                }}
-                className="h-9 px-3 rounded-xl border-border/80 shadow-2xs shrink-0"
-              >
-                <CalendarOff className="size-4" />
-                <span className="font-medium">Bloquear agenda</span>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setBlocksDialogOpen(true)}
-                className="h-9 px-3 rounded-xl shrink-0"
-                aria-label="Gestionar bloqueos"
-                title="Gestionar bloqueos"
-              >
-                <Lock className="size-4" />
-                <span className="tabular-nums">{blocks.length}</span>
-              </Button>
-            </div>
-          )}
-
-          {/* Botón destacado "+ Programar Cita / + Solicitar Cita" */}
+          {/* Botón destacado "Nueva cita" (psicóloga) / "Solicitar cita" (paciente) */}
           <Button asChild className="h-9 px-4 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm shrink-0">
             <Link href="/agenda/nueva" className="flex items-center gap-2">
               <Plus className="size-4 stroke-[2.5]" />
-              <span className="font-medium">{isPatient ? "Solicitar Cita" : "Programar Cita"}</span>
+              <span className="font-medium">{isPatient ? "Solicitar cita" : "Nueva cita"}</span>
             </Link>
           </Button>
         </div>
@@ -1601,24 +1546,6 @@ export function AgendaClient() {
         />
       )}
 
-      {/* Bloqueos: alta de un rango y gestión de los del periodo visible */}
-      <BloqueoAgendaModal
-        key={blockModalKey}
-        open={blockModalOpen}
-        onOpenChange={setBlockModalOpen}
-        defaultDate={currentDate}
-        onCreated={handleBlockCreated}
-        onAppointmentsCancelled={(canceladas) =>
-          setAppointments((prev) => prev.map((apt) => canceladas.find((c) => c.id === apt.id) ?? apt))
-        }
-        patientName={(id) => patientById(id)?.name}
-      />
-      <GestionBloqueosDialog
-        open={blocksDialogOpen}
-        onOpenChange={setBlocksDialogOpen}
-        blocks={blocks}
-        onDeleted={handleBlockDeleted}
-      />
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import type { PsychologistProfile, PsychologistSchedule } from "@psicoagenda/shared"
+import type { PricingRates, PsychologistProfile, PsychologistSchedule } from "@psicoagenda/shared"
 import { apiFetch } from "@/lib/api-client"
 
 /** La API serializa las fechas como ISO; el dominio las usa como `Date`. */
@@ -26,6 +26,7 @@ export interface UpdatePsychologistProfilePayload {
   licenseNumber?: string
   specialty?: string
   bio?: string
+  rates?: PricingRates
 }
 
 export const psychologistService = {
@@ -52,4 +53,8 @@ export const psychologistService = {
 
   getMySchedule: async (token?: string): Promise<PsychologistSchedule> =>
     apiFetch<PsychologistSchedule>("/psychologists/me/schedule", { token }),
+
+  /** Guarda el horario semanal completo (cada franja es una hora de un día). */
+  updateMySchedule: async (slots: { dayOfWeek: number; hour: number }[]): Promise<PsychologistSchedule> =>
+    apiFetch<PsychologistSchedule>("/psychologists/me/schedule", { method: "PUT", body: { slots } }),
 }

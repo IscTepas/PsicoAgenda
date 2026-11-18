@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { getPsychologistSchedule } from "@/services/psychologist-schedule.service";
+import { getPsychologistSchedule, replacePsychologistSchedule } from "@/services/psychologist-schedule.service";
 import { requirePsychologistIdByUser } from "@/services/psychologist.service";
 import type { AuthedRequest } from "@/types/express";
 
@@ -8,6 +8,17 @@ export const getMyScheduleController: RequestHandler = async (req: AuthedRequest
   try {
     const psychologistId = await requirePsychologistIdByUser(req.auth!.id);
     res.json(await getPsychologistSchedule(psychologistId));
+  } catch (error) {
+    next(error);
+  }
+};
+
+/** El psicólogo autenticado guarda su horario semanal completo. */
+export const updateMyScheduleController: RequestHandler = async (req: AuthedRequest, res, next) => {
+  try {
+    const psychologistId = await requirePsychologistIdByUser(req.auth!.id);
+    const { slots } = req.body as { slots: { dayOfWeek: number; hour: number }[] };
+    res.json(await replacePsychologistSchedule(psychologistId, slots));
   } catch (error) {
     next(error);
   }

@@ -25,6 +25,7 @@ import {
   BarChart3,
   Settings,
   ListChecks,
+  CalendarCog,
   type LucideIcon,
 } from "lucide-react"
 
@@ -32,11 +33,14 @@ const ICONS_BY_HREF: Record<string, LucideIcon> = {
   "/dashboard": LayoutDashboard,
   "/agenda": CalendarDays,
   "/pacientes": Users,
+  "/citas": CalendarCog,
   "/notificaciones": Bell,
   "/reportes": BarChart3,
   "/motivos": ListChecks,
   "/perfil": Settings,
 }
+
+const SOLO_EN_RIEL = ["/citas"]
 
 const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.PSYCHOLOGIST]: "Psicólogo/a",
@@ -242,7 +246,8 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         className="material fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-border/60 bg-background/80 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl backdrop-saturate-150 md:hidden"
         aria-label="Secciones"
       >
-        {filteredNav.map((item) => {
+        {/* La barra solo tiene lugar para seis: los ajustes de citas se abren desde Configuración. */}
+        {filteredNav.filter((item) => !SOLO_EN_RIEL.includes(item.href)).map((item) => {
           const Icon = ICONS_BY_HREF[item.href] ?? PanelLeft
           const isActive = isActivePath(pathname, item.href)
           return (
