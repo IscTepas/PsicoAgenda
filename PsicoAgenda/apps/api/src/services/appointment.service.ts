@@ -659,6 +659,10 @@ export async function changeAppointmentStatus(
     throw AppError.forbidden("No puedes cambiar el estado de una cita");
   }
 
+  if (status === SharedStatus.COMPLETED || status === SharedStatus.NO_SHOW) {
+    throw AppError.badRequest("La asistencia se registra al cerrar la sesión, junto con el cobro");
+  }
+
   const updated = await prisma.citas.update({
     where: { id },
     data: { estado: toSchemaStatus(status) },
@@ -679,6 +683,67 @@ export async function changeAppointmentStatus(
   return toAppointment(updated);
 }
 
+/**
+ * Cierra una sesión: marca la asistencia y registra el cobro en la misma
+ * transacción, así no puede existir una sesión atendida sin pago registrado.
+ * Si no asistió, el honorario queda condonado: nunca se cobra.
+ */
+export async function closeAppointment(
+  auth: AuthenticatedUser,
+  id: string,
+  input: { attended: boolean; amount?: number },
+): Promise<Appointment> {
+  const row = await prisma.citas.findUnique({ where: { id }, include: appointmentInclude });
+
+  if (!row) {
+    throw AppError.notFound("La cita no existe");
+  }
+
+  if (auth.role === UserRole.PATIENT) {
+    throw AppError.forbidden("Solo el profesional cierra la sesión");
+  }
+  if (auth.role === UserRole.PSYCHOLOGIST && row.psicologo_id !== (await requirePsychologistId(auth))) {
+    throw AppError.forbidden("No puedes cerrar una cita de otro profesional");
+  }
+
+  if (!ACTIVE_STATUSES.includes(row.estado)) {
+    throw AppError.conflict("Esta sesión ya está cerrada");
+  }
+  if (row.inicio.getTime() > Date.now()) {
+    throw AppError.conflict("La sesión todavía no empieza");
+  }
+
+  const monto = input.attended ? (input.amount ?? Number(row.precio ?? row.pagos_honorarios?.monto ?? 0)) : undefined;
+  const pago = input.attended
+    ? { estado: estado_pago.PAGADO, pagado_en: new Date(), monto: monto! }
+    : { estado: estado_pago.CONDONADO, pagado_en: null };
+
+  const updated = await prisma
+    .$transaction(async (tx) => {
+      // El filtro por estado hace atómico el cierre: dos clics no cobran dos veces.
+      await tx.citas.update({
+        where: { id, estado: { in: ACTIVE_STATUSES } },
+        data: { estado: input.attended ? estado_cita.COMPLETADA : estado_cita.NO_ASISTIO },
+      });
+      await tx.pagos_honorarios.upsert({
+        where: { cita_id: id },
+        update: pago,
+        create: { id: randomUUID(), cita_id: id, monto: Number(row.precio ?? 0), ...pago },
+      });
+      return tx.citas.findUniqueOrThrow({ where: { id }, include: appointmentInclude });
+    })
+    .catch((error: unknown) => {
+      if ((error as { code?: string }).code === "P2025") {
+        throw AppError.conflict("Esta sesión ya está cerrada");
+      }
+      throw error;
+    });
+
+  await notificar("CITA_ASISTENCIA", avisoDeCita(updated, { asistio: input.attended }));
+
+  return toAppointment(updated);
+}
+
 export async function cancelAppointment(
   auth: AuthenticatedUser,
   id: string,
@@ -692,6 +757,9 @@ export async function cancelAppointment(
 
   if (auth.role === UserRole.PATIENT) {
     await assertCanActOnPatient(auth, row.paciente_id);
+    if (row.fin.getTime() <= Date.now()) {
+      throw AppError.conflict("Esta cita ya pasó y no se puede cancelar");
+    }
   } else if (auth.role === UserRole.PSYCHOLOGIST) {
     if (row.psicologo_id !== (await requirePsychologistId(auth))) {
       throw AppError.forbidden("No puedes cancelar una cita de otro profesional");
@@ -768,6 +836,15 @@ export async function updateAppointmentPayment(
 
   if (row.estado === estado_cita.CANCELADA) {
     throw AppError.conflict("No se puede cobrar una cita cancelada");
+  }
+
+  // El cobro nace al cerrar la sesión (`closeAppointment`). Aquí solo se corrige el
+  // monto de una sesión atendida, o se registra el de una cerrada antes de esa regla.
+  if (status !== PaymentStatus.PAID) {
+    throw AppError.badRequest("Un cobro registrado solo se corrige, no se deshace");
+  }
+  if (row.estado !== estado_cita.COMPLETADA) {
+    throw AppError.conflict("El cobro se registra al cerrar la sesión como «Asistió»");
   }
 
   // El CHECK `ck_pagos_fecha` exige `pagado_en` cuando el estado es PAGADO.

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { registroPacienteSchema } from "@psicoagenda/shared";
 import { ApiError } from "@/lib/api-client";
 
 /**
@@ -114,11 +115,13 @@ describe("paso 1: pedir el código", () => {
     });
   });
 
-  it("omite el género cuando no se eligió (la columna queda NULL)", () => {
+  it("sin género elegido, el payload no pasa la validación del servidor (es obligatorio)", () => {
     const payload = construirPayloadRegistro({ ...DATOS, gender: "" });
 
-    expect(payload.gender).toBeUndefined();
-    expect(JSON.stringify(payload)).not.toContain('"gender"');
+    expect(payload.gender).toBe("");
+    const resultado = registroPacienteSchema.safeParse(payload);
+    expect(resultado.success).toBe(false);
+    expect(resultado.error?.issues.some((issue) => issue.path[0] === "gender")).toBe(true);
   });
 
   it("conserva el género cuando se eligió", () => {

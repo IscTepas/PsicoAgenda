@@ -51,6 +51,10 @@ const claveCod = (email: string): string => `registro:cod:${email}`;
 const claveIntentos = (email: string): string => `registro:intentos:${email}`;
 const claveReenvio = (email: string): string => `registro:reenvio:${email}`;
 const claveRate = (ip: string): string => `registro:rate:${ip}`;
+const claveConsultaCorreo = (ip: string): string => `registro:consulta-correo:${ip}`;
+
+/** Consultas de "¿ya existe este correo?" por conexión y ventana: frena el sondeo masivo de cuentas. */
+export const MAX_CONSULTAS_CORREO_POR_IP = 30;
 
 const sha256 = (valor: string): string =>
   createHash("sha256").update(valor).digest("hex");
@@ -82,6 +86,19 @@ export async function limitarSolicitudesPorIp(ip: string): Promise<void> {
     throw new AppError(
       429,
       "Demasiadas solicitudes de registro desde esta conexión. Intenta de nuevo más tarde.",
+      "RATE_LIMIT",
+      { retryAfterSeconds: RATE_VENTANA_SECONDS },
+    );
+  }
+}
+
+export async function limitarConsultasDeCorreo(ip: string): Promise<void> {
+  const origen = normalizar(ip || "desconocida");
+  const consultas = await obtenerCache().incr(claveConsultaCorreo(origen), RATE_VENTANA_SECONDS);
+  if (consultas > MAX_CONSULTAS_CORREO_POR_IP) {
+    throw new AppError(
+      429,
+      "Demasiadas consultas desde esta conexión. Intenta de nuevo más tarde.",
       "RATE_LIMIT",
       { retryAfterSeconds: RATE_VENTANA_SECONDS },
     );

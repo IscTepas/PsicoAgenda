@@ -267,6 +267,9 @@ export async function rescheduleAppointmentRequest(
   if (current.estado === estado_cita.COMPLETADA || current.estado === estado_cita.NO_ASISTIO) {
     throw AppError.conflict("La cita ya fue atendida");
   }
+  if (current.fin.getTime() <= Date.now()) {
+    throw AppError.conflict("Esta cita ya pasó y no se puede cambiar");
+  }
   if (start.getTime() === current.inicio.getTime()) {
     throw AppError.badRequest("Elige un horario distinto al actual");
   }

@@ -57,7 +57,7 @@ export function construirPayloadRegistro(values: DatosRegistro): RegistroPacient
     name: values.name,
     phone: values.phone,
     birth_date: values.birthDate ?? "",
-    gender: values.gender || undefined,
+    gender: values.gender ?? "",
     address: values.address,
     emergency_contact: {
       name: values.emergencyContactName ?? "",
@@ -183,6 +183,14 @@ export const registroService = {
       method: "POST",
       body: payload,
     }),
+
+  /** Avisa si el correo ya tiene cuenta, antes de enviar el formulario. */
+  correoDisponible: async (email: string): Promise<boolean> =>
+    (
+      await apiFetch<{ disponible: boolean }>(
+        `/auth/correo-disponible?${new URLSearchParams({ email: email.trim().toLowerCase() })}`,
+      )
+    ).disponible,
 
   /** Paso 2: la API valida el código y recién ahí crea la cuenta confirmada. */
   confirmarCodigo: (payload: RegistroPaciente, codigo: string) =>

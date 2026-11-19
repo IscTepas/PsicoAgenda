@@ -154,6 +154,15 @@ export const appointmentService = {
       }),
     ),
 
+  /** Cierra la sesión: asistió (registra el cobro) o no asistió (sin cargo), en un paso. */
+  close: async (id: string, attended: boolean, amount?: number): Promise<Appointment> =>
+    reviveAppointment(
+      await apiFetch<SerializedAppointment>(`/appointments/${id}/close`, {
+        method: "POST",
+        body: { attended, amount },
+      }),
+    ),
+
   updatePayment: async (id: string, status: PaymentStatus, amount?: number): Promise<Appointment> =>
     reviveAppointment(
       await apiFetch<SerializedAppointment>(`/appointments/${id}/payment`, {

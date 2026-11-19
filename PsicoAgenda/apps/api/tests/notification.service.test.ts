@@ -366,9 +366,11 @@ describe("despacharPendientes", () => {
     expect(body.type).toBe("template");
     expect(body.template.name).toBe("psicoagenda_aviso_de_cita");
     expect(body.template.language.code).toBe("es_MX");
+    // La plantilla pide ["nombre", "mensaje", "fecha_hora"]: el segundo dato es el
+    // texto completo del aviso (en esta fila de prueba, "Mensaje"), no el asunto.
     expect(body.template.components[0]!.parameters.map((parametro) => parametro.text)).toEqual([
       PACIENTE.nombre_completo,
-      "Tu cita fue confirmada",
+      "Mensaje",
       expect.stringContaining("2026"),
     ]);
     expect(estadosActualizados()).toEqual([estado_envio.ENVIADA]);

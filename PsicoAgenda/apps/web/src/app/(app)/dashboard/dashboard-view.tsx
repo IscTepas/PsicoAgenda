@@ -17,7 +17,6 @@ import {
   AppointmentRequestStatus,
   AppointmentStatus,
   AppointmentModality,
-  AttendanceStatus,
   UserRole,
   type Appointment,
   type AppointmentRequest,
@@ -43,6 +42,7 @@ import { formatAppointmentTime, formatShortDate } from "@/lib/format"
 import { appointmentRequestService, appointmentService, patientService, psychologistService } from "@/services"
 import { useDashboardData } from "./use-dashboard-data"
 import { DetalleCitaDialog, SesionDialog } from "./sesion-dialog"
+import { dinero, montoDe } from "@/components/cobro-cita"
 import { useEnlaceVideollamada } from "@/lib/use-enlace-videollamada"
 
 const MINUTE = 60_000
@@ -286,25 +286,32 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
     }
   }
 
-  const cerrarSesion = async (apt: Appointment, asistio: boolean) => {
-    const estado = asistio ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW
-    const claves = { queryKey: ["appointments", "dashboard"] }
-    const previas = queryClient.getQueriesData<Appointment[]>(claves)
-    queryClient.setQueriesData<Appointment[]>(claves, (lista) =>
-      lista?.map((a) => (a.id === apt.id ? { ...a, status: estado } : a)),
-    )
+  // Lo que sigue a cerrar una sesión, venga de la ventana de la sesión o de la lista de pendientes.
+  const trasCerrar = (cita: Appointment) => {
     setActiveSessionAppointment(null)
+    void refetchAppointments()
+    const nombre = patientById.get(cita.patientId)?.name ?? "el paciente"
+    if (cita.status !== AppointmentStatus.COMPLETED) {
+      showNotice(`Se registró que ${nombre} no asistió. Sin cargo.`)
+      return
+    }
+    const cobrado = cita.payment?.amount !== undefined ? ` Cobro de ${dinero(Number(cita.payment.amount))} registrado.` : ""
+    showNotice(`Sesión con ${nombre} cerrada.${cobrado}`)
+    if (!notasAbiertas.has(cita.id)) {
+      abrirLibreta(cita, `Sesión con ${nombre} cerrada. Escribe la bitácora ahora que la tienes fresca; si no puedes, ciérrala y queda como borrador.`)
+    }
+  }
+
+  // Cerrar desde la lista de pendientes: con la tarifa de la cita (se corrige después si hace falta).
+  const [cerrandoId, setCerrandoId] = useState<string | null>(null)
+  const cerrarSesion = async (apt: Appointment, asistio: boolean) => {
+    setCerrandoId(apt.id)
     try {
-      await appointmentService.changeStatus(apt.id, estado)
-      void refetchAppointments()
-      const nombre = patientById.get(apt.patientId)?.name ?? "el paciente"
-      showNotice(asistio ? `Sesión con ${nombre} cerrada.` : `Se registró que ${nombre} no asistió.`)
-      if (asistio && !notasAbiertas.has(apt.id)) {
-        abrirLibreta(apt, `Sesión con ${nombre} cerrada. Escribe la bitácora ahora que la tienes fresca; si no puedes, ciérrala y queda como borrador.`)
-      }
-    } catch {
-      for (const [clave, datos] of previas) queryClient.setQueryData(clave, datos)
-      showNotice("No se pudo guardar. Intenta de nuevo.", "error")
+      trasCerrar(await appointmentService.close(apt.id, asistio, asistio ? montoDe(apt) : undefined))
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : "No se pudo cerrar la sesión. Intenta de nuevo.", "error")
+    } finally {
+      setCerrandoId(null)
     }
   }
 
@@ -363,7 +370,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                   {pendientes.length}
                 </span>
               </h2>
-              <p className="text-sm text-muted-foreground">Ciérralas y escribe su bitácora; así cuentan en tus reportes.</p>
+              <p className="text-sm text-muted-foreground">Ciérralas para registrar asistencia y cobro, y escribe su bitácora.</p>
             </div>
             <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
               {pendientes.slice(0, 6).map(({ apt, tipo }) => (
@@ -384,11 +391,21 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                   </span>
                   {tipo === "cerrar" ? (
                     <span className="flex shrink-0 items-center gap-1.5">
-                      <Button variant="outline" size="sm" onClick={() => void cerrarSesion(apt, false)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={cerrandoId !== null}
+                        onClick={() => void cerrarSesion(apt, false)}
+                      >
                         No asistió
                       </Button>
-                      <Button size="sm" onClick={() => void cerrarSesion(apt, true)}>
-                        Asistió y escribir bitácora
+                      <Button
+                        size="sm"
+                        disabled={cerrandoId !== null}
+                        aria-busy={cerrandoId === apt.id}
+                        onClick={() => void cerrarSesion(apt, true)}
+                      >
+                        Asistió · cobrar {dinero(montoDe(apt))}
                       </Button>
                     </span>
                   ) : (
@@ -617,7 +634,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
             abrirLibreta(activeSessionAppointment)
             setActiveSessionAppointment(null)
           }}
-          onCerrar={(asistio) => cerrarSesion(activeSessionAppointment, asistio)}
+          onCerrada={trasCerrar}
         />
       )}
     </div>
@@ -703,14 +720,6 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
   }, [patientAppointments, clock])
 
   const nextAppointment = upcomingAppointments[0] || null
-
-  const pastAppointments = useMemo(() => {
-    if (!today) return []
-    return patientAppointments
-      .filter((a) => a.status === AppointmentStatus.COMPLETED || a.status === AppointmentStatus.CANCELLED || new Date(a.startTime) < today)
-      .filter((a) => a.id !== nextAppointment?.id)
-      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
-  }, [patientAppointments, today, nextAppointment])
 
   // Un tutor ve también las solicitudes de sus menores: se rotulan con su nombre.
   const { data: tutored = [] } = useQuery({
@@ -998,57 +1007,6 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
           </div>
         </section>
       )}
-
-      {/* Citas recientes */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold tracking-tight text-foreground">Citas recientes</h2>
-          <Link
-            href="/agenda"
-            className="flex items-center gap-0.5 text-sm font-medium text-primary hover:underline"
-          >
-            Ver todas
-            <ChevronRight className="size-4" />
-          </Link>
-        </div>
-
-        {pastAppointments.length > 0 ? (
-          <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
-            {pastAppointments.slice(0, 4).map((apt) => {
-              const isAttended = apt.attendanceStatus === AttendanceStatus.ATTENDED || apt.status === AppointmentStatus.COMPLETED
-
-              return (
-                <li key={apt.id}>
-                  <Link
-                    href={`/agenda/${apt.id}`}
-                    className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/30"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium tabular-nums text-foreground">
-                        {formatShortDate(new Date(apt.startTime))} · {formatAppointmentTime(new Date(apt.startTime))}
-                      </p>
-                      <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                        <ModalityLabel modality={apt.modality} />
-                        <span aria-hidden="true">·</span>
-                        <span className="truncate">{apt.reason || "Consulta"}</span>
-                      </p>
-                    </div>
-                    <StatusLabel
-                      status={isAttended ? AppointmentStatus.CONFIRMED : apt.status}
-                      label={isAttended ? "Asistió" : undefined}
-                    />
-                    <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <div className="rounded-2xl border border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
-            Aún no tienes citas anteriores.
-          </div>
-        )}
-      </section>
 
       {/* Acción principal flotante (móvil) */}
       <Link

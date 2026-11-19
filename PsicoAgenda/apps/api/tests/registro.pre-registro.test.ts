@@ -45,6 +45,7 @@ const payloadValido = (overrides: Record<string, unknown> = {}) => ({
   name: "Persona Ejemplo",
   phone: "5512345678",
   birth_date: "1990-05-01",
+  gender: "Femenino",
   emergency_contact: { name: "Contacto Ejemplo", phone: "5587654321", relationship: "Madre" },
   ...overrides,
 });

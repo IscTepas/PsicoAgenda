@@ -52,6 +52,7 @@ import {
 import { useSession } from "@/lib/use-session"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
 import { LibretaSesionDialog } from "../components/libreta-sesion"
+import { citaModificablePorPaciente } from "@/lib/citas"
 import { SemanaPorHoras } from "./components/semana-por-horas"
 import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
@@ -852,11 +853,13 @@ export function AgendaClient() {
                   >
                     Cerrar
                   </Button>
-                  <Button asChild variant="outline" className="w-full sm:w-auto h-9 rounded-xl border-border/80">
-                    <Link href={`/agenda/${selectedAppointment.id}`}>
-                      <span>Modificar Cita</span>
-                    </Link>
-                  </Button>
+                  {(!isPatient || citaModificablePorPaciente(selectedAppointment)) && (
+                    <Button asChild variant="outline" className="w-full sm:w-auto h-9 rounded-xl border-border/80">
+                      <Link href={`/agenda/${selectedAppointment.id}`}>
+                        <span>Modificar cita</span>
+                      </Link>
+                    </Button>
+                  )}
                   {!isPatient && patient?.id && (
                     <Button asChild className="w-full sm:w-auto h-9 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs">
                       <Link href={`/pacientes/${patient.id}`} className="flex items-center gap-1.5">

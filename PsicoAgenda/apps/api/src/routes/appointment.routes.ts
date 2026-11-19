@@ -3,6 +3,7 @@ import {
   appointmentListQuerySchema,
   appointmentOccupancyQuerySchema,
   cancelAppointmentSchema,
+  closeAppointmentSchema,
   createAppointmentSchema,
   idParamSchema,
   updateAppointmentPaymentSchema,
@@ -12,6 +13,7 @@ import {
 import {
   cancelAppointmentController,
   changeAppointmentStatusController,
+  closeAppointmentController,
   createAppointmentController,
   getAppointmentController,
   listAppointmentOccupancyController,
@@ -50,6 +52,12 @@ router.post(
   requireAuth,
   validate({ params: idParamSchema, body: cancelAppointmentSchema }),
   cancelAppointmentController,
+);
+router.post(
+  "/:id/close",
+  requireAuth,
+  validate({ params: idParamSchema, body: closeAppointmentSchema }),
+  closeAppointmentController,
 );
 router.patch(
   "/:id/payment",

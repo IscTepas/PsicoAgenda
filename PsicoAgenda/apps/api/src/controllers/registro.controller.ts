@@ -11,6 +11,7 @@ import {
   REENVIO_COOLDOWN_SECONDS,
   consumirCodigo,
   generarCodigo,
+  limitarConsultasDeCorreo,
   limitarSolicitudesPorIp,
   verificarCodigo,
 } from "@/services/codigo.service";
@@ -126,6 +127,20 @@ export const verificarCodigoController: RequestHandler = async (req, res, next) 
     });
 
     res.status(201).json({ ok: true, user: { id: usuario.id, email: payload.email } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Avisa en el formulario si el correo ya tiene cuenta. Revela lo mismo que el
+ * pre-registro (que responde 409), así que tiene su propio límite por conexión.
+ */
+export const correoDisponibleController: RequestHandler = async (req, res, next) => {
+  try {
+    const { email } = req.query as { email: string };
+    await limitarConsultasDeCorreo(origenDe(req));
+    res.json({ disponible: !(await existeCuenta(email)) });
   } catch (error) {
     next(error);
   }

@@ -905,7 +905,14 @@ export async function despacharPendientes(): Promise<number> {
     return filas.length;
   } catch (error) {
     // Solo el mensaje: el despacho corre cada minuto y una caída de la base no debe inundar el log.
-    const detalle = error instanceof Error ? error.message.trim().split("\n").pop() : String(error);
+    // Prisma deja la causa en `code` (P1001, ETIMEDOUT…) y el mensaje termina en la línea del código fuente.
+    const codigo = (error as { code?: unknown }).code;
+    const detalle =
+      typeof codigo === "string"
+        ? `sin respuesta de la base (${codigo})`
+        : error instanceof Error
+          ? error.message.trim().split("\n").pop()
+          : String(error);
     console.error(`[notificaciones] Falló el despacho de pendientes: ${detalle}`);
     return 0;
   } finally {

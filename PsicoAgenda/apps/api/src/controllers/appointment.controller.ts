@@ -2,6 +2,7 @@ import type { RequestHandler } from "express";
 import {
   cancelAppointment,
   changeAppointmentStatus,
+  closeAppointment,
   createAppointment,
   getAppointmentById,
   listAppointmentOccupancy,
@@ -93,6 +94,16 @@ export const updateAppointmentPaymentController: RequestHandler = async (
     const { id } = req.params as { id: string };
     const { status, amount } = req.body as { status: Parameters<typeof updateAppointmentPayment>[2]; amount?: number };
     res.json(await updateAppointmentPayment(req.auth!, id, status, amount));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const closeAppointmentController: RequestHandler = async (req: AuthedRequest, res, next) => {
+  try {
+    const { id } = req.params as { id: string };
+    const { attended, amount } = req.body as { attended: boolean; amount?: number };
+    res.json(await closeAppointment(req.auth!, id, { attended, amount }));
   } catch (error) {
     next(error);
   }

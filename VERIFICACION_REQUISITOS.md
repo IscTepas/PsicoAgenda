@@ -3,7 +3,8 @@
 > **Fecha:** 2026-11-19
 > **Rama analizada:** `Christian` (HEAD `85ea3eb` "ARREGLAR TODO")
 > **Documentos verificados:** RP23 (BPMN), RP32 (Descripción del proyecto), RP33 (ERS)
-> **Método:** extracción de texto de los 3 documentos + lectura de código + ejecución de `typecheck` y `test`. No se modificó ningún archivo del proyecto.
+> **Método:** extracción de texto de los 3 documentos + lectura de código + ejecución de `typecheck` y `test`.
+> **Revisión 2 (2026-11-19):** se volvió a contrastar cada punto con el código. Se corrigieron el número de errores de compilación, la causa del test de WhatsApp (era el test, no la plantilla), la postura sobre RLS y el estado de RD-12. Las correcciones están marcadas con *(corregido)*.
 
 ---
 
@@ -20,11 +21,11 @@
 | Reportes PDF/Excel reales | 🟡 Solo CSV + imprimir |
 | Confirmación en 1 clic desde WhatsApp | 🔴 Ausente |
 | Recordatorios configurables 12/24/48 h | 🔴 Ausente |
-| App nativa Windows/Android | 🔴 Ausente (solo PWA web) |
-| RLS / auditoría / TLS estricto | 🔴/🟡 Insuficiente |
-| **Compila y pasa tests** | 🔴 **No compila; 1 test falla** |
+| Auditoría / TLS estricto | 🔴/🟡 Insuficiente |
+| RLS | 🟡 Sin políticas, por decisión documentada en el README |
+| **Compila y pasa tests** | 🟢 Compila tras `prisma generate`; tests en verde *(corregido)* |
 
-**Conclusión:** el sistema cubre el núcleo del proyecto (el BPMN y la mayoría de requisitos funcionales), pero **hoy no compila** por un cliente Prisma desactualizado, y faltan brechas concretas en reportes, notificaciones y seguridad.
+**Conclusión:** el sistema cubre el núcleo del proyecto (el BPMN y la mayoría de requisitos funcionales). Compila en cuanto cada quien regenera su cliente Prisma local (está ignorado por git) y los tests pasan. Las brechas reales están en reportes, notificaciones y seguridad.
 
 ---
 
@@ -32,6 +33,22 @@
 
 | Comprobación | Resultado |
 |---|---|
+| `npm run typecheck` | ⚠️ **2 errores** con el cliente Prisma viejo; **0** tras `npm run prisma:generate` *(corregido: el primer conteo decía 32)* |
+| `npm test` (API, sin integración) | ✅ 234 pasan, 0 fallan *(tras corregir el test de WhatsApp)* |
+| `npm test` (web) | ✅ 130 pasan |
+| Tests de integración | ⚪ Fallan por timeout: necesitan la base y no siempre hay conexión desde la red de trabajo |
+
+### Causa del build roto
+`apps/api/prisma/schema.prisma` define las columnas nuevas (tarifas, recargo, `enlace_videollamada`, `tareas_sesion`, enum `TAREA`), pero el cliente generado en `apps/api/src/generated/prisma/` es **local e ignorado por git**: si no se regenera después de un `git pull`, TypeScript no las conoce.
+
+**Solución:** `npm run prisma:generate` tras cada `git pull` que cambie el esquema. No es un error del código. Hoy nada lo hace solo: el `predev` que lo automatizaba se perdió en un merge; conviene volver a ponerlo en `apps/api/package.json`.
+
+### Test de WhatsApp *(corregido)*
+`tests/notification.service.test.ts` → *"con WhatsApp configurado entrega por la API con los datos del usuario"* fallaba con `Esperado: "Tu cita fue confirmada" / Recibido: "Mensaje"`.
+
+**La plantilla no estaba mal.** La configuración del propio test pide los campos `["nombre", "mensaje", "fecha_hora"]`, así que el segundo dato es el **texto completo del aviso**. En la fila de prueba ese texto vale literalmente `"Mensaje"`; en producción es el mensaje real de la cita. El test esperaba el **asunto**, que no es lo que pide la plantilla. Se corrigió la expectativa del test.
+
+---|---|
 | `npm run typecheck` | ❌ **32 errores** en `apps/api/src/services/*` |
 | `npm test` | ⚠️ 233 pasan, **1 falla real**, 30 omitidos; 4 archivos fallan por timeout de BD (no hay base accesible en el entorno) |
 
@@ -129,17 +146,17 @@ La plantilla de WhatsApp envía un texto genérico donde el test espera el mensa
 
 ## 4. LO QUE FALTA (brechas, priorizado)
 
-### 🔴 Prioridad 1 — Bloquea despliegue
-1. **Regenerar cliente Prisma** (`npm run prisma:generate`) → resuelve los 32 errores de TypeScript.
-2. **Corregir plantilla de WhatsApp** para que envíe `"Tu cita fue confirmada"` en lugar de `"Mensaje"` (test fallido).
+### ✅ Prioridad 1 — Resuelta *(corregido)*
+1. ~~Regenerar cliente Prisma~~ → es un paso local (`npm run prisma:generate`), no un cambio de código. Con eso el typecheck queda en 0 errores.
+2. ~~Corregir plantilla de WhatsApp~~ → la plantilla estaba bien; el test esperaba el asunto en lugar del mensaje. Test corregido.
 
 ### 🔴 Prioridad 2 — Notificaciones no salen sin esto
 3. Configurar en GitHub *Settings → Secrets and variables → Actions*: secret `CRON_SECRET` y variable `API_URL`.
 4. Dar de alta en cron-job.org la tarea de **mantenimiento** (diario 03:30). Sin estos pasos, los avisos quedan encolados y **nunca se envían** (`docs/tareas-programadas.md`).
-5. Actualizar `docs/tareas-programadas.md`: ya dice que el workflow "falta commitear", pero está en HEAD. Queda registrada la incidencia del borrado del 10 de noviembre.
+5. Actualizar `docs/tareas-programadas.md`: la casilla "Subir el workflow al repositorio … falta el commit y el push" sigue abierta, pero el archivo ya está en HEAD (`.github/workflows/despachar-notificaciones.yml`). Queda registrada la incidencia del borrado del 10 de noviembre.
 
 ### 🔴 Prioridad 3 — Seguridad / confidencialidad
-6. **RLS inexistente**: no hay `ENABLE ROW LEVEL SECURITY` ni `CREATE POLICY` en el repo; el rol `prisma` usa `BYPASSRLS`. Declarar policies o documentar la decisión.
+6. **RLS** *(corregido)*: no hay `ENABLE ROW LEVEL SECURITY` ni `CREATE POLICY` y el rol `prisma` usa `BYPASSRLS`, pero **es una decisión documentada** en el `README.md`: la API es la única vía a los datos, `prisma` es el único dueño de las tablas, `anon`/`authenticated`/`service_role` no tienen privilegios y la Data API de Supabase está desactivada. Falta que el equipo confirme si esto basta frente a RNF_US_007 / RD-02.
 7. TLS con `rejectUnauthorized: false` en `apps/api/src/lib/prisma.ts` → usar `root.crt` y `rejectUnauthorized: true`.
 8. **Auditoría ausente**: `registros_auditoria` solo se escribe en `finalizarTutelasVencidas`. Falta registrar confirmar/cancelar cita (RF_US_005, RF_US_019 del ERS).
 9. Política de **retención mínima de expedientes** (RD-09) y **portabilidad PDF del paciente** (RD-13).
@@ -151,7 +168,7 @@ La plantilla de WhatsApp envía un texto genérico donde el test espera el mensa
 13. **Búsqueda de pacientes en la API** (hoy solo filtro client-side en `pacientes/page.tsx`) y alta de pacientes por psicóloga (RF_US_006).
 14. Escritura de `revisiones_bitacora` (modelo y migración existen, pero nada escribe).
 15. Estado literal **"Solicitud de Reagendar"** del ERS: hoy se cancela y se crea una solicitud pendiente con prefijo `"Cambio de fecha: "`.
-16. **Contacto de emergencia** obligatorio también en perfil (hoy solo en registro) — RD-12.
+16. ~~Contacto de emergencia obligatorio también en perfil~~ *(corregido)*: la pantalla de perfil ya lo exige (`perfilPacienteSchema` marca nombre y teléfono como obligatorios). Solo el `PATCH` de la API acepta guardados parciales, pero rechaza vacíos.
 17. **Duración de citas 45–60 min** (RD-06): la validación real es 30–60 (30 para menores).
 18. **Tiempo real**: hoy es polling de 2 min (`use-pending-responses.ts`), no Realtime/WebSockets.
 
@@ -224,7 +241,7 @@ Leyenda: 🟢 Implementado · 🟡 Parcial · 🔴 Ausente · ⚪ No verificable
 | RNF_US_004 | Sesión: tiempo e intentos | 🟡 | Rate limits parciales |
 | RNF_US_005 | Interfaz intuitiva | ⚪ | Sin pruebas de usabilidad |
 | RNF_US_006 | Navegadores modernos | 🟡 | PWA responsive, sin matriz |
-| RNF_US_007 | Ley de Protección de Datos | 🟡 | Sin RLS; auditoría parcial |
+| RNF_US_007 | Ley de Protección de Datos | 🟡 | Sin RLS por decisión documentada; auditoría parcial |
 | RNF_US_008 | Consumo optimizado | 🟡 | Purga/VACUUM/límites, sin medición |
 | RNF_US_009 | Escalabilidad | 🟡 | Vercel + Supabase, sin prueba de carga |
 
@@ -233,7 +250,7 @@ Leyenda: 🟢 Implementado · 🟡 Parcial · 🔴 Ausente · ⚪ No verificable
 | Código | Requisito | Estado | Evidencia / brecha |
 |---|---|---|---|
 | RD-01 | Terminología psicológica | 🟢 | `motivos_consulta`, `tipo_sesion` |
-| RD-02 | Confidencialidad profesional | 🟡 | Sin RLS, TLS sin verificación plena |
+| RD-02 | Confidencialidad profesional | 🟡 | Acceso solo por la API (sin RLS); TLS sin verificación plena |
 | RD-03 | Notas por sesión | 🟢 | `entradas_bitacora.notas_sesion` |
 | RD-04 | Tono de mensajes | 🟢 | `redactar` + plantillas |
 | RD-05 | Cumplimiento institucional | ⚪ | Sin políticas en el repo |
@@ -243,7 +260,7 @@ Leyenda: 🟢 Implementado · 🟡 Parcial · 🔴 Ausente · ⚪ No verificable
 | RD-09 | Retención de expedientes | 🟡 | Purga excluye clínicos; sin retención mínima |
 | RD-10 | Consentimiento informado | 🟢 | `registrarConsentimiento` / `retirarConsentimiento` |
 | RD-11 | Menores y tutores | 🟢 | `pacientes_tutores`, mayoría de edad |
-| RD-12 | Contacto de emergencia | 🟡 | Obligatorio en registro, opcional en perfil |
+| RD-12 | Contacto de emergencia | 🟢 | Obligatorio en registro y en la pantalla de perfil *(corregido)* |
 | RD-13 | Portabilidad PDF | 🟡 | CSV + `window.print()`, sin PDF generado |
 | RD-14 | Estado de pago de honorarios | 🟢 | `pagos_honorarios`, `/payment`, vista |
 
@@ -261,9 +278,8 @@ Leyenda: 🟢 Implementado · 🟡 Parcial · 🔴 Ausente · ⚪ No verificable
 
 ## 7. Próximos pasos recomendados
 
-1. `npm run prisma:generate` → build en verde.
-2. Corregir el test/plantilla de WhatsApp.
-3. Configurar secretos `CRON_SECRET` / `API_URL` y cron-job.org → notificaciones funcionando.
-4. Endurecer seguridad: RLS/policies, TLS estricto, auditoría en cita.
-5. Cerrar brechas visibles: PDF/XLSX real, confirmación en 1 clic, recordatorios configurables.
-6. Alinear documentación: README (16 tablas → 23 modelos), `docs/tareas-programadas.md`, numeración RF, y decidir app móvil / honorarios / RD-06.
+1. ~~`npm run prisma:generate`~~ y ~~test de WhatsApp~~ → hechos; que cada integrante corra `prisma:generate` tras cada `git pull`.
+2. Configurar secretos `CRON_SECRET` / `API_URL` y cron-job.org → notificaciones funcionando.
+3. Endurecer seguridad: TLS estricto, auditoría en cita, y decidir si la postura sin RLS basta.
+4. Cerrar brechas visibles: PDF/XLSX real, confirmación en 1 clic, recordatorios configurables.
+5. Alinear documentación: README (16 tablas → 23 modelos), `docs/tareas-programadas.md`, numeración RF, y decidir app móvil / honorarios / RD-06.

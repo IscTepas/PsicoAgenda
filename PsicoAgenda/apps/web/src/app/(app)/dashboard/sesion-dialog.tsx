@@ -1,9 +1,8 @@
 "use client"
 
-import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import Link from "next/link"
-import { CheckCircle2, FileText, Loader2, MapPin, UserX, Video } from "lucide-react"
+import { FileText, MapPin, Video } from "lucide-react"
 import { AppointmentModality, AppointmentStatus, ConsentStatus, type Appointment } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -16,7 +15,8 @@ const finDe = (cita: Appointment) => new Date(new Date(cita.startTime).getTime()
 
 /**
  * Atender una cita, de principio a fin y en un solo lugar: entrar (sala en línea o
- * consultorio), escribir la nota y cerrar con "Asistió" o "No asistió".
+ * consultorio), escribir la nota y cerrarla: "Asistió" registra el cobro en el mismo
+ * paso y "No asistió" la cierra sin cargo.
  */
 export function SesionDialog({
   cita,
@@ -25,7 +25,7 @@ export function SesionDialog({
   ahora,
   onClose,
   onBitacora,
-  onCerrar,
+  onCerrada,
 }: {
   cita: Appointment
   paciente: string
@@ -34,9 +34,9 @@ export function SesionDialog({
   onClose: () => void
   /** Abre la libreta de esta cita; al cerrarla se vuelve aquí. */
   onBitacora: () => void
-  onCerrar: (asistio: boolean) => Promise<void>
+  /** La sesión quedó cerrada (con su cobro, si asistió). */
+  onCerrada: (cita: Appointment) => void
 }) {
-  const [guardando, setGuardando] = useState<"asistio" | "no" | null>(null)
   const enLinea = cita.modality === AppointmentModality.VIRTUAL
   const inicio = new Date(cita.startTime)
   const yaEmpezo = inicio.getTime() <= ahora.getTime()
@@ -48,17 +48,8 @@ export function SesionDialog({
   })
   const sinConsentimiento = expediente !== undefined && !expediente.consents.some((c) => c.status === ConsentStatus.SIGNED)
 
-  const cerrar = async (asistio: boolean) => {
-    setGuardando(asistio ? "asistio" : "no")
-    try {
-      await onCerrar(asistio)
-    } finally {
-      setGuardando(null)
-    }
-  }
-
   return (
-    <Dialog open onOpenChange={(open) => !open && !guardando && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="text-lg font-semibold tracking-tight">{paciente}</DialogTitle>
@@ -122,20 +113,10 @@ export function SesionDialog({
           </p>
         </div>
 
-        {/* 3. Cobro: se puede marcar aquí o después desde Inicio, Agenda o Reportes. */}
-        <CobroDeCita cita={cita} />
-
-        {/* 4. Cerrar la sesión */}
-        <DialogFooter className="gap-2 border-t border-border pt-4 sm:gap-2">
-          <Button variant="outline" onClick={() => cerrar(false)} disabled={guardando !== null} aria-busy={guardando === "no"}>
-            {guardando === "no" ? <Loader2 className="animate-spin" /> : <UserX />}
-            No asistió
-          </Button>
-          <Button onClick={() => cerrar(true)} disabled={guardando !== null} aria-busy={guardando === "asistio"}>
-            {guardando === "asistio" ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}
-            Asistió · cerrar sesión
-          </Button>
-        </DialogFooter>
+        {/* 3. Cerrar la sesión: asistencia y cobro en un solo paso */}
+        <div className="border-t border-border pt-4">
+          <CobroDeCita cita={cita} ahora={ahora} onActualizada={onCerrada} />
+        </div>
       </DialogContent>
     </Dialog>
   )

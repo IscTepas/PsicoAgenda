@@ -3,6 +3,8 @@
  * `ahora` inyectable) para poder probarlas sin depender del reloj real.
  */
 
+import { AppointmentStatus } from "@psicoagenda/shared"
+
 export function isSameDay(a: Date, b: Date): boolean {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -110,4 +112,17 @@ export function calcularEstadoFecha({
   if (horasDisponibles.every((hora) => horasOcupadas.has(hora))) return "lleno";
 
   return "disponible";
+}
+
+/**
+ * Un paciente solo puede cambiar o cancelar una cita que sigue abierta y aún no
+ * termina. Las pasadas, atendidas o canceladas se consultan pero no se tocan.
+ */
+export function citaModificablePorPaciente(
+  cita: { startTime: Date | string; durationMinutes?: number; status: AppointmentStatus },
+  ahora: Date = new Date(),
+): boolean {
+  const abierta = cita.status === AppointmentStatus.PENDING || cita.status === AppointmentStatus.CONFIRMED
+  const fin = new Date(cita.startTime).getTime() + (cita.durationMinutes ?? 50) * 60_000
+  return abierta && fin > ahora.getTime()
 }

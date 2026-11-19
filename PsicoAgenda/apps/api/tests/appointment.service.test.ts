@@ -19,7 +19,7 @@ const { prismaMock } = vi.hoisted(() => {
   const pacientes = { findUnique: vi.fn(), findFirst: vi.fn() };
   const psicologos = { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() };
   const bloqueos_agenda = { findFirst: vi.fn() };
-  const pagos_honorarios = { create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() };
+  const pagos_honorarios = { create: vi.fn(), update: vi.fn(), deleteMany: vi.fn(), upsert: vi.fn() };
 
   return { prismaMock: { citas, pacientes, psicologos, bloqueos_agenda, pagos_honorarios, $transaction: vi.fn() } };
 });
@@ -40,6 +40,7 @@ vi.mock("@/services/guardianship.service", async () => {
 const {
   cancelAppointment,
   changeAppointmentStatus,
+  closeAppointment,
   createAppointment,
   getAppointmentById,
   listAppointmentOccupancy,
@@ -381,15 +382,84 @@ describe("updateAppointment", () => {
 
 describe("changeAppointmentStatus", () => {
   it("traduce el estado compartido al valor persistido", async () => {
-    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow());
-    prismaMock.citas.update.mockResolvedValue(appointmentRow({ estado: "NO_ASISTIO" }));
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ estado: "PENDIENTE" }));
+    prismaMock.citas.update.mockResolvedValue(appointmentRow({ estado: "CONFIRMADA" }));
 
-    const result = await changeAppointmentStatus(psychologist, APPOINTMENT_ID, SharedStatus.NO_SHOW);
+    const result = await changeAppointmentStatus(psychologist, APPOINTMENT_ID, SharedStatus.CONFIRMED);
 
     const { data } = lastCallArg(prismaMock.citas.update) as { data: Record<string, unknown> };
 
-    expect(data).toEqual({ estado: "NO_ASISTIO" });
-    expect(result.status).toBe(SharedStatus.NO_SHOW);
+    expect(data).toEqual({ estado: "CONFIRMADA" });
+    expect(result.status).toBe(SharedStatus.CONFIRMED);
+  });
+
+  it("no registra asistencia por aquí: eso es cerrar la sesión, con su cobro", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow());
+
+    await expect(
+      changeAppointmentStatus(psychologist, APPOINTMENT_ID, SharedStatus.COMPLETED),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(prismaMock.citas.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("closeAppointment", () => {
+  const YA_EMPEZO = new Date(Date.now() - 60 * 60_000);
+
+  it("asistió: cierra y registra el pago con la tarifa de la cita en la misma transacción", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ inicio: YA_EMPEZO, precio: 950 }));
+    prismaMock.citas.findUniqueOrThrow.mockResolvedValue(
+      appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow({ estado: "PAGADO", pagado_en: START }) }),
+    );
+
+    await closeAppointment(psychologist, APPOINTMENT_ID, { attended: true });
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(lastCallArg(prismaMock.citas.update)).toMatchObject({ data: { estado: "COMPLETADA" } });
+    const { update } = lastCallArg(prismaMock.pagos_honorarios.upsert) as { update: Record<string, unknown> };
+    expect(update).toMatchObject({ estado: "PAGADO", monto: 950 });
+    expect(update.pagado_en).toBeInstanceOf(Date);
+  });
+
+  it("asistió con monto ajustado: cobra lo que se escribió", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ inicio: YA_EMPEZO, precio: 950 }));
+    prismaMock.citas.findUniqueOrThrow.mockResolvedValue(appointmentRow({ estado: "COMPLETADA" }));
+
+    await closeAppointment(psychologist, APPOINTMENT_ID, { attended: true, amount: 700 });
+
+    const { update } = lastCallArg(prismaMock.pagos_honorarios.upsert) as { update: Record<string, unknown> };
+    expect(update).toMatchObject({ estado: "PAGADO", monto: 700 });
+  });
+
+  it("no asistió: nunca se cobra", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ inicio: YA_EMPEZO }));
+    prismaMock.citas.findUniqueOrThrow.mockResolvedValue(appointmentRow({ estado: "NO_ASISTIO" }));
+
+    await closeAppointment(psychologist, APPOINTMENT_ID, { attended: false, amount: 500 });
+
+    expect(lastCallArg(prismaMock.citas.update)).toMatchObject({ data: { estado: "NO_ASISTIO" } });
+    const { update } = lastCallArg(prismaMock.pagos_honorarios.upsert) as { update: Record<string, unknown> };
+    expect(update).toEqual({ estado: "CONDONADO", pagado_en: null });
+  });
+
+  it("no cierra una sesión que no ha empezado ni una ya cerrada", async () => {
+    prismaMock.citas.findUnique.mockResolvedValueOnce(appointmentRow({ inicio: new Date(Date.now() + 3_600_000) }));
+    await expect(closeAppointment(psychologist, APPOINTMENT_ID, { attended: true })).rejects.toMatchObject({
+      statusCode: 409,
+    });
+
+    prismaMock.citas.findUnique.mockResolvedValueOnce(appointmentRow({ inicio: YA_EMPEZO, estado: "COMPLETADA" }));
+    await expect(closeAppointment(psychologist, APPOINTMENT_ID, { attended: true })).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    expect(prismaMock.pagos_honorarios.upsert).not.toHaveBeenCalled();
+  });
+
+  it("el paciente no puede cerrar la sesión", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ inicio: YA_EMPEZO, paciente_id: PATIENT_ID }));
+    await expect(closeAppointment(patient, APPOINTMENT_ID, { attended: true })).rejects.toMatchObject({
+      statusCode: 403,
+    });
   });
 });
 
@@ -434,18 +504,37 @@ describe("cancelAppointment", () => {
 });
 
 describe("updateAppointmentPayment", () => {
-  it("ajusta el monto y puede volver a pendiente para corregir un error", async () => {
+  it("corrige el monto de una sesión cobrada", async () => {
     prismaMock.citas.findUnique.mockResolvedValue(
       appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow({ estado: "PAGADO", pagado_en: START }) }),
     );
     prismaMock.citas.findUniqueOrThrow.mockResolvedValue(
-      appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow() }),
+      appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow({ estado: "PAGADO", pagado_en: START }) }),
     );
 
-    await updateAppointmentPayment(psychologist, APPOINTMENT_ID, PaymentStatus.PENDING, 600);
+    await updateAppointmentPayment(psychologist, APPOINTMENT_ID, PaymentStatus.PAID, 600);
 
     const { data } = lastCallArg(prismaMock.pagos_honorarios.update) as { data: Record<string, unknown> };
-    expect(data).toMatchObject({ estado: "PENDIENTE", pagado_en: null, monto: 600 });
+    expect(data).toMatchObject({ estado: "PAGADO", monto: 600 });
+  });
+
+  it("un cobro registrado no vuelve a pendiente", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(
+      appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow({ estado: "PAGADO", pagado_en: START }) }),
+    );
+
+    await expect(
+      updateAppointmentPayment(psychologist, APPOINTMENT_ID, PaymentStatus.PENDING, 600),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(prismaMock.pagos_honorarios.update).not.toHaveBeenCalled();
+  });
+
+  it("no cobra una sesión que no se cerró como «Asistió»", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ estado: "CONFIRMADA", pagos_honorarios: paymentRow() }));
+
+    await expect(updateAppointmentPayment(psychologist, APPOINTMENT_ID, PaymentStatus.PAID)).rejects.toMatchObject({
+      statusCode: 409,
+    });
   });
 
   it("marca el honorario como pagado con su fecha de cobro", async () => {
@@ -470,27 +559,6 @@ describe("updateAppointmentPayment", () => {
     expect(result.payment?.status).toBe(PaymentStatus.PAID);
   });
 
-  it("condona el honorario sin fecha de cobro", async () => {
-    prismaMock.citas.findUnique.mockResolvedValue(
-      appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow() }),
-    );
-    prismaMock.citas.findUniqueOrThrow.mockResolvedValue(
-      appointmentRow({
-        estado: "COMPLETADA",
-        pagos_honorarios: paymentRow({ estado: "CONDONADO" }),
-      }),
-    );
-
-    const result = await updateAppointmentPayment(psychologist, APPOINTMENT_ID, PaymentStatus.WAIVED);
-
-    const { data } = lastCallArg(prismaMock.pagos_honorarios.update) as {
-      data: Record<string, unknown>;
-    };
-
-    expect(data.estado).toBe("CONDONADO");
-    expect(data.pagado_en).toBeNull();
-    expect(result.payment?.status).toBe(PaymentStatus.WAIVED);
-  });
 
   it("crea el honorario cuando la cita es anterior a la tabla de pagos", async () => {
     prismaMock.citas.findUnique.mockResolvedValue(

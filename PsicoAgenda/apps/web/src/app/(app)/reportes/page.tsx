@@ -96,7 +96,10 @@ function toReportRow(apt: Appointment, patientName: string): ReportAppointment {
   }
 }
 
-/** Sesión que ya se dio y no se ha cobrado (ni condonado). */
+/**
+ * Sesión atendida sin cobro registrado. Desde que el cobro se registra al cerrar
+ * la sesión ya no se generan; solo quedan las cerradas antes de esa regla.
+ */
 const porCobrar = (r: ReportAppointment) =>
   r.status === "attended" && r.fee > 0 && r.pago !== PaymentStatus.PAID && r.pago !== PaymentStatus.WAIVED
 
@@ -118,7 +121,7 @@ const fechaCorta = (dateStr: string) =>
 
 const PAGO_CSV: Record<PaymentStatus, string> = {
   [PaymentStatus.PAID]: "Pagado",
-  [PaymentStatus.PENDING]: "Por cobrar",
+  [PaymentStatus.PENDING]: "Sin registrar",
   [PaymentStatus.WAIVED]: "Condonado",
 }
 
@@ -418,15 +421,6 @@ export default function ReportsPage() {
       valor: formatCurrency(actual.cobrado),
       detalle: comparar(actual.cobrado, previo.cobrado, formatCurrency),
     },
-    {
-      etiqueta: "Por cobrar",
-      valor: formatCurrency(totalPorCobrar),
-      detalle:
-        actual.pendientes.length === 0
-          ? "Todas las sesiones están cobradas"
-          : `${actual.pendientes.length} ${actual.pendientes.length === 1 ? "sesión dada sin cobrar" : "sesiones dadas sin cobrar"}`,
-      tono: actual.pendientes.length > 0 ? "aviso" : undefined,
-    },
   ]
 
   return (
@@ -512,12 +506,12 @@ export default function ReportsPage() {
         Período: {formatDate(periodo.fromDate)} al {formatDate(periodo.toDate)}
       </p>
 
-      {/* Cifras del período: una franja, no cuatro tarjetas. */}
-      <dl className="grid grid-cols-2 overflow-hidden rounded-2xl border border-border/60 bg-card lg:grid-cols-4">
+      {/* Cifras del período: una franja de tres, no tarjetas sueltas. */}
+      <dl className="grid grid-cols-1 overflow-hidden rounded-2xl border border-border/60 bg-card sm:grid-cols-3">
         {cifras.map((c, idx) => (
           <div
             key={c.etiqueta}
-            className={`space-y-1 p-5 ${idx > 0 ? "border-border/50 lg:border-l" : ""} ${idx % 2 === 1 ? "border-l border-border/50" : ""} ${idx >= 2 ? "border-t border-border/50 lg:border-t-0" : ""}`}
+            className={`space-y-1 p-5 ${idx > 0 ? "border-t border-border/50 sm:border-l sm:border-t-0" : ""}`}
           >
             <dt className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               {c.tono === "aviso" && <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />}
@@ -626,20 +620,21 @@ export default function ReportsPage() {
 
         </div>
         <div className="space-y-6">
-          {/* Lo que falta cobrar: lo más accionable del reporte. */}
+          {/* Solo aparece si quedan sesiones cerradas antes de que el cobro fuera parte del cierre. */}
+          {actual.pendientes.length > 0 && (
           <Tarjeta
             id="cobros-titulo"
-            titulo="Sesiones sin cobrar"
+            titulo="Cobros por regularizar"
             extra={
               actual.pendientes.length > 0 && (
                 <span className="text-sm font-medium tabular-nums text-foreground">{formatCurrency(totalPorCobrar)}</span>
               )
             }
           >
-            {actual.pendientes.length === 0 ? (
-              <p className="py-6 text-sm text-muted-foreground">Todas las sesiones dadas en el período están cobradas.</p>
-            ) : (
-              <>
+            <>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Sesiones atendidas antes de que el cobro se registrara al cerrarlas. Regístralas una vez y esta lista desaparece.
+                </p>
                 <ol className="-mx-2 divide-y divide-border/50">
                   {[...actual.pendientes]
                     .sort((a, b) => a.date.localeCompare(b.date))
@@ -662,11 +657,11 @@ export default function ReportsPage() {
                           className="h-8 shrink-0 print:hidden"
                           disabled={cobrando !== null}
                           aria-busy={cobrando === r.id}
-                          aria-label={`Marcar como cobrada la sesión de ${r.patientName} del ${fechaCorta(r.date)}`}
+                          aria-label={`Registrar el cobro de la sesión de ${r.patientName} del ${fechaCorta(r.date)}`}
                           onClick={() => void marcarCobrada(r.id)}
                         >
                           {cobrando === r.id ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                          Cobrado
+                          Registrar
                         </Button>
                       </li>
                     ))}
@@ -681,11 +676,11 @@ export default function ReportsPage() {
                   </button>
                 )}
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Toca la sesión para ajustar el monto o marcarla sin costo.
+                  Toca la sesión para registrar un monto distinto.
                 </p>
-              </>
-            )}
+            </>
           </Tarjeta>
+          )}
           <Tarjeta
             id="cambios-titulo"
             titulo="Por qué se cancelan o cambian"

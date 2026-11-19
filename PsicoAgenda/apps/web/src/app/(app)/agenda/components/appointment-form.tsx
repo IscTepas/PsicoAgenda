@@ -15,7 +15,6 @@ import {
   Clock,
   User,
   Search,
-  CheckCircle2,
   AlertCircle,
   XCircle,
   MapPin,
@@ -31,7 +30,6 @@ import {
 import {
   AppointmentStatus,
   AppointmentModality,
-  AttendanceStatus,
   UserRole,
   DEFAULT_PRICING_RATES,
   calculateAppointmentPrice,
@@ -61,6 +59,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
+import { CobroDeCita } from "@/components/cobro-cita"
 import { useHydrated } from "@/lib/use-hydrated"
 import { cn } from "@/lib/utils"
 import { Calendar } from "@/components/arc/calendar/calendar"
@@ -77,6 +76,7 @@ import {
 import {
   addDays,
   calcularEstadoFecha,
+  citaModificablePorPaciente,
   fechaMinimaPara,
   filtrarHorasDisponibles,
   formatDateToInput,
@@ -306,9 +306,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   const [status, setStatus] = React.useState<AppointmentStatus>(
     initialAppointment?.status || AppointmentStatus.CONFIRMED
   )
-  const [attendance, setAttendance] = React.useState<AttendanceStatus | undefined>(
-    initialAppointment?.attendanceStatus
-  )
 
   // Cancellation Modal State
   const [isCancelModalOpen, setIsCancelModalOpen] = React.useState<boolean>(false)
@@ -345,10 +342,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
   // Today check
   const today = React.useMemo(() => new Date(), [])
   const hydrated = useHydrated()
-  const isAppointmentToday = React.useMemo(() => {
+  const sesionYaEmpezo = React.useMemo(() => {
     if (!hydrated || !initialAppointment) return false
     const start = toDate(initialAppointment.startTime)
-    return start ? isSameDay(start, today) : false
+    return start ? start.getTime() <= today.getTime() : false
   }, [initialAppointment, today, hydrated])
 
   // Instante de referencia para las reglas de fecha. Se refresca al cambiar la
@@ -859,7 +856,10 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
         // El estado administrativo viaja por su propio endpoint; solo se llama si
         // el usuario lo cambió respecto a la cita original.
-        if (status !== initialAppointment.status && status !== AppointmentStatus.CANCELLED) {
+        if (
+          status !== initialAppointment.status &&
+          (status === AppointmentStatus.PENDING || status === AppointmentStatus.CONFIRMED)
+        ) {
           await appointmentService.changeStatus(initialAppointment.id, status)
         }
 
@@ -945,29 +945,6 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     }
   }
 
-  // Attendance Registration
-  const handleRecordAttendance = async (attended: boolean) => {
-    if (!initialAppointment) return
-
-    const nextStatus = attended ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW
-
-    setIsSubmitting(true)
-    try {
-      await appointmentService.changeStatus(initialAppointment.id, nextStatus)
-      setAttendance(attended ? AttendanceStatus.ATTENDED : AttendanceStatus.NO_SHOW)
-      setStatus(nextStatus)
-      notifySuccess(
-        attended
-          ? "Asistencia registrada: Paciente asistió a la sesión."
-          : "Asistencia registrada: Paciente no asistió.",
-      )
-    } catch (error) {
-      toast({ title: error instanceof Error ? error.message : "No se pudo registrar la asistencia", status: "error" })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
       {/* Header and Back Link */}
@@ -1022,58 +999,34 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
         </div>
       )}
 
-      {/* SECCIÓN DESTACADA: REGISTRAR ASISTENCIA (Solo si es el día de la cita y no es paciente) */}
-      {isAppointmentToday && isEdit && status !== AppointmentStatus.CANCELLED && !isPatient && (
-        <Card className="border-primary/30 bg-primary/[0.03] shadow-xs">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="size-2 rounded-full bg-primary animate-pulse" />
-                <CardTitle className="text-base font-semibold text-primary font-heading">
-                  Cita programada para hoy
-                </CardTitle>
-              </div>
-              {attendance && (
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-primary/10 text-primary">
-                  {attendance === AttendanceStatus.ATTENDED ? "Asistencia Confirmada" : "Inasistencia Notificada"}
-                </span>
-              )}
-            </div>
-            <CardDescription className="text-xs text-muted-foreground">
-              Puedes registrar el estado de asistencia de la consulta de hoy con un solo clic.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0 flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              onClick={() => handleRecordAttendance(true)}
-              disabled={isSubmitting}
-              className={`h-9 rounded-xl text-xs font-medium gap-1.5 ${
-                attendance === AttendanceStatus.ATTENDED
-                  ? "bg-primary text-primary-foreground ring-2 ring-primary/30 ring-offset-1"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90"
-              }`}
-            >
-              <CheckCircle2 className="size-4" />
-              <span>Registrar Asistencia (Asistió)</span>
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleRecordAttendance(false)}
-              disabled={isSubmitting}
-              className={`h-9 rounded-xl text-xs font-medium gap-1.5 ${
-                attendance === AttendanceStatus.NO_SHOW
-                  ? "border-destructive/40 bg-destructive/10 text-destructive"
-                  : "border-border/80 hover:bg-muted"
-              }`}
-            >
-              <XCircle className="size-4 text-muted-foreground" />
-              <span>Marcar como No Asistió</span>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+      {/* CERRAR LA SESIÓN: asistencia y cobro en un solo paso (solo el profesional, desde que empieza) */}
+      {isEdit && initialAppointment && !isPatient && status !== AppointmentStatus.CANCELLED && sesionYaEmpezo && (
+          <Card className="border-primary/30 bg-primary/[0.03] shadow-xs">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold text-primary font-heading">
+                {status === AppointmentStatus.PENDING || status === AppointmentStatus.CONFIRMED
+                  ? "Cerrar la sesión"
+                  : "Asistencia y cobro"}
+              </CardTitle>
+              <CardDescription className="text-xs text-muted-foreground">
+                Si asistió, el cobro se registra en el mismo paso. Si no asistió, se cierra sin cargo.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <CobroDeCita
+                cita={{ ...initialAppointment, status }}
+                onActualizada={(cerrada) => {
+                  setStatus(cerrada.status)
+                  notifySuccess(
+                    cerrada.status === AppointmentStatus.COMPLETED
+                      ? "Sesión cerrada y cobro registrado."
+                      : "Sesión cerrada: no asistió, sin cargo.",
+                  )
+                }}
+              />
+            </CardContent>
+          </Card>
+        )}
 
       {/* Main Form */}
       <form
@@ -1867,6 +1820,64 @@ Elige el motivo. Se le avisa a la otra parte y queda en el historial de la cita.
   )
 }
 
+const ETIQUETA_ESTADO: Record<AppointmentStatus, string> = {
+  [AppointmentStatus.PENDING]: "Pendiente",
+  [AppointmentStatus.CONFIRMED]: "Confirmada",
+  [AppointmentStatus.CANCELLED]: "Cancelada",
+  [AppointmentStatus.COMPLETED]: "Atendida",
+  [AppointmentStatus.NO_SHOW]: "No asistió",
+}
+
+/** Lo que ve el paciente de una cita que ya pasó o se cerró: consulta, sin acciones. */
+function CitaSoloLectura({ cita }: { cita: Appointment }) {
+  const inicio = toDate(cita.startTime)
+  const filas = [
+    ["Fecha", inicio ? formatearDiaHora(inicio) : "—"],
+    ["Duración", `${cita.durationMinutes} minutos`],
+    ["Modalidad", cita.modality === AppointmentModality.VIRTUAL ? "Videollamada" : "Presencial"],
+    ["Estado", ETIQUETA_ESTADO[cita.status]],
+    ["Motivo", cita.reason || "—"],
+  ]
+  return (
+    <div className="mx-auto max-w-2xl space-y-6">
+      <div className="space-y-1">
+        <Link
+          href="/agenda"
+          className="inline-flex items-center gap-1.5 rounded text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" />
+          Mis citas
+        </Link>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Detalle de la cita</h1>
+        <p className="text-sm text-muted-foreground">
+          Esta cita ya pasó o está cerrada, así que no se puede modificar. Si necesitas otra, solicita una nueva.
+        </p>
+      </div>
+      <dl className="divide-y divide-border rounded-2xl border border-border bg-card">
+        {filas.map(([etiqueta, valor]) => (
+          <div key={etiqueta} className="grid gap-1 px-5 py-3.5 sm:grid-cols-[8rem_1fr] sm:gap-4">
+            <dt className="text-sm text-muted-foreground">{etiqueta}</dt>
+            <dd className="text-sm font-medium text-foreground first-letter:uppercase">{valor}</dd>
+          </div>
+        ))}
+      </dl>
+      <Button asChild className="h-11 rounded-xl px-5">
+        <Link href="/agenda/nueva">Solicitar cita</Link>
+      </Button>
+    </div>
+  )
+}
+
+/** El paciente que abre una cita pasada la ve en solo lectura; el resto, el formulario. */
+function AppointmentFormSegunRol(props: AppointmentFormProps) {
+  const { user } = useSession()
+  const cita = props.initialAppointment
+  if (user?.role === UserRole.PATIENT && cita && !citaModificablePorPaciente(cita)) {
+    return <CitaSoloLectura cita={cita} />
+  }
+  return <AppointmentFormInner {...props} />
+}
+
 export function AppointmentForm(props: AppointmentFormProps) {
   return (
     <React.Suspense
@@ -1879,7 +1890,7 @@ export function AppointmentForm(props: AppointmentFormProps) {
         </div>
       }
     >
-      <AppointmentFormInner {...props} />
+      <AppointmentFormSegunRol {...props} />
     </React.Suspense>
   )
 }

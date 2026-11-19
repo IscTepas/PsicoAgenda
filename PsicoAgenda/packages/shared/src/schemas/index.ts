@@ -6,7 +6,60 @@ import {
   PaymentStatus,
 } from "../types/index.js";
 
-export const emailSchema = z.string().email("Correo electrónico inválido");
+/**
+ * Correo con usuario, dominio y terminación de al menos dos letras (`.mx`, `.com`).
+ * Se recorta y se pasa a minúsculas: `Ana@Correo.com ` y `ana@correo.com` son la
+ * misma cuenta.
+ */
+export const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(1, "El correo es obligatorio")
+  .max(254, "El correo es demasiado largo")
+  .email("Escribe un correo válido, como nombre@correo.com")
+  .regex(/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/, "Escribe un correo válido, como nombre@correo.com");
+
+/**
+ * Nombre completo: al menos nombre y un apellido, solo letras (con acentos),
+ * espacios, apóstrofo, guion y punto.
+ */
+export const nombreCompletoSchema = z
+  .string()
+  .trim()
+  .min(5, "Escribe tu nombre completo (nombre y apellido)")
+  .max(120, "El nombre es demasiado largo")
+  .regex(/^[\p{L}][\p{L}'.\- ]*$/u, "El nombre solo puede llevar letras y espacios")
+  .refine(
+    (valor) => valor.split(/\s+/).filter((parte) => parte.replace(/[^\p{L}]/gu, "").length >= 2).length >= 2,
+    "Escribe nombre y apellido",
+  );
+
+/** Dirección opcional: si se escribe, debe tener al menos 10 caracteres. */
+export const DIRECCION_MIN_CARACTERES = 10;
+export const direccionOpcionalSchema = z
+  .string()
+  .trim()
+  .max(300, "La dirección es demasiado larga")
+  .refine(
+    (valor) => valor === "" || valor.length >= DIRECCION_MIN_CARACTERES,
+    `Si escribes una dirección, usa al menos ${DIRECCION_MIN_CARACTERES} caracteres (calle, número y colonia o ciudad)`,
+  )
+  .optional();
+
+/** Edad mínima para tener expediente: al menos 3 meses de nacido. */
+export const EDAD_MINIMA_MESES = 3;
+
+/** `true` si la fecha `YYYY-MM-DD` es de hace al menos `EDAD_MINIMA_MESES` meses. */
+export function tieneEdadMinima(fecha: string, hoy: Date = new Date()): boolean {
+  const nacimiento = new Date(`${fecha}T00:00:00`);
+  if (Number.isNaN(nacimiento.getTime())) return false;
+  const limite = new Date(hoy.getFullYear(), hoy.getMonth() - EDAD_MINIMA_MESES, hoy.getDate());
+  return nacimiento.getTime() <= limite.getTime();
+}
+
+/** Consulta pública: si un correo ya tiene cuenta (para avisar en el registro). */
+export const correoDisponibleQuerySchema = z.object({ email: emailSchema });
 
 export const idParamSchema = z.object({
   id: z.string().uuid("Identificador inválido"),
@@ -61,7 +114,19 @@ export const updateAppointmentStatusSchema = z.object({
     .nativeEnum(AppointmentStatus)
     .refine((status) => status !== AppointmentStatus.CANCELLED, {
       message: "Para cancelar una cita usa el endpoint de cancelación con motivo",
+    })
+    .refine((status) => status !== AppointmentStatus.COMPLETED && status !== AppointmentStatus.NO_SHOW, {
+      message: "La asistencia se registra al cerrar la sesión, junto con el cobro",
     }),
+});
+
+/**
+ * Cerrar la sesión: asistencia y cobro en un solo paso. Si asistió se registra el
+ * pago (por la tarifa de la cita o el monto ajustado); si no asistió, nunca se cobra.
+ */
+export const closeAppointmentSchema = z.object({
+  attended: z.boolean(),
+  amount: z.number().min(0, "El monto no puede ser negativo").max(100_000, "El monto es demasiado alto").optional(),
 });
 
 export const cancelAppointmentSchema = z.object({
@@ -72,8 +137,9 @@ export const cancelAppointmentSchema = z.object({
  * Cobro de una cita: pagada, sin costo (condonada) o de vuelta a pendiente para
  * corregir un error. `amount` ajusta lo que se cobra (descuento, sesión más cara).
  */
+/** Corrige el monto cobrado de una sesión ya cerrada (o registra el de una anterior al cierre con cobro). */
 export const updateAppointmentPaymentSchema = z.object({
-  status: z.nativeEnum(PaymentStatus),
+  status: z.literal(PaymentStatus.PAID, { message: "Un cobro registrado solo se corrige, no se deshace" }),
   amount: z.number().min(0, "El monto no puede ser negativo").max(100_000, "El monto es demasiado alto").optional(),
 });
 
@@ -243,14 +309,15 @@ export function esMenorDeEdad(fecha: string): boolean {
 const registroPacienteBaseSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
-  name: z.string().min(2, "El nombre completo debe tener al menos 2 caracteres"),
+  name: nombreCompletoSchema,
   phone: telefonoSchema,
   birth_date: z
     .string()
     .min(1, "La fecha de nacimiento es obligatoria")
-    .refine((valor) => !Number.isNaN(Date.parse(valor)), "Fecha de nacimiento inválida"),
-  gender: z.string().optional(),
-  address: z.string().optional(),
+    .refine((valor) => !Number.isNaN(Date.parse(valor)), "Fecha de nacimiento inválida")
+    .refine((valor) => tieneEdadMinima(valor), `La persona debe tener al menos ${EDAD_MINIMA_MESES} meses de nacida`),
+  gender: z.string().trim().min(1, "Selecciona un género"),
+  address: direccionOpcionalSchema,
   emergency_contact: emergencyContactSchema,
   guardian: emergencyContactSchema.optional(),
 });

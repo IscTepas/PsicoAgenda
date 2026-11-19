@@ -6,8 +6,12 @@ import { useRouter } from "next/navigation"
 import { useState, useMemo, useEffect } from "react"
 import { z } from "zod"
 import {
+  EDAD_MINIMA_MESES,
+  direccionOpcionalSchema,
   emailSchema,
+  nombreCompletoSchema,
   passwordSchema,
+  tieneEdadMinima,
   APP_NAME,
   MAX_INTENTOS_CODIGO,
   esMenorDeEdad,
@@ -56,6 +60,7 @@ import {
 } from "@/services/registro.service"
 import { TelefonoInput } from "@/components/telefono-input"
 import { WheelDatePicker } from "@/components/wheel-date-picker"
+import { DireccionAutocomplete } from "@/components/direccion-autocomplete"
 import { PARENTESCOS_CONTACTO, PARENTESCOS_TUTOR, ParentescoSelect } from "@/components/parentesco-select"
 import { OTPInput } from "@/components/motion/otp-input"
 import { NewPasswordInput } from "@/components/new-password-input"
@@ -66,7 +71,6 @@ import { Input as MotionInput } from "@/components/motion/input"
  * y no la etiqueta visible: Radix no acepta `value=""` y usar el texto como
  * valor acabaría guardándolo en la base de datos.
  */
-const SIN_SELECCION = "sin-seleccion"
 
 /**
  * Esquema de validación para registro integral de Pacientes y Profesionales.
@@ -74,7 +78,7 @@ const SIN_SELECCION = "sin-seleccion"
 const registerSchema = z
   .object({
     role: z.literal("patient"),
-    name: z.string().min(2, "El nombre completo debe tener al menos 2 caracteres"),
+    name: nombreCompletoSchema,
     email: emailSchema,
     phone: z.string().optional(),
     password: passwordSchema,
@@ -86,12 +90,9 @@ const registerSchema = z
     // Campos de Paciente
     birthDate: z.string().optional(),
     gender: z
-      .string()
-      .refine((valor) => valor !== SIN_SELECCION, {
-        message: "Selecciona una opción válida",
-      })
-      .optional(),
-    address: z.string().optional(),
+      .string({ message: "Selecciona un género" })
+      .min(1, "Selecciona un género"),
+    address: direccionOpcionalSchema,
     emergencyContactName: z.string().optional(),
     emergencyContactPhone: z.string().optional(),
     emergencyContactRelationship: z.string().optional(),
@@ -116,6 +117,12 @@ const registerSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "La fecha de nacimiento es obligatoria",
+        path: ["birthDate"],
+      });
+    } else if (!tieneEdadMinima(data.birthDate)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Debe tener al menos ${EDAD_MINIMA_MESES} meses de nacido`,
         path: ["birthDate"],
       });
     }
@@ -224,6 +231,24 @@ const minutosYSegundos = (segundos: number): string => {
 export function RegisterForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  // Último correo que la API dijo que ya tiene cuenta: bloquea el envío sin esperar al 409.
+  const [correoOcupado, setCorreoOcupado] = useState<string | null>(null);
+  const MENSAJE_CORREO_OCUPADO = "Este correo ya tiene una cuenta. Inicia sesión o usa otro correo.";
+
+  async function revisarCorreo(valor: string) {
+    const correo = valor.trim().toLowerCase();
+    if (!emailSchema.safeParse(correo).success) return;
+    try {
+      if (await registroService.correoDisponible(correo)) {
+        setCorreoOcupado(null);
+      } else {
+        setCorreoOcupado(correo);
+        form.setError("email", { type: "manual", message: MENSAJE_CORREO_OCUPADO });
+      }
+    } catch {
+      // Sin respuesta (red, límite de consultas) no se bloquea: el pre-registro lo vuelve a revisar.
+    }
+  }
   const [isPending, setIsPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const configured = isSupabaseConfigured();
@@ -260,6 +285,7 @@ export function RegisterForm() {
       guardianPhone: "",
       guardianRelationship: "",
       guardianConsent: false,
+      paraMenor: "no",
       termsAccepted: true,
     },
   });
@@ -293,6 +319,10 @@ export function RegisterForm() {
   // Paso 1: pedir el código. Todavía no existe ninguna cuenta: hasta que la
   // persona no lo escriba, ni Supabase Auth ni la base de datos ven sus datos.
   async function onSubmit(values: RegisterValues) {
+    if (correoOcupado && values.email.trim().toLowerCase() === correoOcupado) {
+      form.setError("email", { type: "manual", message: MENSAJE_CORREO_OCUPADO }, { shouldFocus: true });
+      return;
+    }
     setError(null);
     setIsPending(true);
 
@@ -711,6 +741,10 @@ export function RegisterForm() {
                             placeholder="tu@correo.com"
                             autoComplete="email"
                             {...field}
+                            onBlur={() => {
+                              field.onBlur();
+                              void revisarCorreo(field.value);
+                            }}
                           />
                         </FormControl>
                         <FormMessage />
@@ -841,7 +875,6 @@ export function RegisterForm() {
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value={SIN_SELECCION}>Selecciona una opción</SelectItem>
                               <SelectItem value="Femenino">Femenino</SelectItem>
                               <SelectItem value="Masculino">Masculino</SelectItem>
                               <SelectItem value="No binario">No binario</SelectItem>
@@ -865,10 +898,10 @@ export function RegisterForm() {
                           Dirección <span className="text-muted-foreground font-normal">(Opcional)</span>
                         </FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder="Ciudad, municipio o dirección"
-                            autoComplete="street-address"
-                            {...field}
+                          <DireccionAutocomplete
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
                           />
                         </FormControl>
                         <FormMessage />

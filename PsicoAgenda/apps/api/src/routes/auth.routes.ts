@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   confirmarRecuperacionSchema,
+  correoDisponibleQuerySchema,
   registroPacienteSchema,
   solicitarRecuperacionSchema,
   verificarCodigoRegistroSchema,
@@ -11,6 +12,7 @@ import {
   solicitarRecuperacionController,
 } from "@/controllers/recuperacion.controller";
 import {
+  correoDisponibleController,
   preRegistroController,
   verificarCodigoController,
 } from "@/controllers/registro.controller";
@@ -24,6 +26,8 @@ const router = Router();
 // pasos: primero un código de 6 dígitos al correo (validado por la API) y solo
 // entonces se crea la cuenta, para que ningún correo sin confirmar toque
 // Supabase Auth ni la base de datos.
+// Aviso temprano en el formulario: el pre-registro lo vuelve a comprobar.
+router.get("/correo-disponible", validate({ query: correoDisponibleQuerySchema }), correoDisponibleController);
 router.post("/pre-registro", validate({ body: registroPacienteSchema }), preRegistroController);
 router.post(
   "/verificar-codigo",

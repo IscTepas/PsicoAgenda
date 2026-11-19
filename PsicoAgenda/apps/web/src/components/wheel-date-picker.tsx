@@ -3,7 +3,6 @@
 import * as React from "react"
 import { CalendarDays, ChevronDown } from "lucide-react"
 import { WheelPicker } from "@/components/motion/wheel-picker"
-import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
@@ -24,8 +23,9 @@ function parse(value: string) {
 
 /**
  * Fecha con tres ruedas (día, mes, año): fecha de nacimiento en el registro y
- * período de Reportes. El valor es el string "YYYY-MM-DD"; solo se escribe al
- * pulsar "Listo", así un campo obligatorio nunca queda con una fecha no elegida.
+ * período de Reportes. El valor es el string "YYYY-MM-DD" y se escribe en cuanto
+ * se gira cualquier rueda: abrir y cerrar sin moverlas no elige nada, así un campo
+ * obligatorio nunca queda con una fecha que la persona no tocó.
  */
 export function WheelDatePicker({
   value,
@@ -74,16 +74,13 @@ export function WheelDatePicker({
   )
   const months = React.useMemo(() => MONTHS.map((label, i) => ({ label, value: String(i) })), [])
 
-  // Al cambiar mes o año, el día se ajusta al último del mes (31 de enero → 28 de febrero).
-  const update = (patch: Partial<typeof draft>) =>
-    setDraft((prev) => {
-      const next = { ...prev, ...patch }
-      return { ...next, day: Math.min(next.day, daysIn(next.year, next.month)) }
-    })
-
-  const confirm = () => {
-    onChange(`${draft.year}-${pad(draft.month + 1)}-${pad(draft.day)}`)
-    setOpen(false)
+  // Cada giro se guarda de inmediato. Al cambiar mes o año, el día se ajusta al
+  // último del mes (31 de enero → 28 de febrero).
+  const update = (patch: Partial<typeof draft>) => {
+    const merged = { ...draft, ...patch }
+    const next = { ...merged, day: Math.min(merged.day, daysIn(merged.year, merged.month)) }
+    setDraft(next)
+    onChange(`${next.year}-${pad(next.month + 1)}-${pad(next.day)}`)
   }
 
   const label = parsed ? `${parsed.day} de ${MONTHS[parsed.month]} de ${parsed.year}` : null
@@ -135,14 +132,6 @@ export function WheelDatePicker({
             value={String(draft.year)}
             onValueChange={(v) => update({ year: Number(v) })}
           />
-        </div>
-        <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/60 pt-3">
-          <span className="text-xs text-muted-foreground">
-            {draft.day} de {MONTHS[draft.month]} de {draft.year}
-          </span>
-          <Button type="button" size="sm" onClick={confirm} className="rounded-lg">
-            Listo
-          </Button>
         </div>
       </PopoverContent>
     </Popover>

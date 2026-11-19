@@ -17,7 +17,6 @@ const NAV_LINKS = [
   { href: "#consultorio", label: "Consultorio" },
   { href: "#servicios", label: "Servicios" },
   { href: "#preguntas", label: "Preguntas" },
-  { href: "#contacto", label: "Contacto" },
 ]
 
 function getInitials(name: string): string {
@@ -90,17 +89,6 @@ export default function Home() {
               Atención psicológica en consultorio y en línea con {PRACTICE.psychologist}. Agenda, cambia o
               cancela tus citas desde tu cuenta.
             </p>
-            <div className="mt-8 flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Button size="lg" asChild className="w-full sm:w-auto">
-                <Link href="/registro">
-                  Crear cuenta para agendar
-                  <ArrowRight className="transition-transform duration-200 ease-out group-hover/button:translate-x-0.5" />
-                </Link>
-              </Button>
-              <Button size="lg" variant="ghost" asChild className="w-full sm:w-auto">
-                <Link href="/login">Ya tengo cuenta</Link>
-              </Button>
-            </div>
           </div>
 
           <div className="mt-12 grid gap-5 md:mt-16 lg:grid-cols-12">
@@ -228,13 +216,6 @@ export default function Home() {
           <div className="mx-auto grid max-w-6xl gap-10 px-6 py-20 md:py-24 lg:grid-cols-12">
             <div className="reveal lg:col-span-4">
               <h2 className="text-balance text-3xl font-semibold tracking-[-0.025em]">Preguntas frecuentes</h2>
-              <p className="mt-3 max-w-sm leading-relaxed text-muted-foreground">
-                ¿Tienes otra duda?{" "}
-                <a href="#contacto" className="inline-flex items-center gap-0.5 rounded-sm font-medium text-primary underline-offset-4 hover:underline outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
-                  Escríbenos
-                  <ChevronRight className="size-4" aria-hidden="true" />
-                </a>
-              </p>
             </div>
 
             <div className="reveal divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card lg:col-span-8">
@@ -274,7 +255,7 @@ export default function Home() {
       </main>
 
       <footer className="border-t border-border/60">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-8 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <div className="mx-auto flex max-w-6xl px-6 py-8 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <Image
               src="/images/psicoagenda-icon.png"
@@ -285,14 +266,6 @@ export default function Home() {
             />
             <Wordmark />
             <span>© {new Date().getFullYear()}</span>
-          </div>
-          <div className="flex items-center gap-5">
-            <Link href="/login" className="-my-2 rounded-sm py-2 transition-colors hover:text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
-              Iniciar sesión
-            </Link>
-            <Link href="/registro" className="-my-2 rounded-sm py-2 transition-colors hover:text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
-              Crear cuenta
-            </Link>
           </div>
         </div>
       </footer>
