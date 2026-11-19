@@ -176,3 +176,107 @@ export async function ensureClinicalRecordId(patientId: string): Promise<string>
 
   return created.id;
 }
+
+export interface CreateConsentInput {
+  signedAt: string; // YYYY-MM-DD
+  document: string;
+  guardianId?: string;
+}
+
+const esMenor = (nacimiento: Date | null) => {
+  if (!nacimiento) return false;
+  const mayoria = new Date(nacimiento);
+  mayoria.setFullYear(nacimiento.getFullYear() + 18);
+  return mayoria > new Date();
+};
+
+/**
+ * Registra el consentimiento que se firmó (en papel o en consultorio). Un menor
+ * lo firma uno de sus tutores; un adulto, él mismo. El nuevo reemplaza al que
+ * estaba vigente, que pasa a VENCIDO (no se borra: queda como historial).
+ */
+export async function registrarConsentimiento(
+  auth: AuthenticatedUser,
+  patientId: string,
+  input: CreateConsentInput,
+): Promise<ClinicalRecord> {
+  await requirePatientAccess(auth, patientId);
+  const paciente = await prisma.pacientes.findUnique({
+    where: { id: patientId },
+    select: { fecha_nacimiento: true },
+  });
+  const menor = esMenor(paciente?.fecha_nacimiento ?? null);
+
+  if (menor && !input.guardianId) {
+    throw AppError.badRequest("El paciente es menor de edad: el consentimiento lo firma uno de sus tutores.");
+  }
+  if (!menor && input.guardianId) {
+    throw AppError.badRequest("El paciente es mayor de edad: el consentimiento lo firma él mismo.");
+  }
+  if (input.guardianId) {
+    const vinculo = await prisma.pacientes_tutores.findUnique({
+      where: { paciente_id_tutor_id: { paciente_id: patientId, tutor_id: input.guardianId } },
+    });
+    if (!vinculo) throw AppError.badRequest("Ese tutor no está registrado para este paciente.");
+  }
+
+  await prisma.$transaction([
+    prisma.consentimientos_informados.updateMany({
+      where: { paciente_id: patientId, estado: estado_consentimiento.FIRMADO },
+      data: { estado: estado_consentimiento.VENCIDO },
+    }),
+    prisma.consentimientos_informados.create({
+      data: {
+        id: randomUUID(),
+        paciente_id: patientId,
+        // Mediodía local para que la fecha no se corra de día por la zona horaria.
+        firmado_en: new Date(`${input.signedAt}T12:00:00`),
+        documento: input.document.trim(),
+        tutor_legal_id: input.guardianId ?? null,
+      },
+    }),
+  ]);
+  return getOrCreateClinicalRecord(auth, patientId);
+}
+
+/** El paciente (o su tutor) retira el consentimiento: queda registrado cuándo. */
+export async function retirarConsentimiento(
+  auth: AuthenticatedUser,
+  patientId: string,
+  consentId: string,
+): Promise<ClinicalRecord> {
+  await requirePatientAccess(auth, patientId);
+  const { count } = await prisma.consentimientos_informados.updateMany({
+    where: { id: consentId, paciente_id: patientId, estado: estado_consentimiento.FIRMADO },
+    data: { estado: estado_consentimiento.RETIRADO, retirado_en: new Date() },
+  });
+  if (count === 0) throw AppError.notFound("No hay un consentimiento vigente con ese identificador.");
+  return getOrCreateClinicalRecord(auth, patientId);
+}
+
+export interface UpdateClinicalRecordInput {
+  diagnosis?: string;
+  background?: string;
+  generalObservations?: string;
+}
+
+/** La psicóloga escribe diagnóstico, antecedentes y observaciones del expediente. */
+export async function updateClinicalRecord(
+  auth: AuthenticatedUser,
+  patientId: string,
+  input: UpdateClinicalRecordInput,
+): Promise<ClinicalRecord> {
+  await requirePatientAccess(auth, patientId);
+  const recordId = await ensureClinicalRecordId(patientId);
+  const vacio = (v: string | undefined) => (v === undefined ? undefined : v.trim() === "" ? null : v.trim());
+
+  const updated = await prisma.expedientes_clinicos.update({
+    where: { id: recordId },
+    data: {
+      diagnostico: vacio(input.diagnosis),
+      antecedentes: vacio(input.background),
+      observaciones_generales: vacio(input.generalObservations),
+    },
+  });
+  return toClinicalRecord(updated, await cargarConsentimientos(patientId));
+}

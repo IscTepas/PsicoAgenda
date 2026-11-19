@@ -26,12 +26,12 @@ import { PageHeader } from "../components/page-header"
 import { formatAppointmentTime } from "@/lib/format"
 import { accionesDeAviso, TIPO_DE_AVISO, type AccionDeAviso } from "@/lib/notificaciones"
 import { useSession } from "@/lib/use-session"
+import { useEnlaceVideollamada } from "@/lib/use-enlace-videollamada"
 import { cn } from "@/lib/utils"
 import { appointmentRequestService, appointmentService, notificationService } from "@/services"
 import { PendingInbox } from "./pending-inbox"
 
 const DAY = 24 * 60 * 60_000
-const VIDEO_URL = "https://meet.google.com/psi-diag-ses"
 const MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(PRACTICE.mapQuery)}`
 
 type Filtro = "todos" | "sin-leer"
@@ -57,6 +57,7 @@ export default function NotificationsPage() {
   const queryClient = useQueryClient()
   const { user } = useSession()
   const esPaciente = user?.role === UserRole.PATIENT
+  const enlaceVideollamada = useEnlaceVideollamada()
   const [filtro, setFiltro] = useState<Filtro>("todos")
   // Aviso abierto en su tarjeta (se busca por id para que refleje "leído" al instante).
   const [abiertoId, setAbiertoId] = useState<string | null>(null)
@@ -131,7 +132,7 @@ export default function NotificationsPage() {
       esPaciente,
       ahora: hoy,
       mapsUrl: MAPS_URL,
-      videoUrl: VIDEO_URL,
+      videoUrl: enlaceVideollamada ?? "",
       cita: aviso.appointmentId ? citaPorId.get(aviso.appointmentId) : undefined,
       estadoSolicitud: aviso.requestId ? estadoPorSolicitud.get(aviso.requestId) : undefined,
     })
@@ -161,7 +162,7 @@ export default function NotificationsPage() {
         }
       />
 
-      {user && (esPaciente ? proxima && <ProximaCita cita={proxima} /> : <PendingInbox />)}
+      {user && (esPaciente ? proxima && <ProximaCita cita={proxima} enlaceVideollamada={enlaceVideollamada} /> : <PendingInbox />)}
 
       <section aria-labelledby="avisos-titulo" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -391,7 +392,7 @@ function BotonAccion({
   )
 }
 
-function ProximaCita({ cita }: { cita: Appointment }) {
+function ProximaCita({ cita, enlaceVideollamada }: { cita: Appointment; enlaceVideollamada?: string }) {
   const inicio = new Date(cita.startTime)
   const virtual = cita.modality === AppointmentModality.VIRTUAL
   return (
@@ -420,12 +421,14 @@ function ProximaCita({ cita }: { cita: Appointment }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline" size="sm">
-            <a href={virtual ? VIDEO_URL : MAPS_URL} target="_blank" rel="noopener noreferrer">
-              {virtual ? <Video /> : <MapPin />}
-              {virtual ? "Videollamada" : "Cómo llegar"}
-            </a>
-          </Button>
+          {(!virtual || enlaceVideollamada) && (
+            <Button asChild variant="outline" size="sm">
+              <a href={virtual ? enlaceVideollamada : MAPS_URL} target="_blank" rel="noopener noreferrer">
+                {virtual ? <Video /> : <MapPin />}
+                {virtual ? "Videollamada" : "Cómo llegar"}
+              </a>
+            </Button>
+          )}
           <Button asChild size="sm">
             <Link href={`/agenda/${cita.id}`}>
               Modificar o cancelar

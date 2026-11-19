@@ -273,6 +273,8 @@ model psicologos {
   recargo_mismo_dia_pct Int               @default(30)
   recargo_mismo_dia_monto Int?
   descuento_virtual     Int               @default(100)
+  /// Enlace fijo de videollamada para las sesiones en línea (https).
+  enlace_videollamada   String?
   bloqueos_agenda    bloqueos_agenda[]
   citas              citas[]
   entradas_bitacora  entradas_bitacora[]

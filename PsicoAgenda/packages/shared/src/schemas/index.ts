@@ -69,15 +69,12 @@ export const cancelAppointmentSchema = z.object({
 });
 
 /**
- * Estado de cobro de una cita. Solo se puede marcar como cobrada o condonada:
- * el estado `pending` es el inicial y no se vuelve a él por API.
+ * Cobro de una cita: pagada, sin costo (condonada) o de vuelta a pendiente para
+ * corregir un error. `amount` ajusta lo que se cobra (descuento, sesión más cara).
  */
 export const updateAppointmentPaymentSchema = z.object({
-  status: z
-    .nativeEnum(PaymentStatus)
-    .refine((status) => status !== PaymentStatus.PENDING, {
-      message: "El estado de pago debe ser paid o waived",
-    }),
+  status: z.nativeEnum(PaymentStatus),
+  amount: z.number().min(0, "El monto no puede ser negativo").max(100_000, "El monto es demasiado alto").optional(),
 });
 
 /** Solicitud del paciente: el paciente y el psicólogo salen de la sesión, no del cuerpo. */
@@ -441,6 +438,13 @@ export const updatePsychologistProfileSchema = z.object({
   specialty: z.string().trim().max(120, "La especialidad es demasiado larga").optional(),
   bio: z.string().trim().max(2000, "La biografía es demasiado larga").optional(),
   rates: pricingRatesSchema.optional(),
+  /** Vacío quita el enlace. Mismo límite que el CHECK `ck_psicologos_enlace_videollamada`. */
+  videoCallUrl: z
+    .string()
+    .trim()
+    .max(300, "El enlace es demasiado largo")
+    .refine((v) => v === "" || /^https:\/\/[^\s]+\.[^\s]+/.test(v), "Pega el enlace completo, empieza con https://")
+    .optional(),
 });
 
 export const updatePatientProfileSchema = z.object({
@@ -486,6 +490,30 @@ export const perfilPsicologoSchema = updatePsychologistProfileSchema.required({
  * `SessionLogEntry` usa `sessionType`/`interventions`/`homework`, que se mapean a
  * columnas existentes de `LogEntry` sin migración.
  */
+/** Campos del expediente que escribe la psicóloga. Vacío borra el dato. */
+export const updateClinicalRecordSchema = z
+  .object({
+    diagnosis: z.string().trim().max(500, "El diagnóstico es demasiado largo").optional(),
+    background: z.string().trim().max(5000, "Los antecedentes son demasiado largos").optional(),
+    generalObservations: z.string().trim().max(5000, "Las observaciones son demasiado largas").optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), { message: "No hay nada que guardar" });
+
+/** La psicóloga registra el consentimiento que el paciente (o su tutor) firmó en papel. */
+export const createConsentSchema = z.object({
+  signedAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
+    .refine((v) => new Date(`${v}T00:00:00`) <= new Date(), "La fecha de firma no puede ser futura"),
+  document: z.string().trim().min(3, "Escribe qué documento se firmó").max(200, "El nombre es demasiado largo"),
+  guardianId: z.string().uuid().optional(),
+});
+
+export const consentParamsSchema = z.object({
+  id: z.string().uuid(),
+  consentId: z.string().uuid(),
+});
+
 export const createLogEntrySchema = z.object({
   appointmentId: z.string().uuid().optional(),
   sessionType: z.string().optional(),

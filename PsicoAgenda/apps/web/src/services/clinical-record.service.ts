@@ -38,6 +38,33 @@ function reviveClinicalRecord(raw: SerializedClinicalRecord): ClinicalRecord {
 }
 
 export const clinicalRecordService = {
+  update: async (
+    patientId: string,
+    payload: { diagnosis?: string; background?: string; generalObservations?: string },
+  ): Promise<ClinicalRecord> =>
+    reviveClinicalRecord(
+      await apiFetch<SerializedClinicalRecord>(`/patients/${patientId}/clinical-record`, {
+        method: "PATCH",
+        body: payload,
+      }),
+    ),
+
+
+  registrarConsentimiento: async (
+    patientId: string,
+    payload: { signedAt: string; document: string; guardianId?: string },
+  ): Promise<ClinicalRecord> =>
+    reviveClinicalRecord(
+      await apiFetch<SerializedClinicalRecord>(`/patients/${patientId}/consents`, { method: "POST", body: payload }),
+    ),
+
+  retirarConsentimiento: async (patientId: string, consentId: string): Promise<ClinicalRecord> =>
+    reviveClinicalRecord(
+      await apiFetch<SerializedClinicalRecord>(`/patients/${patientId}/consents/${consentId}/withdraw`, {
+        method: "POST",
+      }),
+    ),
+
   get: async (patientId: string, token?: string): Promise<ClinicalRecord> =>
     reviveClinicalRecord(
       await apiFetch<SerializedClinicalRecord>(`/patients/${patientId}/clinical-record`, {

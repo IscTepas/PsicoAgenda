@@ -37,6 +37,7 @@ function toProfile(row: PsychologistRow): PsychologistProfile {
     specialty: row.especialidad ?? undefined,
     bio: row.biografia ?? undefined,
     rates: toPricingRates(row),
+    videoCallUrl: row.enlace_videollamada ?? undefined,
     timeZone: user.zona_horaria,
     photoUrl: user.foto_perfil_url ?? undefined,
     notifyWhatsapp: user.notificar_whatsapp,
@@ -99,6 +100,7 @@ export interface UpdatePsychologistProfileInput {
   specialty?: string;
   bio?: string;
   rates?: PricingRates;
+  videoCallUrl?: string;
 }
 
 export async function updateMyPsychologistProfile(
@@ -131,6 +133,7 @@ export async function updateMyPsychologistProfile(
     if (input.licenseNumber !== undefined) psychologistData.cedula_profesional = input.licenseNumber;
     if (input.specialty !== undefined) psychologistData.especialidad = emptyToNull(input.specialty);
     if (input.bio !== undefined) psychologistData.biografia = emptyToNull(input.bio);
+    if (input.videoCallUrl !== undefined) psychologistData.enlace_videollamada = emptyToNull(input.videoCallUrl);
     if (input.rates) {
       psychologistData.tarifa_adulto = input.rates.adultRate;
       psychologistData.tarifa_menor = input.rates.minorRate;

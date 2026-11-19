@@ -7,12 +7,14 @@ const { db } = vi.hoisted(() => ({
     pacientes: { findUnique: vi.fn() },
     psicologos: { findUnique: vi.fn() },
     expedientes_clinicos: { findUnique: vi.fn(), create: vi.fn() },
-    consentimientos_informados: { findMany: vi.fn() },
+    consentimientos_informados: { findMany: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
+    pacientes_tutores: { findUnique: vi.fn() },
+    $transaction: vi.fn((ops: unknown[]) => Promise.all(ops)),
   },
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: db }));
 
-const { getOrCreateClinicalRecord } = await import("@/services/clinical-record.service");
+const { getOrCreateClinicalRecord, registrarConsentimiento, retirarConsentimiento } = await import("@/services/clinical-record.service");
 
 const admin = { id: "u-admin", email: "admin@x.com", role: UserRole.ADMIN } as never;
 
@@ -109,5 +111,49 @@ describe("consentimientos en el expediente", () => {
       expect.objectContaining({ where: { paciente_id: "p-1" } }),
     );
     expect(record.consents).toHaveLength(1);
+  });
+});
+
+describe("registrar y retirar el consentimiento", () => {
+  const adulto = { id: "p-1", psicologo_id: null, fecha_nacimiento: new Date("1990-05-01") };
+  const menor = { id: "p-1", psicologo_id: null, fecha_nacimiento: new Date(new Date().getFullYear() - 10, 0, 1) };
+
+  it("un adulto lo firma él mismo y el anterior vigente pasa a vencido", async () => {
+    db.pacientes.findUnique.mockResolvedValue(adulto);
+    await registrarConsentimiento(admin, "p-1", { signedAt: "2026-11-01", document: "Consentimiento v1" });
+
+    expect(db.consentimientos_informados.updateMany).toHaveBeenCalledWith({
+      where: { paciente_id: "p-1", estado: estado_consentimiento.FIRMADO },
+      data: { estado: estado_consentimiento.VENCIDO },
+    });
+    const data = db.consentimientos_informados.create.mock.calls[0]?.[0].data;
+    expect(data).toMatchObject({ paciente_id: "p-1", documento: "Consentimiento v1", tutor_legal_id: null });
+  });
+
+  it("un menor necesita a uno de sus tutores", async () => {
+    db.pacientes.findUnique.mockResolvedValue(menor);
+    await expect(
+      registrarConsentimiento(admin, "p-1", { signedAt: "2026-11-01", document: "Consentimiento v1" }),
+    ).rejects.toThrow(/tutores/);
+
+    db.pacientes_tutores.findUnique.mockResolvedValue(null);
+    await expect(
+      registrarConsentimiento(admin, "p-1", { signedAt: "2026-11-01", document: "Consentimiento v1", guardianId: "t-9" }),
+    ).rejects.toThrow(/no está registrado/);
+
+    db.pacientes_tutores.findUnique.mockResolvedValue({ paciente_id: "p-1", tutor_id: "t-1" });
+    await registrarConsentimiento(admin, "p-1", { signedAt: "2026-11-01", document: "Consentimiento v1", guardianId: "t-1" });
+    expect(db.consentimientos_informados.create.mock.calls[0]?.[0].data.tutor_legal_id).toBe("t-1");
+  });
+
+  it("retirar solo aplica a uno vigente", async () => {
+    db.consentimientos_informados.updateMany.mockResolvedValue({ count: 0 });
+    await expect(retirarConsentimiento(admin, "p-1", "c-1")).rejects.toThrow(/vigente/);
+
+    db.consentimientos_informados.updateMany.mockResolvedValue({ count: 1 });
+    await retirarConsentimiento(admin, "p-1", "c-1");
+    expect(db.consentimientos_informados.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ estado: estado_consentimiento.RETIRADO }) }),
+    );
   });
 });

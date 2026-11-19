@@ -123,6 +123,8 @@ export interface LibretaSesionDialogProps {
   /** Para retomar una hoja ya guardada de la que solo se conoce el id (borradores). */
   entryId?: string
   onSaved?: (entry: SessionLogEntry, created: boolean) => void
+  /** Una línea arriba de la hoja (p. ej. "Sesión cerrada: escribe la nota…"). */
+  aviso?: string
 }
 
 /**
@@ -140,6 +142,7 @@ export function LibretaSesionDialog({
   entry: entryProp,
   entryId,
   onSaved,
+  aviso,
 }: LibretaSesionDialogProps) {
   const { toast } = useToast()
   const clave = claveDeBorrador(patientId, appointmentId, entryProp?.id ?? entryId)
@@ -278,6 +281,11 @@ export function LibretaSesionDialog({
           </p>
         ) : (
           <form onSubmit={guardar} className="space-y-4">
+            {aviso && !borrador && (
+              <p role="status" className="rounded-[14px] bg-primary/10 px-4 py-2.5 text-sm text-foreground">
+                {aviso}
+              </p>
+            )}
             {borrador && (
               <p role="status" className="rounded-[14px] bg-amber-50 px-4 py-2.5 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-100">
                 Recuperamos lo que escribiste la vez pasada. Guarda la hoja para que quede en el expediente.

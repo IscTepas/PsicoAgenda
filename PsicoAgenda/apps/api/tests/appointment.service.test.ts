@@ -434,6 +434,20 @@ describe("cancelAppointment", () => {
 });
 
 describe("updateAppointmentPayment", () => {
+  it("ajusta el monto y puede volver a pendiente para corregir un error", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(
+      appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow({ estado: "PAGADO", pagado_en: START }) }),
+    );
+    prismaMock.citas.findUniqueOrThrow.mockResolvedValue(
+      appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow() }),
+    );
+
+    await updateAppointmentPayment(psychologist, APPOINTMENT_ID, PaymentStatus.PENDING, 600);
+
+    const { data } = lastCallArg(prismaMock.pagos_honorarios.update) as { data: Record<string, unknown> };
+    expect(data).toMatchObject({ estado: "PENDIENTE", pagado_en: null, monto: 600 });
+  });
+
   it("marca el honorario como pagado con su fecha de cobro", async () => {
     prismaMock.citas.findUnique.mockResolvedValue(
       appointmentRow({ estado: "COMPLETADA", pagos_honorarios: paymentRow() }),

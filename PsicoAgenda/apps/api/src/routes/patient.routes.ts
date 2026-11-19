@@ -2,12 +2,15 @@ import { Router } from "express";
 import {
   addGuardianSchema,
   addTutoredMinorSchema,
+  consentParamsSchema,
+  createConsentSchema,
   createLogEntrySchema,
   guardianParamsSchema,
   removeGuardianQuerySchema,
   UserRole,
   idParamSchema,
   patientListQuerySchema,
+  updateClinicalRecordSchema,
   taskDoneSchema,
   updatePatientProfileSchema,
 } from "@psicoagenda/shared";
@@ -17,7 +20,12 @@ import {
   listPatientsController,
   updateMyPatientController,
 } from "@/controllers/patient.controller";
-import { getClinicalRecordController } from "@/controllers/clinical-record.controller";
+import {
+  createConsentController,
+  getClinicalRecordController,
+  updateClinicalRecordController,
+  withdrawConsentController,
+} from "@/controllers/clinical-record.controller";
 import {
   createLogEntryController,
   listLogEntriesController,
@@ -77,6 +85,24 @@ router.get(
   requireAuth,
   validate({ params: idParamSchema }),
   getClinicalRecordController,
+);
+router.patch(
+  "/:id/clinical-record",
+  requireAuth,
+  validate({ params: idParamSchema, body: updateClinicalRecordSchema }),
+  updateClinicalRecordController,
+);
+router.post(
+  "/:id/consents",
+  requireAuth,
+  validate({ params: idParamSchema, body: createConsentSchema }),
+  createConsentController,
+);
+router.post(
+  "/:id/consents/:consentId/withdraw",
+  requireAuth,
+  validate({ params: consentParamsSchema }),
+  withdrawConsentController,
 );
 router.get(
   "/:id/log-entries",

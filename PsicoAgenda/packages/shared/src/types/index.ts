@@ -98,6 +98,8 @@ export interface Psychologist extends User {
   bio?: string;
   /** Tarifas con las que se calcula el costo de sus citas. */
   rates: PricingRates;
+  /** Enlace fijo de su sala de videollamada (Meet, Zoom…), si lo configuró. */
+  videoCallUrl?: string;
 }
 
 /** Preferencias de cuenta que aplican a cualquier rol. */
@@ -214,6 +216,8 @@ export interface Appointment {
   notes?: string;
   /** Por qué se canceló (o se movió a otra fecha), si está cancelada. */
   cancellationReason?: string;
+  /** La sesión ya tiene su hoja de bitácora. */
+  hasSessionNote?: boolean;
   price?: number;
   payment?: HonorariumPayment;
   createdAt: Date;

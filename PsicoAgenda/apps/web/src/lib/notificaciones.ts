@@ -35,6 +35,7 @@ export interface ContextoDeAviso {
   /** Para no ofrecer acciones de una cita que ya pasó. */
   ahora: Date
   mapsUrl: string
+  /** Enlace de la sala de la psicóloga; vacío si no lo ha configurado (entonces no se ofrece). */
   videoUrl: string
 }
 
@@ -91,7 +92,7 @@ export function accionesDeAviso(
         new Date(cita.startTime).getTime() > ctx.ahora.getTime() - 60 * 60_000 &&
         (cita.status === AppointmentStatus.CONFIRMED || cita.status === AppointmentStatus.PENDING)
       if (vigente && cita.modality === AppointmentModality.VIRTUAL) {
-        extras.push({ href: ctx.videoUrl, label: "Videollamada", external: true })
+        if (ctx.videoUrl) extras.push({ href: ctx.videoUrl, label: "Videollamada", external: true })
       } else if (vigente && ctx.esPaciente) {
         extras.push({ href: ctx.mapsUrl, label: "Cómo llegar", external: true })
       }

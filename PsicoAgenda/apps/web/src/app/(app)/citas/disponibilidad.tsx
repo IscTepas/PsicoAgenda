@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CalendarOff, Loader2, Trash2 } from "lucide-react"
+import { Loader2, Trash2 } from "lucide-react"
 import type { AgendaBlock } from "@psicoagenda/shared"
 import { Calendar } from "@/components/arc/calendar/calendar"
 import { Button } from "@/components/ui/button"
@@ -224,15 +224,10 @@ export function Disponibilidad() {
 
         {/* Próximos bloqueos, agrupados por mes */}
         <section aria-labelledby="disp-proximos" className="rounded-2xl border border-border bg-card p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 id="disp-proximos" className="text-base font-semibold text-foreground">
-              Próximos bloqueos
-            </h2>
-            <Button type="button" onClick={() => abrirModal()} className="h-10 rounded-xl px-4 font-semibold">
-              <CalendarOff className="size-4" />
-              Bloquear agenda
-            </Button>
-          </div>
+          {/* Se bloquea desde el calendario (tocar un día): aquí solo se ven y se quitan. */}
+          <h2 id="disp-proximos" className="text-base font-semibold text-foreground">
+            Próximos bloqueos
+          </h2>
 
           {isError ? (
             <p role="alert" className="mt-4 text-sm text-destructive">
@@ -242,8 +237,8 @@ export function Disponibilidad() {
             <p className="mt-6 text-sm text-muted-foreground">Cargando bloqueos…</p>
           ) : ordenados.length === 0 ? (
             <p className="mt-4 max-w-md text-sm text-muted-foreground">
-              No tienes bloqueos próximos. Bloquea vacaciones, días festivos o unas horas sueltas para que no te pidan
-              cita en ellos.
+              No tienes bloqueos próximos. Para bloquear vacaciones, un día festivo o unas horas, toca ese día en el
+              calendario.
             </p>
           ) : (
             <div className="mt-2 space-y-4">

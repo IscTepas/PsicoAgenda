@@ -4,6 +4,7 @@ import { despacharPendientes } from "@/services/notification.service";
 import { limpiarCacheRegistroVencida } from "@/services/codigo-cache.repo";
 import { finalizarTutelasVencidas } from "@/services/guardianship.service";
 import { purgarDatosVencidos } from "@/services/mantenimiento.service";
+import { encolarResumenBitacora } from "@/services/resumen-bitacora.service";
 
 const router = Router();
 
@@ -51,6 +52,15 @@ router.post("/mantenimiento", requireCronSecret, async (_req, res) => {
   const resultado = await purgarDatosVencidos();
 
   res.json({ ok: true, ...resultado, ejecutadoEn: new Date().toISOString() });
+});
+
+/**
+ * Resumen diario de la psicóloga (8 p.m.): un correo si le quedaron sesiones sin
+ * cerrar o sin bitácora. Solo encola; lo envía el siguiente barrido de /despachar.
+ * Lo dispara `cron-job.org`; ver "Resumen de bitácora" en el README.
+ */
+router.post("/resumen-bitacora", requireCronSecret, async (_req, res) => {
+  res.json({ ok: true, encolados: await encolarResumenBitacora(), ejecutadoEn: new Date().toISOString() });
 });
 
 export { router as internalRouter };

@@ -5,8 +5,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/motion/ta
 import { PageHeader } from "../components/page-header"
 import { CostosCitas } from "./costos-citas"
 import { Disponibilidad } from "./disponibilidad"
+import { EnlaceVideollamada } from "./enlace-videollamada"
 
-const SECCIONES = ["disponibilidad", "costos"] as const
+const SECCIONES = ["disponibilidad", "costos", "videollamada"] as const
 type Seccion = (typeof SECCIONES)[number]
 
 /** Cuándo atiende y cuánto cobra la psicóloga, en un solo lugar. La pestaña vive en la URL para poder enlazarla. */
@@ -36,12 +37,18 @@ export function ConfiguracionCitas() {
           <TabsTrigger value="costos" className="px-4 py-1.5 text-sm">
             Costos
           </TabsTrigger>
+          <TabsTrigger value="videollamada" className="px-4 py-1.5 text-sm">
+            Videollamada
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="disponibilidad">
           <Disponibilidad />
         </TabsContent>
         <TabsContent value="costos">
           <CostosCitas />
+        </TabsContent>
+        <TabsContent value="videollamada">
+          <EnlaceVideollamada />
         </TabsContent>
       </Tabs>
     </div>

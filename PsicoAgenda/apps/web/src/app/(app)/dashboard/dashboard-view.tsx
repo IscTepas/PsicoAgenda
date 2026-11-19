@@ -9,7 +9,6 @@ import { BorradoresDeBitacora } from "../components/borradores-bitacora"
 import {
   CalendarPlus,
   ChevronRight,
-  FileText,
   MapPin,
   Plus,
   Video,
@@ -43,6 +42,8 @@ import { cn } from "@/lib/utils"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
 import { appointmentRequestService, appointmentService, patientService, psychologistService } from "@/services"
 import { useDashboardData } from "./use-dashboard-data"
+import { DetalleCitaDialog, SesionDialog } from "./sesion-dialog"
+import { useEnlaceVideollamada } from "@/lib/use-enlace-videollamada"
 
 const MINUTE = 60_000
 const DAY = 24 * 60 * MINUTE
@@ -150,19 +151,27 @@ function LiveDot({ pulsing }: { pulsing: boolean }) {
   )
 }
 
-type AgendaFilter = "all" | "confirmed" | "pending"
-
 type SessionUser = ReturnType<typeof useSession>["user"]
 
 function PsychologistDashboardView({ user }: { user: SessionUser }) {
-  const [agendaFilter, setAgendaFilter] = useState<AgendaFilter>("all")
   const [activeSessionAppointment, setActiveSessionAppointment] = useState<Appointment | null>(null)
+  // Si la libreta se abrió desde la sesión, al cerrarla se vuelve a la sesión para cerrarla.
+  const [volverASesion, setVolverASesion] = useState<Appointment | null>(null)
+  const [detalleDe, setDetalleDe] = useState<Appointment | null>(null)
+  const [notasAbiertas, setNotasAbiertas] = useState<ReadonlySet<string>>(new Set())
+  const [avisoLibreta, setAvisoLibreta] = useState<string | undefined>(undefined)
+  const abrirLibreta = (apt: Appointment, aviso?: string) => {
+    setNotasAbiertas((prev) => new Set(prev).add(apt.id))
+    setAvisoLibreta(aviso)
+    setLibretaDe(apt)
+  }
+  const enlaceVideollamada = useEnlaceVideollamada()
   const [libretaDe, setLibretaDe] = useState<Appointment | null>(null)
   const { toast } = useToast()
   const listRef = useRef<HTMLElement>(null)
   const today = useMemo(() => new Date(), [])
   const fromToday = useMemo(() => startOfDay(today), [today])
-  const toNextDays = useMemo(() => new Date(today.getTime() + 30 * DAY), [today])
+  const toNextDays = useMemo(() => new Date(today.getTime() + 90 * DAY), [today])
 
   // Desde 60 días atrás: tocar un día pasado en el calendario también muestra sus citas.
   const desdeHistorial = useMemo(() => new Date(fromToday.getTime() - 60 * DAY), [fromToday])
@@ -171,15 +180,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const queryClient = useQueryClient()
   const refetchAppointments = () =>
     queryClient.invalidateQueries({ queryKey: ["appointments", "dashboard"] })
-
-  // Las siguientes 5 citas después de hoy (sin canceladas): "Próximos días".
-  const proximosDias = useMemo(() => {
-    const manana = new Date(fromToday.getTime() + DAY)
-    return appointments
-      .filter((apt) => new Date(apt.startTime) >= manana && apt.status !== AppointmentStatus.CANCELLED)
-      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-      .slice(0, 5)
-  }, [appointments, fromToday])
 
   const patientById = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient])),
@@ -199,11 +199,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
   const cleanName = rawName.replace(/^(Dra\.|Dr\.|Psic\.|Lic\.)\s*/i, "")
   const psychologistGreeting = `Hola, Psic. ${cleanName}`
 
-  const appointmentsOn = (day: Date) =>
-    appointments
-      .filter((apt) => isSameDay(new Date(apt.startTime), day))
-      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-
   const todayAppointments = useMemo(
     () =>
       appointments
@@ -221,59 +216,95 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
 
   // Lista: el día elegido en el calendario (hoy por defecto)
   const isViewingToday = isSameDay(selectedCalendarDate, today)
-  const dayAppointments = appointmentsOn(selectedCalendarDate)
-  const filteredDayAppointments = dayAppointments.filter((apt) => {
-    if (agendaFilter === "confirmed") return apt.status === AppointmentStatus.CONFIRMED
-    if (agendaFilter === "pending") return apt.status === AppointmentStatus.PENDING
-    return true
-  })
+  const porCerrar = appointments
+    .filter((apt) => isOpenAppointment(apt) && getEndTime(apt) <= clock)
+    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+
+  const sinNota = appointments
+    .filter(
+      (apt) =>
+        apt.status === AppointmentStatus.COMPLETED &&
+        !apt.hasSessionNote &&
+        getEndTime(apt).getTime() > clock.getTime() - 7 * DAY,
+    )
+    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+  const pendientes = [
+    ...porCerrar.map((apt) => ({ apt, tipo: "cerrar" as const })),
+    ...sinNota.map((apt) => ({ apt, tipo: "nota" as const })),
+  ]
+
+  const desdeElegido = startOfDay(selectedCalendarDate)
+  const citasDesde = appointments
+    // Las que ya terminaron sin cerrarse se ven arriba, en "por cerrar"; aquí no se repiten.
+    .filter(
+      (apt) =>
+        new Date(apt.startTime) >= desdeElegido &&
+        apt.status !== AppointmentStatus.CANCELLED &&
+        !porCerrar.some((p) => p.id === apt.id),
+    )
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+  const gruposPorDia: [Date, Appointment[]][] = []
+  for (const apt of citasDesde) {
+    const dia = startOfDay(new Date(apt.startTime))
+    const ultimo = gruposPorDia[gruposPorDia.length - 1]
+    if (ultimo && isSameDay(ultimo[0], dia)) ultimo[1].push(apt)
+    else gruposPorDia.push([dia, [apt]])
+  }
+  const tituloDia = (dia: Date) => {
+    if (isSameDay(dia, today)) return "Hoy"
+    if (isSameDay(dia, new Date(fromToday.getTime() + DAY))) return "Mañana"
+    return capitalize(dia.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" }))
+  }
 
   const selectedDayTitle = isViewingToday
-    ? "Citas de hoy"
-    : capitalize(
-        selectedCalendarDate.toLocaleDateString("es-MX", {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-        })
-      )
+    ? "Tus citas"
+    : `Desde el ${selectedCalendarDate.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" })}`
 
   const selectDay = (day: Date) => {
     setSelectedCalendarDate(day)
     setCalendarMonth(new Date(day.getFullYear(), day.getMonth(), 1))
-    setAgendaFilter("all")
   }
 
   const showNotice = (message: string, status: "success" | "error" = "success") => {
     toast({ title: message, status })
   }
 
-  const handleRegisterAttendance = async (aptId: string) => {
-    try {
-      await appointmentService.changeStatus(aptId, AppointmentStatus.COMPLETED)
-      await refetchAppointments()
-      setActiveSessionAppointment(null)
-      showNotice("Asistencia registrada. La sesión quedó como completada.")
-    } catch {
-      showNotice("No se pudo registrar la asistencia. Intenta de nuevo.", "error")
-    }
-  }
-
-  const handleConfirmAppointment = async (aptId: string) => {
+  // Confirmar una cita por venir sin salir de Inicio (al instante; se revierte si falla).
+  const confirmarCita = async (apt: Appointment) => {
     const claves = { queryKey: ["appointments", "dashboard"] }
     const previas = queryClient.getQueriesData<Appointment[]>(claves)
     queryClient.setQueriesData<Appointment[]>(claves, (lista) =>
-      lista?.map((apt) => (apt.id === aptId ? { ...apt, status: AppointmentStatus.CONFIRMED } : apt)),
+      lista?.map((a) => (a.id === apt.id ? { ...a, status: AppointmentStatus.CONFIRMED } : a)),
     )
-    setActiveSessionAppointment(null)
     try {
-      await appointmentService.changeStatus(aptId, AppointmentStatus.CONFIRMED)
+      await appointmentService.changeStatus(apt.id, AppointmentStatus.CONFIRMED)
       void refetchAppointments()
-      const name = patientById.get(appointments.find((a) => a.id === aptId)?.patientId ?? "")?.name
-      showNotice(name ? `Cita con ${name} confirmada.` : "Cita confirmada.")
+      showNotice(`Cita con ${patientById.get(apt.patientId)?.name ?? "el paciente"} confirmada. Se le avisó.`)
     } catch {
       for (const [clave, datos] of previas) queryClient.setQueryData(clave, datos)
       showNotice("No se pudo confirmar la cita. Intenta de nuevo.", "error")
+    }
+  }
+
+  const cerrarSesion = async (apt: Appointment, asistio: boolean) => {
+    const estado = asistio ? AppointmentStatus.COMPLETED : AppointmentStatus.NO_SHOW
+    const claves = { queryKey: ["appointments", "dashboard"] }
+    const previas = queryClient.getQueriesData<Appointment[]>(claves)
+    queryClient.setQueriesData<Appointment[]>(claves, (lista) =>
+      lista?.map((a) => (a.id === apt.id ? { ...a, status: estado } : a)),
+    )
+    setActiveSessionAppointment(null)
+    try {
+      await appointmentService.changeStatus(apt.id, estado)
+      void refetchAppointments()
+      const nombre = patientById.get(apt.patientId)?.name ?? "el paciente"
+      showNotice(asistio ? `Sesión con ${nombre} cerrada.` : `Se registró que ${nombre} no asistió.`)
+      if (asistio && !notasAbiertas.has(apt.id)) {
+        abrirLibreta(apt, `Sesión con ${nombre} cerrada. Escribe la bitácora ahora que la tienes fresca; si no puedes, ciérrala y queda como borrador.`)
+      }
+    } catch {
+      for (const [clave, datos] of previas) queryClient.setQueryData(clave, datos)
+      showNotice("No se pudo guardar. Intenta de nuevo.", "error")
     }
   }
 
@@ -322,6 +353,56 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
         {/* Citas del día elegido. Las filas se adaptan al ancho de la tarjeta
             (container queries), no al de la ventana. */}
+        <div className="min-w-0 space-y-8">
+        {pendientes.length > 0 && (
+          <section aria-labelledby="por-cerrar" className="@container space-y-4">
+            <div className="flex flex-col gap-1 @lg:flex-row @lg:items-baseline @lg:justify-between">
+              <h2 id="por-cerrar" className="flex items-center gap-2 text-lg font-semibold tracking-tight text-foreground">
+                Pendientes de tus sesiones
+                <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold tabular-nums text-primary-foreground">
+                  {pendientes.length}
+                </span>
+              </h2>
+              <p className="text-sm text-muted-foreground">Ciérralas y escribe su bitácora; así cuentan en tus reportes.</p>
+            </div>
+            <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+              {pendientes.slice(0, 6).map(({ apt, tipo }) => (
+                <li key={apt.id} className="flex flex-col gap-2 px-4 py-3 @xl:flex-row @xl:items-center @2xl:px-5">
+                  <span
+                    className={`hidden size-2 shrink-0 rounded-full @xl:block ${tipo === "cerrar" ? "bg-amber-500" : "bg-primary"}`}
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {patientById.get(apt.patientId)?.name ?? "Paciente"}
+                    </span>
+                    <span className="block text-xs tabular-nums text-muted-foreground">
+                      {isSameDay(new Date(apt.startTime), today) ? "Hoy" : formatShortDate(new Date(apt.startTime))} ·{" "}
+                      {formatAppointmentTime(new Date(apt.startTime))}
+                      {tipo === "nota" ? " · Asistió, falta la bitácora" : " · Sin cerrar"}
+                    </span>
+                  </span>
+                  {tipo === "cerrar" ? (
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <Button variant="outline" size="sm" onClick={() => void cerrarSesion(apt, false)}>
+                        No asistió
+                      </Button>
+                      <Button size="sm" onClick={() => void cerrarSesion(apt, true)}>
+                        Asistió y escribir bitácora
+                      </Button>
+                    </span>
+                  ) : (
+                    <Button size="sm" variant="outline" className="shrink-0" onClick={() => abrirLibreta(apt)}>
+                      Escribir bitácora
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {pendientes.length > 6 && <p className="px-1 text-sm text-muted-foreground">y {pendientes.length - 6} más</p>}
+          </section>
+        )}
+
         <section ref={listRef} className="@container scroll-mt-20 space-y-4">
           <div className="flex flex-col gap-3 @lg:flex-row @lg:items-center @lg:justify-between">
             <div className="flex items-baseline gap-3">
@@ -337,23 +418,32 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
               )}
             </div>
 
-            {dayAppointments.length > 0 && (
+            {citasDesde.length > 0 && (
               <p className="text-sm text-muted-foreground">
-                {dayAppointments.length === 1 ? "1 cita" : `${dayAppointments.length} citas`}
+                {citasDesde.length === 1 ? "1 cita" : `${citasDesde.length} citas`}
               </p>
             )}
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-border bg-card">
-            {filteredDayAppointments.length > 0 ? (
+          <div className="rounded-2xl border border-border bg-card [&>section:first-child>h3]:rounded-t-2xl [&>section:last-child_li:last-child]:rounded-b-2xl [&>section+section]:border-t [&>section+section]:border-border">
+            {gruposPorDia.length > 0 ? (
+              gruposPorDia.map(([dia, citasDelDia]) => (
+              <section key={dia.toISOString()} aria-label={tituloDia(dia)}>
+                <h3 className="sticky top-[5.25rem] z-10 flex items-baseline justify-between gap-3 border-b border-border/60 bg-[color-mix(in_oklch,var(--muted)_45%,var(--card))] px-4 py-2 text-xs font-semibold text-muted-foreground @2xl:px-5">
+                  <span className={isSameDay(dia, today) ? "text-primary" : undefined}>{tituloDia(dia)}</span>
+                  <span className="font-normal tabular-nums">
+                    {citasDelDia.length === 1 ? "1 cita" : `${citasDelDia.length} citas`}
+                  </span>
+                </h3>
               <ul className="divide-y divide-border">
-                {filteredDayAppointments.map((apt) => {
+                {citasDelDia.map((apt) => {
+                  const esHoy = isSameDay(new Date(apt.startTime), today)
                   const patient = patientById.get(apt.patientId)
                   const patientName = patient?.name || "Paciente"
-                  const isNext = isViewingToday && apt.id === focusAppointment?.id
+                  const isNext = esHoy && apt.id === focusAppointment?.id
                   const isLive = isNext && apt.id === currentAppointment?.id
                   const isClosed = !isOpenAppointment(apt)
-                  const isUnregistered = isViewingToday && !isClosed && getEndTime(apt) <= clock
+                  const isUnregistered = esHoy && !isClosed && getEndTime(apt) <= clock
 
                   return (
                     <li
@@ -419,16 +509,17 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                           <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
                             <Link href={`/pacientes/${apt.patientId}`}>Expediente</Link>
                           </Button>
-                          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setLibretaDe(apt)}>
-                            Bitácora
-                          </Button>
-                          {isViewingToday && !isClosed ? (
+                          {esHoy && !isClosed ? (
                             <Button size="sm" onClick={() => setActiveSessionAppointment(apt)}>
-                              {isUnregistered ? "Registrar" : "Iniciar"}
+                              {isUnregistered ? "Cerrar" : "Atender"}
+                            </Button>
+                          ) : apt.status === AppointmentStatus.PENDING ? (
+                            <Button size="sm" variant="outline" onClick={() => void confirmarCita(apt)}>
+                              Confirmar
                             </Button>
                           ) : (
-                            <Button asChild variant="outline" size="sm">
-                              <Link href={`/agenda/${apt.id}`}>Detalles</Link>
+                            <Button variant="outline" size="sm" onClick={() => setDetalleDe(apt)}>
+                              Detalles
                             </Button>
                           )}
                         </div>
@@ -437,24 +528,17 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                   )
                 })}
               </ul>
+              </section>
+              ))
             ) : (
               <div className="space-y-1 px-6 py-10 text-center">
-                <p className="text-sm font-medium text-foreground">
-                  {isViewingToday ? "Hoy no tienes citas." : "Sin citas este día."}
-                </p>
-                {proximosDias[0] && selectedCalendarDate >= fromToday ? (
-                  <p className="text-sm text-muted-foreground">
-                    La siguiente es el {formatShortDate(new Date(proximosDias[0].startTime))} a las{" "}
-                    {formatAppointmentTime(new Date(proximosDias[0].startTime))} con{" "}
-                    {patientById.get(proximosDias[0].patientId)?.name ?? "un paciente"}.
-                  </p>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Elige otro día en el calendario.</p>
-                )}
+                <p className="text-sm font-medium text-foreground">No tienes citas agendadas desde este día.</p>
+                <p className="text-sm text-muted-foreground">Las nuevas aparecerán aquí en cuanto se agenden.</p>
               </div>
             )}
           </div>
         </section>
+        </div>
 
         <div className="content-start space-y-6">
           {/* Mini-calendario: tocar un día muestra sus citas en la lista */}
@@ -488,37 +572,6 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
             </div>
           </aside>
 
-          {/* Próximos días: lo que viene después de hoy. */}
-      {proximosDias.length > 0 && (
-        <section aria-labelledby="proximos-dias" className="space-y-3">
-          <div className="flex items-baseline justify-between gap-3">
-            <h2 id="proximos-dias" className="text-sm font-semibold text-foreground">
-              Próximos días
-            </h2>
-          </div>
-          <ul className="divide-y divide-border/50 overflow-hidden rounded-2xl border border-border/60 bg-card">
-            {proximosDias.map((apt) => (
-              <li key={apt.id}>
-                <Link
-                  href={`/agenda/${apt.id}`}
-                  className="flex items-center gap-3 px-4 py-2.5 outline-none transition-colors duration-150 hover:bg-muted/40 focus-visible:bg-muted/50"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {patientById.get(apt.patientId)?.name ?? "Paciente"}
-                    </span>
-                    <span className="block text-xs tabular-nums text-muted-foreground">
-                      {formatShortDate(new Date(apt.startTime))} · {formatAppointmentTime(new Date(apt.startTime))}
-                    </span>
-                  </span>
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/50" aria-hidden="true" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
         </div>
       </div>
 
@@ -527,101 +580,45 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
         <LibretaSesionDialog
           key={libretaDe.id}
           open
-          onOpenChange={(open) => !open && setLibretaDe(null)}
+          onOpenChange={(open) => {
+            if (open) return
+            setLibretaDe(null)
+            if (volverASesion) {
+              setActiveSessionAppointment(volverASesion)
+              setVolverASesion(null)
+            }
+          }}
           patientId={libretaDe.patientId}
           patientName={patientById.get(libretaDe.patientId)?.name}
+          aviso={avisoLibreta}
+          onSaved={() => void refetchAppointments()}
           appointmentId={libretaDe.id}
           sessionDate={new Date(libretaDe.startTime)}
         />
       )}
 
+      {detalleDe && (
+        <DetalleCitaDialog
+          cita={detalleDe}
+          paciente={patientById.get(detalleDe.patientId)?.name ?? "Paciente"}
+          onClose={() => setDetalleDe(null)}
+        />
+      )}
+
       {activeSessionAppointment && (
-        <Dialog
-          open={Boolean(activeSessionAppointment)}
-          onOpenChange={(open) => {
-            if (!open) setActiveSessionAppointment(null)
+        <SesionDialog
+          cita={activeSessionAppointment}
+          paciente={patientById.get(activeSessionAppointment.patientId)?.name ?? "Paciente"}
+          enlaceVideollamada={enlaceVideollamada}
+          ahora={clock}
+          onClose={() => setActiveSessionAppointment(null)}
+          onBitacora={() => {
+            setVolverASesion(activeSessionAppointment)
+            abrirLibreta(activeSessionAppointment)
+            setActiveSessionAppointment(null)
           }}
-        >
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-lg font-semibold tracking-tight">
-                Sesión con {patientById.get(activeSessionAppointment.patientId)?.name ?? "paciente"}
-              </DialogTitle>
-              <DialogDescription>
-                Registra la asistencia al terminar la consulta.
-              </DialogDescription>
-            </DialogHeader>
-
-            <dl className="divide-y divide-border rounded-xl bg-muted/40 text-sm">
-              <div className="flex items-center justify-between px-4 py-2.5">
-                <dt className="text-muted-foreground">Horario</dt>
-                <dd className="font-medium tabular-nums">
-                  {formatAppointmentTime(new Date(activeSessionAppointment.startTime))} –{" "}
-                  {formatAppointmentTime(getEndTime(activeSessionAppointment))}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
-                <dt className="text-muted-foreground">Modalidad</dt>
-                <dd className="font-medium">
-                  {activeSessionAppointment.modality === AppointmentModality.VIRTUAL ? "Videollamada" : "Presencial"}
-                </dd>
-              </div>
-              <div className="flex items-center justify-between gap-4 px-4 py-2.5">
-                <dt className="text-muted-foreground">Motivo</dt>
-                <dd className="truncate font-medium">{activeSessionAppointment.reason || "Sin especificar"}</dd>
-              </div>
-              <div className="flex items-center justify-between px-4 py-2.5">
-                <dt className="text-muted-foreground">Estado</dt>
-                <dd>
-                  <StatusLabel status={activeSessionAppointment.status} />
-                </dd>
-              </div>
-            </dl>
-
-            {activeSessionAppointment.modality === AppointmentModality.VIRTUAL && (
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => window.open("https://meet.google.com/psi-diag-ses", "_blank")}
-              >
-                <Video />
-                Unirse a la videollamada
-              </Button>
-            )}
-
-            {/* La nota de la sesión se escribe (o se retoma) desde aquí, sin buscarla en el expediente. */}
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                setLibretaDe(activeSessionAppointment)
-                setActiveSessionAppointment(null)
-              }}
-            >
-              <FileText />
-              Escribir en la bitácora
-            </Button>
-
-            <DialogFooter className="gap-2 sm:gap-2">
-              <Button variant="ghost" onClick={() => setActiveSessionAppointment(null)}>
-                Cerrar
-              </Button>
-              {activeSessionAppointment.status === AppointmentStatus.PENDING && (
-                <Button
-                  variant="outline"
-                  onClick={() => handleConfirmAppointment(activeSessionAppointment.id)}
-                >
-                  Confirmar cita
-                </Button>
-              )}
-              {isOpenAppointment(activeSessionAppointment) && (
-                <Button onClick={() => handleRegisterAttendance(activeSessionAppointment.id)}>
-                  Registrar asistencia
-                </Button>
-              )}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          onCerrar={(asistio) => cerrarSesion(activeSessionAppointment, asistio)}
+        />
       )}
     </div>
   )
@@ -950,15 +947,19 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
           </dl>
 
           <div className="flex flex-wrap items-center gap-2 border-t border-border pt-6">
-            {nextAppointment.modality === AppointmentModality.VIRTUAL && (
-              <Button
-                className="w-full sm:w-auto"
-                onClick={() => window.open("https://meet.google.com/psi-diag-ses", "_blank")}
-              >
-                <Video />
-                Abrir videollamada
-              </Button>
-            )}
+            {nextAppointment.modality === AppointmentModality.VIRTUAL &&
+              (psychologist?.videoCallUrl ? (
+                <Button asChild className="w-full sm:w-auto">
+                  <a href={psychologist.videoCallUrl} target="_blank" rel="noopener noreferrer">
+                    <Video />
+                    Entrar a la videollamada
+                  </a>
+                </Button>
+              ) : (
+                <p className="w-full text-sm text-muted-foreground sm:w-auto">
+                  Tu psicóloga te compartirá el enlace de la videollamada.
+                </p>
+              ))}
             <Button
               variant="outline"
               className="flex-1 sm:flex-none"

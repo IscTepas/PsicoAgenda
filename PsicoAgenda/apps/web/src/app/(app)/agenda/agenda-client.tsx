@@ -1,5 +1,6 @@
 "use client"
 
+import { CobroDeCita } from "@/components/cobro-cita"
 import * as React from "react"
 import Link from "next/link"
 import {
@@ -34,7 +35,6 @@ import {
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/arc/calendar/calendar"
-import { useToast } from "@/components/toast-provider"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs"
 import {
@@ -285,32 +285,7 @@ export function AgendaClient() {
 
   const patientById = React.useCallback((id: string) => patientsById[id], [patientsById])
 
-  // Estados del cobro y de la cita seleccionada: se declaran antes del callback
-  // que los usa (regla react-hooks/immutability).
-  const { toast } = useToast()
-  const [paymentUpdating, setPaymentUpdating] = React.useState(false)
-  const [paymentError, setPaymentError] = React.useState<string | null>(null)
   const [selectedAppointment, setSelectedAppointment] = React.useState<Appointment | null>(null)
-
-  // Marca el honorario como cobrado o condonado. El panel refresca la cita en la
-  // tabla y en el diálogo con la respuesta de la API.
-  const handleUpdatePayment = React.useCallback(async (appointment: Appointment, status: PaymentStatus) => {
-    setPaymentUpdating(true)
-    setPaymentError(null)
-    try {
-      const updated = await appointmentService.updatePayment(appointment.id, status)
-      setAppointments((prev) => prev.map((apt) => (apt.id === updated.id ? updated : apt)))
-      setSelectedAppointment(updated)
-      toast({
-        title: "Pago registrado",
-        status: "success",
-      })
-    } catch (error) {
-      setPaymentError(error instanceof Error ? error.message : "No se pudo actualizar el pago")
-    } finally {
-      setPaymentUpdating(false)
-    }
-  }, [toast])
 
   const baseAppointments = appointments
 
@@ -674,7 +649,6 @@ export function AgendaClient() {
       <Dialog
         open={Boolean(selectedAppointment)}
         onOpenChange={(open) => {
-          setPaymentError(null)
           if (!open) setSelectedAppointment(null)
         }}
       >
@@ -816,8 +790,18 @@ export function AgendaClient() {
                     </div>
                   )}
 
-                  {/* Estado de cobro del honorario (`pagos_honorarios`) */}
-                  {selectedAppointment.payment && (
+                  {/* Cobro: la psicóloga lo marca o ajusta; el paciente solo ve el estado. */}
+                  {!isPatient && (
+                    <CobroDeCita
+                      key={selectedAppointment.id}
+                      cita={selectedAppointment}
+                      onActualizada={(updated) => {
+                        setAppointments((prev) => prev.map((apt) => (apt.id === updated.id ? updated : apt)))
+                        setSelectedAppointment(updated)
+                      }}
+                    />
+                  )}
+                  {isPatient && selectedAppointment.payment && (
                     <div className="p-3 rounded-xl border border-border/60 bg-card space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -838,28 +822,6 @@ export function AgendaClient() {
                           </p>
                         )}
 
-                      {!isPatient && selectedAppointment.status !== AppointmentStatus.CANCELLED && (
-                        <div className="pt-1">
-                          {selectedAppointment.payment.status !== PaymentStatus.PAID && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={paymentUpdating}
-                              onClick={() => void handleUpdatePayment(selectedAppointment, PaymentStatus.PAID)}
-                              className="h-8 w-full rounded-lg text-xs"
-                            >
-                              {paymentUpdating ? (
-                                <Loader2 className="size-3.5 mr-1 animate-spin" />
-                              ) : (
-                                <Check className="size-3.5 mr-1" />
-                              )}
-                              Marcar como pagado
-                            </Button>
-                          )}
-                        </div>
-                      )}
-
-                      {paymentError && <p className="text-[11px] text-destructive">{paymentError}</p>}
                     </div>
                   )}
 

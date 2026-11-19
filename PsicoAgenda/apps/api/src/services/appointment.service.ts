@@ -29,6 +29,8 @@ import { calculateAppointmentPrice, getEffectiveDurationMinutes } from "@/utils/
 const appointmentInclude = {
   pagos_honorarios: true,
   citas_motivos: reasonLinks,
+  // Solo cuántas hojas de bitácora tiene: basta para saber si falta la nota.
+  _count: { select: { entradas_bitacora: true } },
 } as const;
 
 type AppointmentRow = Prisma.citasGetPayload<{ include: typeof appointmentInclude }>;
@@ -209,6 +211,7 @@ export const toAppointment = (row: AppointmentRow): Appointment => {
     reasonOther: reasonOtherOf(row.motivo, row.citas_motivos),
     notes: row.notas_internas ?? undefined,
     cancellationReason: row.motivo_cancelacion ?? undefined,
+    hasSessionNote: (row._count?.entradas_bitacora ?? 0) > 0,
     // `precio` es el snapshot de la tarifa; `payment` es el estado de cobro.
     price: row.precio ?? undefined,
     payment: payment
@@ -745,6 +748,7 @@ export async function updateAppointmentPayment(
   auth: AuthenticatedUser,
   id: string,
   status: PaymentStatus,
+  amount?: number,
 ): Promise<Appointment> {
   const row = await prisma.citas.findUnique({ where: { id }, include: appointmentInclude });
 
@@ -775,14 +779,14 @@ export async function updateAppointmentPayment(
     if (existing) {
       await tx.pagos_honorarios.update({
         where: { cita_id: id },
-        data: { estado: schemaStatus, pagado_en: paidAt },
+        data: { estado: schemaStatus, pagado_en: paidAt, ...(amount !== undefined && { monto: amount }) },
       });
     } else {
       await tx.pagos_honorarios.create({
         data: {
           id: randomUUID(),
           cita_id: id,
-          monto: row.precio ?? 0,
+          monto: amount ?? row.precio ?? 0,
           estado: schemaStatus,
           pagado_en: paidAt,
         },

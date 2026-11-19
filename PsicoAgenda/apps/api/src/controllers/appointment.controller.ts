@@ -91,8 +91,8 @@ export const updateAppointmentPaymentController: RequestHandler = async (
 ) => {
   try {
     const { id } = req.params as { id: string };
-    const { status } = req.body as { status: Parameters<typeof updateAppointmentPayment>[2] };
-    res.json(await updateAppointmentPayment(req.auth!, id, status));
+    const { status, amount } = req.body as { status: Parameters<typeof updateAppointmentPayment>[2]; amount?: number };
+    res.json(await updateAppointmentPayment(req.auth!, id, status, amount));
   } catch (error) {
     next(error);
   }

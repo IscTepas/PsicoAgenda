@@ -27,6 +27,7 @@ export interface UpdatePsychologistProfilePayload {
   specialty?: string
   bio?: string
   rates?: PricingRates
+  videoCallUrl?: string
 }
 
 export const psychologistService = {

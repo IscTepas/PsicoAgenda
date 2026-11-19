@@ -154,11 +154,11 @@ export const appointmentService = {
       }),
     ),
 
-  updatePayment: async (id: string, status: PaymentStatus): Promise<Appointment> =>
+  updatePayment: async (id: string, status: PaymentStatus, amount?: number): Promise<Appointment> =>
     reviveAppointment(
       await apiFetch<SerializedAppointment>(`/appointments/${id}/payment`, {
         method: "PATCH",
-        body: { status },
+        body: { status, amount },
       }),
     ),
 }

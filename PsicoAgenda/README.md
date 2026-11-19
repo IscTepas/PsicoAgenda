@@ -705,6 +705,23 @@ cabecera o con un valor distinto, `200` cuando purga.
 Si el job se deshabilita, no se pierde nada: los datos se acumulan y se purgan
 en la siguiente ejecución correcta.
 
+### Resumen de bitácora (8 p.m.)
+
+`POST /api/internal/resumen-bitacora` (mismo `CRON_SECRET`) encola **un** correo
+para cada psicóloga con avisos por correo activados si alguna sesión de las
+últimas 24 h quedó sin cerrar (asistencia) o sin hoja de bitácora. Sin
+pendientes no envía nada; no repite si ya se encoló en las últimas 20 h. El
+correo lleva solo nombre del paciente y hora, nunca notas ni motivos. Lo envía
+el siguiente barrido de `/despachar`.
+
+| Campo | Valor |
+|---|---|
+| URL | `https://psicoagenda-api.vercel.app/api/internal/resumen-bitacora` |
+| Método | `POST` |
+| Cabecera | `Authorization: Bearer <CRON_SECRET>` |
+| Horario | diario **20:00** `America/Mazatlan` |
+| Timeout | **30 s** |
+
 **Rotar `CRON_SECRET`:** primero en Vercel (y redesplegar la API), luego en el
 secreto de GitHub Actions y por último en `cron-job.org`. Entre pasos el
 endpoint responde `401`: es el síntoma de un secreto desincronizado.

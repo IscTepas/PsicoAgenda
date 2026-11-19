@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.sw.json"
   },
   "dependencies": {
+    "@floating-ui/dom": "^1.8.0",
     "@hookform/resolvers": "^5.9.1",
     "@psicoagenda/shared": "*",
     "@serwist/next": "^9.5.12",
