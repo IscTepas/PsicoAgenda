@@ -216,6 +216,8 @@ model pacientes {
   sexo                       String?
   direccion                  String?
   psicologo_id               String?                      @db.Uuid
+  /// Paciente sin cuenta dado de alta por la psicóloga para una cita única.
+  cita_unica                 Boolean                      @default(false)
   citas                      citas[]
   consentimientos_informados consentimientos_informados[]
   contactos_emergencia       contactos_emergencia?
@@ -440,6 +442,8 @@ model usuarios {
   foto_perfil_url       String?
   notificar_whatsapp    Boolean               @default(false)
   notificar_correo      Boolean               @default(true)
+  /// Correo de contacto de quien no tiene cuenta (cita única); el de la cuenta es `correo`.
+  correo_contacto       String?
   preferencias_interfaz Json?
   ultimo_acceso         DateTime?             @db.Timestamptz(3)
   creado_en             DateTime              @default(now()) @db.Timestamptz(3)

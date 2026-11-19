@@ -250,6 +250,7 @@ export default function PantallaBusquedaPaciente() {
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-sm font-medium text-foreground">{p.name}</span>
                                 <span className="block truncate text-xs text-muted-foreground">
+                                  {p.oneTime && "Cita única · "}
                                   {proxima ? `Próxima: ${diaCorto(proxima)}` : p.isMinor ? "Menor de edad" : p.age !== null ? `${p.age} años` : "Sin citas próximas"}
                                 </span>
                               </span>
@@ -283,6 +284,9 @@ export default function PantallaBusquedaPaciente() {
                   {elegido.age !== null ? `${elegido.age} años` : "Edad sin registrar"}
                   {elegido.isMinor && (
                     <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">Menor</span>
+                  )}
+                  {elegido.oneTime && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Cita única</span>
                   )}
                 </p>
               </div>

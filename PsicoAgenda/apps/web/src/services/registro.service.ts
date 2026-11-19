@@ -28,6 +28,8 @@ export interface DatosRegistro {
   guardianName?: string
   guardianPhone?: string
   guardianRelationship?: string
+  /** Token de invitación de una cita única: la cuenta se queda con ese historial. */
+  invitacion?: string
 }
 
 export interface RespuestaPreRegistro {
@@ -64,6 +66,7 @@ export function construirPayloadRegistro(values: DatosRegistro): RegistroPacient
       phone: values.emergencyContactPhone ?? "",
       relationship: values.emergencyContactRelationship,
     },
+    ...(values.invitacion ? { invitacion: values.invitacion } : {}),
     ...(menor
       ? {
           guardian: {
@@ -183,6 +186,12 @@ export const registroService = {
       method: "POST",
       body: payload,
     }),
+
+  /** Datos de una invitación de cita única, para prellenar el registro. */
+  leerInvitacion: (token: string) =>
+    apiFetch<{ name: string; phone?: string; email?: string }>(
+      `/auth/invitacion?${new URLSearchParams({ token })}`,
+    ),
 
   /** Avisa si el correo ya tiene cuenta, antes de enviar el formulario. */
   correoDisponible: async (email: string): Promise<boolean> =>

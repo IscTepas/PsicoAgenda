@@ -231,6 +231,9 @@ const minutosYSegundos = (segundos: number): string => {
 export function RegisterForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  // Invitación de una cita única (`?invitacion=`): prellena y liga la cuenta a esa ficha.
+  const [invitacion, setInvitacion] = useState<{ token: string; nombre: string } | null>(null);
+  const [invitacionError, setInvitacionError] = useState<string | null>(null);
   // Último correo que la API dijo que ya tiene cuenta: bloquea el envío sin esperar al 409.
   const [correoOcupado, setCorreoOcupado] = useState<string | null>(null);
   const MENSAJE_CORREO_OCUPADO = "Este correo ya tiene una cuenta. Inicia sesión o usa otro correo.";
@@ -290,6 +293,27 @@ export function RegisterForm() {
     },
   });
 
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get("invitacion");
+    if (!token) return;
+    let cancelado = false;
+    registroService
+      .leerInvitacion(token)
+      .then((datos) => {
+        if (cancelado) return;
+        setInvitacion({ token, nombre: datos.name });
+        form.setValue("name", datos.name);
+        if (datos.phone) form.setValue("phone", datos.phone);
+        if (datos.email) form.setValue("email", datos.email);
+      })
+      .catch((fallo: unknown) => {
+        if (!cancelado) setInvitacionError(fallo instanceof Error ? fallo.message : "La invitación no es válida.");
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [form]);
+
   const watchBirthDate = useWatch({ control: form.control, name: "birthDate" });
   const watchParaMenor = useWatch({ control: form.control, name: "paraMenor" });
   const watchPassword = useWatch({ control: form.control, name: "password" });
@@ -333,6 +357,7 @@ export function RegisterForm() {
       const normalizados = {
         ...values,
         phone: esMenor ? (values.guardianPhone ?? "") : (values.phone ?? ""),
+        invitacion: invitacion?.token,
       };
       const respuesta = await registroService.solicitarCodigo(construirPayloadRegistro(normalizados));
       const marcaTiempo = ahoraMs();
@@ -586,6 +611,17 @@ export function RegisterForm() {
         <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
           Completa tus datos para acceder a {APP_NAME}
         </p>
+        {invitacion && (
+          <p className="mt-4 rounded-xl bg-primary/10 px-4 py-3 text-sm text-foreground">
+            Hola, {invitacion.nombre.split(" ")[0]}. Tu psicóloga te invitó a crear tu cuenta: tus citas y tu historial se
+            conservan.
+          </p>
+        )}
+        {invitacionError && (
+          <p role="alert" className="mt-4 rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-foreground">
+            {invitacionError} Puedes registrarte igual, pero empezarás con un historial nuevo.
+          </p>
+        )}
       </div>
 
       <div className="space-y-6">

@@ -63,7 +63,7 @@ function toPatient(row: PatientRow): Patient {
 
   return {
     id: row.id,
-    email: correoVisible(row.usuarios.correo, guardians[0]?.email),
+    email: correoVisible(row.usuarios.correo, guardians[0]?.email, row.usuarios.correo_contacto),
     name: row.usuarios.nombre_completo,
     phone: row.usuarios.telefono ?? guardians[0]?.phone,
     role: UserRole.PATIENT,
@@ -74,6 +74,7 @@ function toPatient(row: PatientRow): Patient {
     psychologistId: row.psicologo_id ?? undefined,
     emergencyContact: primaryContact ? toEmergencyContact(primaryContact) : undefined,
     legalGuardian: guardians.find((g) => g.isPrimary),
+    oneTime: row.cita_unica || undefined,
     guardians,
     createdAt: row.usuarios.creado_en,
     updatedAt: row.usuarios.actualizado_en,
@@ -97,8 +98,8 @@ function toPatientProfile(row: PatientRow): PatientProfile {
  * Un menor registrado por su tutor no tiene correo propio: su contacto es el de
  * la cuenta del tutor principal. El correo reservado (lleva su id) nunca se muestra.
  */
-const correoVisible = (correo: string, delTutor?: string | null) =>
-  correo.endsWith("@sin-cuenta.invalid") ? (delTutor ?? "") : correo;
+const correoVisible = (correo: string, delTutor?: string | null, contacto?: string | null) =>
+  correo.endsWith("@sin-cuenta.invalid") ? (contacto ?? delTutor ?? "") : correo;
 
 export async function getMyPatientProfile(auth: AuthenticatedUser): Promise<PatientProfile> {
   const row = await prisma.pacientes.findUnique({
@@ -242,7 +243,11 @@ export async function listPatients(auth: AuthenticatedUser, filter: ListPatients
   return rows.map((row: PatientListRow): Patient => {
     return {
       id: row.id,
-      email: correoVisible(row.usuarios.correo, row.pacientes_tutores[0]?.tutores.usuarios?.correo),
+      email: correoVisible(
+        row.usuarios.correo,
+        row.pacientes_tutores[0]?.tutores.usuarios?.correo,
+        row.usuarios.correo_contacto,
+      ),
       name: row.usuarios.nombre_completo,
       phone: row.usuarios.telefono ?? row.pacientes_tutores[0]?.tutores.telefono ?? undefined,
       role: UserRole.PATIENT,
@@ -253,6 +258,7 @@ export async function listPatients(auth: AuthenticatedUser, filter: ListPatients
       psychologistId: row.psicologo_id ?? undefined,
       emergencyContact: undefined,
       legalGuardian: undefined,
+      oneTime: row.cita_unica || undefined,
       createdAt: row.usuarios.creado_en,
       updatedAt: row.usuarios.actualizado_en,
     };

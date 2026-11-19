@@ -165,6 +165,8 @@ export interface Patient extends User {
   guardians?: LegalGuardian[];
   /** Fecha en que terminó la tutela al cumplir 18 años, si ocurrió. */
   guardianshipEndedAt?: Date;
+  /** Sin cuenta: lo dio de alta la psicóloga para una cita única. */
+  oneTime?: boolean;
 }
 
 /** Menor que la cuenta autenticada tutela (para agendar a su nombre). */

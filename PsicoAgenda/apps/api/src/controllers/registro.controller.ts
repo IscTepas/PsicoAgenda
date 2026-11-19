@@ -17,6 +17,7 @@ import {
 } from "@/services/codigo.service";
 import { enviarCodigoRegistro } from "@/services/mailer.service";
 import { crearCuentaVerificada, existeCuenta } from "@/lib/supabase-admin";
+import { fusionarInvitacion, validarInvitacion } from "@/services/cita-unica.service";
 import { AppError } from "@/utils/app-error";
 
 /**
@@ -80,6 +81,10 @@ export const preRegistroController: RequestHandler = async (req, res, next) => {
     // Supabase Auth antes de gastar una sola llamada externa.
     await limitarSolicitudesPorIp(origenDe(req));
 
+    // Una invitación vencida se rechaza antes del código: no tiene caso registrarse
+    // creyendo que el historial se conservará.
+    if (payload.invitacion) await validarInvitacion(payload.invitacion);
+
     // Paridad con el signUp actual: mismo mensaje cuando la cuenta ya existe.
     if (await existeCuenta(payload.email)) {
       throw AppError.conflict("Ya existe una cuenta registrada con este correo electrónico.");
@@ -113,12 +118,21 @@ export const verificarCodigoController: RequestHandler = async (req, res, next) 
     // código: si `createUser` falla por un problema transitorio, la persona
     // conserva su código y puede reintentar dentro de la ventana.
     await verificarCodigo(payload.email, payload.codigo);
+    if (payload.invitacion) await validarInvitacion(payload.invitacion);
 
     const usuario = await crearCuentaVerificada(
       payload.email,
       payload.password,
       construirMetadata(payload),
     );
+
+    // La cuenta nueva se queda con la ficha de la cita única (citas, expediente, cobros).
+    // Si fallara, la cuenta ya existe y la psicóloga puede volver a invitar: no se aborta.
+    if (payload.invitacion) {
+      await fusionarInvitacion(payload.invitacion, usuario.id).catch((error) => {
+        console.error("[registro] No se pudo ligar la cita única a la cuenta nueva:", error);
+      });
+    }
 
     // El alta ya ocurrió: si la cache no respondiera, el TTL de 10 minutos
     // liquida lo que quede — nunca se aborta un registro ya creado.

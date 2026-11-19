@@ -644,7 +644,7 @@ const MAX_INTENTOS = 5;
 const LOTE = 50;
 
 const pendienteInclude = {
-  usuarios: { select: { correo: true, nombre_completo: true, telefono: true, zona_horaria: true } },
+  usuarios: { select: { correo: true, correo_contacto: true, nombre_completo: true, telefono: true, zona_horaria: true } },
   citas: { select: { id: true, inicio: true, fin: true, modalidad: true, estado: true } },
 } as const;
 
@@ -831,7 +831,7 @@ async function entregar(
       return undefined;
     case canal_notificacion.CORREO:
       await enviarCorreoNotificacion({
-        to: fila.usuarios.correo,
+        to: fila.usuarios.correo_contacto ?? fila.usuarios.correo,
         subject: `${APP_NAME}: ${fila.asunto}`,
         text: `Hola, ${fila.usuarios.nombre_completo}.\n\n${fila.mensaje}`,
         html: correoHtml(fila),

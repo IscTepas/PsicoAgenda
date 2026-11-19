@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   confirmarRecuperacionSchema,
   correoDisponibleQuerySchema,
+  tokenInvitacionSchema,
   registroPacienteSchema,
   solicitarRecuperacionSchema,
   verificarCodigoRegistroSchema,
@@ -17,6 +18,8 @@ import {
   verificarCodigoController,
 } from "@/controllers/registro.controller";
 import { requireAuth } from "@/middleware/auth.middleware";
+import { leerInvitacionController } from "@/controllers/cita-unica.controller";
+import { z } from "zod";
 import { validate } from "@/middleware/validate.middleware";
 
 const router = Router();
@@ -28,6 +31,7 @@ const router = Router();
 // Supabase Auth ni la base de datos.
 // Aviso temprano en el formulario: el pre-registro lo vuelve a comprobar.
 router.get("/correo-disponible", validate({ query: correoDisponibleQuerySchema }), correoDisponibleController);
+router.get("/invitacion", validate({ query: z.object({ token: tokenInvitacionSchema }) }), leerInvitacionController);
 router.post("/pre-registro", validate({ body: registroPacienteSchema }), preRegistroController);
 router.post(
   "/verificar-codigo",

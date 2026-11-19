@@ -306,6 +306,9 @@ export function esMenorDeEdad(fecha: string): boolean {
  * fecha de nacimiento resulta en menor de edad: la minoría se deriva en el
  * servidor, no se confía en el campo del cliente.
  */
+/** El token de invitación es opaco (32 bytes en base64url = 43 caracteres). */
+export const tokenInvitacionSchema = z.string().regex(/^[A-Za-z0-9_-]{43}$/, "Invitación inválida");
+
 const registroPacienteBaseSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
@@ -320,6 +323,8 @@ const registroPacienteBaseSchema = z.object({
   address: direccionOpcionalSchema,
   emergency_contact: emergencyContactSchema,
   guardian: emergencyContactSchema.optional(),
+  /** Si viene de una invitación de cita única, la cuenta se queda con ese historial. */
+  invitacion: tokenInvitacionSchema.optional(),
 });
 
 interface DatosRegistro {
@@ -380,6 +385,42 @@ export const addGuardianSchema = z
   .refine((data) => data.email || data.name, {
     message: "Indica el correo de la cuenta o el nombre del tutor",
     path: ["name"],
+  });
+
+/**
+ * Cita única: la psicóloga da de alta a alguien sin cuenta. Nombre y teléfono
+ * bastan; el correo es opcional. Si es menor, hacen falta su fecha de
+ * nacimiento (precio y duración) y los datos del tutor.
+ */
+export const citaUnicaPacienteSchema = z
+  .object({
+    name: nombreCompletoSchema,
+    phone: telefonoSchema.optional(),
+    email: z.union([emailSchema, z.literal("")]).optional(),
+    isMinor: z.boolean().default(false),
+    birthDate: z.coerce.date().optional(),
+    guardian: z
+      .object({
+        name: nombreCompletoSchema,
+        phone: telefonoSchema,
+        relationship: z.string().trim().max(40).optional(),
+      })
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (!data.isMinor && !data.phone) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["phone"], message: "El teléfono es obligatorio" });
+    }
+    if (data.isMinor) {
+      if (!data.birthDate) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["birthDate"], message: "La fecha de nacimiento es obligatoria" });
+      } else if (!esMenorDeEdad(data.birthDate.toISOString().slice(0, 10))) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["birthDate"], message: "La fecha indica que es mayor de edad" });
+      }
+      if (!data.guardian) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["guardian"], message: "Los datos del tutor son obligatorios" });
+      }
+    }
   });
 
 /** Un paciente adulto da de alta a un menor a su cargo (sin cuenta propia). */

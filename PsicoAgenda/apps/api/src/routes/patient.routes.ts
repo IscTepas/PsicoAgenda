@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   addGuardianSchema,
   addTutoredMinorSchema,
+  citaUnicaPacienteSchema,
   consentParamsSchema,
   createConsentSchema,
   createLogEntrySchema,
@@ -42,11 +43,27 @@ import {
   setPrimaryGuardianController,
 } from "@/controllers/guardianship.controller";
 import { validate } from "@/middleware/validate.middleware";
+import { crearInvitacionController, crearPacienteCitaUnicaController } from "@/controllers/cita-unica.controller";
 
 const router = Router();
 
 // `me` va antes que `/:id` para que no lo capture el parámetro.
 router.get("/me", requireAuth, getMyPatientController);
+// Cita única: alta sin cuenta e invitación a registrarse; solo el profesional.
+router.post(
+  "/cita-unica",
+  requireAuth,
+  requireRole(UserRole.PSYCHOLOGIST),
+  validate({ body: citaUnicaPacienteSchema }),
+  crearPacienteCitaUnicaController,
+);
+router.post(
+  "/:id/invitacion",
+  requireAuth,
+  requireRole(UserRole.PSYCHOLOGIST),
+  validate({ params: idParamSchema }),
+  crearInvitacionController,
+);
 // Menores que tutela la cuenta (para agendar a su nombre).
 router.get("/me/tutelados", requireAuth, listTutoredPatientsController);
 // Tareas que dejó la psicóloga (propias y de los menores a cargo) y su palomita.

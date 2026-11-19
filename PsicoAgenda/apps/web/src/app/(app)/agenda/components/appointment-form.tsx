@@ -60,6 +60,7 @@ import {
 } from "@/components/ui/dialog"
 import { useSession } from "@/lib/use-session"
 import { CobroDeCita } from "@/components/cobro-cita"
+import { CitaUnicaAlta } from "./cita-unica-alta"
 import { useHydrated } from "@/lib/use-hydrated"
 import { cn } from "@/lib/utils"
 import { Calendar } from "@/components/arc/calendar/calendar"
@@ -257,6 +258,8 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
   // Form State
   const [selectedPatientId, setSelectedPatientId] = React.useState<string>(defaultPatientId)
+  // Cita única: en lugar del buscador, el alta rápida sin registro.
+  const [citaUnica, setCitaUnica] = React.useState(false)
   const [patientSearch, setPatientSearch] = React.useState<string>("")
   const busquedaPaciente = useDebouncedValue(patientSearch, 200)
   const [isPatientDropdownOpen, setIsPatientDropdownOpen] = React.useState<boolean>(false)
@@ -1073,6 +1076,9 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                       <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                         {selectedPatient.isMinor ? "Menor de edad" : "Adulto"}
                       </span>
+                      {selectedPatient.oneTime && (
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-primary/10 text-primary">Cita única</span>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-3 mt-0.5">
                       <span>{selectedPatient.email || "Sin cuenta"}</span>
@@ -1103,8 +1109,47 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   </Button>
                 </div>
               </div>
+            ) : citaUnica ? (
+              <CitaUnicaAlta
+                onCancelar={() => setCitaUnica(false)}
+                onExistente={(existente) => {
+                  setCitaUnica(false)
+                  setSelectedPatientId(existente.id)
+                }}
+                onCreado={(nuevo) => {
+                  const ahoraAlta = new Date()
+                  setPatients((prev) => [
+                    ...prev,
+                    {
+                      id: nuevo.id,
+                      name: nuevo.name,
+                      email: nuevo.email ?? "",
+                      phone: nuevo.phone,
+                      role: UserRole.PATIENT,
+                      isMinor: nuevo.isMinor,
+                      birthDate: nuevo.birthDate ? parseInputToDate(nuevo.birthDate) : undefined,
+                      oneTime: true,
+                      createdAt: ahoraAlta,
+                      updatedAt: ahoraAlta,
+                    },
+                  ])
+                  setSelectedPatientId(nuevo.id)
+                  setCitaUnica(false)
+                }}
+              />
             ) : (
-              // Autocomplete Search Input: se cierra al salir el foco del buscador o con Escape
+              <>
+              <p className="mb-3 text-sm text-muted-foreground">
+                ¿Solo una valoración o una sesión?{" "}
+                <button
+                  type="button"
+                  onClick={() => setCitaUnica(true)}
+                  className="rounded font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  Cita única, sin registro
+                </button>
+              </p>
+              {/* Autocomplete Search Input: se cierra al salir el foco del buscador o con Escape */}
               <div
                 className="relative"
                 onBlur={(e) => {
@@ -1196,6 +1241,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
                   </div>
                 )}
               </div>
+              </>
             )}
           </CardContent>
         </Card>

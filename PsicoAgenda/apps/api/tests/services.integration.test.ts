@@ -122,21 +122,11 @@ describe("services integration against real database", () => {
     expect(found.id).toBe(appointmentId);
   });
 
-  it("marks the honorarium as paid and then as waived", async () => {
-    const paid = await updateAppointmentPayment(psychologistAuth, appointmentId, PaymentStatus.PAID);
-
-    expect(paid.payment?.status).toBe(PaymentStatus.PAID);
-    // El CHECK `ck_pagos_fecha` exige marca de cobro cuando el estado es PAGADO.
-    expect(paid.payment?.paidAt).toBeInstanceOf(Date);
-
-    const waived = await updateAppointmentPayment(
-      psychologistAuth,
-      appointmentId,
-      PaymentStatus.WAIVED,
-    );
-
-    expect(waived.payment?.status).toBe(PaymentStatus.WAIVED);
-    expect(waived.payment?.paidAt).toBeUndefined();
+  it("does not charge a session that has not been closed as attended", async () => {
+    // El cobro nace al cerrar la sesión (`closeAppointment`); una cita futura no se cobra suelta.
+    await expect(updateAppointmentPayment(psychologistAuth, appointmentId, PaymentStatus.PAID)).rejects.toMatchObject({
+      statusCode: 409,
+    });
   });
 
   it("lists appointments for the psychologist", async () => {
@@ -194,11 +184,11 @@ describe("services integration against real database", () => {
     }
   });
 
-  it("cancels the appointment and keeps an already waived honorarium", async () => {
+  it("cancels the appointment and drops the pending honorarium", async () => {
     const cancelled = await cancelAppointment(psychologistAuth, appointmentId, "Test cancellation");
 
     expect(cancelled.status).toBe("cancelled");
-    // El honorario ya estaba condonado (paso anterior): es constancia y se conserva.
-    expect(cancelled.payment?.status).toBe(PaymentStatus.WAIVED);
+    // Un honorario pendiente no queda como deuda de una cita cancelada.
+    expect(cancelled.payment).toBeUndefined();
   });
 });

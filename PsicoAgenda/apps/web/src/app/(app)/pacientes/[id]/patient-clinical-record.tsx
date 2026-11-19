@@ -41,6 +41,7 @@ import { WheelDatePicker } from "@/components/wheel-date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/motion/select"
 import { useHydrated } from "@/lib/use-hydrated"
 import { GuardiansCard } from "./guardians-card"
+import { InvitarCuenta } from "./invitar-cuenta"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
 import {
   appointmentService,
@@ -308,6 +309,9 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
                   <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-muted text-muted-foreground border border-border/60">
                     {patient.isMinor ? "Menor de edad" : "Adulto"}
                   </span>
+                  {patient.oneTime && (
+                    <span className="text-xs px-2.5 py-0.5 rounded-full font-medium bg-primary/10 text-primary">Cita única · sin cuenta</span>
+                  )}
                   {patient.gender && (
                     <span className="text-xs px-2 py-0.5 rounded-md text-muted-foreground bg-muted/40 capitalize">
                       {patient.gender}
@@ -333,7 +337,7 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
                       })}
                     </span>
                   )}
-                  <span>·</span>
+                  {patient.birthDate && <span>·</span>}
                   <span>
                     Paciente desde: <strong>{formatShortDate(patient.createdAt)}</strong>
                   </span>
@@ -355,7 +359,8 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
             </div>
 
             {/* Botón de Acción Principal */}
-            <div className="shrink-0 flex items-center gap-2">
+            <div className="shrink-0 flex flex-wrap items-center gap-2">
+              {patient.oneTime && <InvitarCuenta pacienteId={patient.id} nombre={patient.name} telefono={patient.phone} />}
               <Button asChild className="rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs h-10 px-4 shadow-2xs">
                 <Link href={`/agenda/nueva?patientId=${patient.id}`} className="flex items-center gap-2">
                   <CalendarDays className="size-4" />

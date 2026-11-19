@@ -119,6 +119,21 @@ export const patientService = {
       }),
     ),
 
+  /** Cita única: alta sin cuenta hecha por la psicóloga. */
+  createOneTime: (payload: {
+    name: string
+    phone?: string
+    email?: string
+    isMinor: boolean
+    birthDate?: string
+    guardian?: { name: string; phone: string; relationship?: string }
+  }): Promise<{ id: string; name: string }> =>
+    apiFetch<{ id: string; name: string }>("/patients/cita-unica", { method: "POST", body: payload }),
+
+  /** Enlace para que un paciente de cita única cree su cuenta y conserve su historial. */
+  invite: (id: string): Promise<{ enlace: string; expiraEn: string; enviadoPorCorreo: boolean }> =>
+    apiFetch(`/patients/${id}/invitacion`, { method: "POST" }),
+
   /** Menores que tutela la cuenta (para pedir citas a su nombre). */
   listTutored: (): Promise<TutoredPatient[]> => apiFetch<TutoredPatient[]>("/patients/me/tutelados"),
 
