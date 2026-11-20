@@ -262,7 +262,7 @@ export function Table<T>({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className={height === "auto" ? "overflow-x-auto overflow-y-hidden" : "overflow-auto"}
+        className={height === "auto" ? "overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "overflow-auto"}
         style={height === "auto" ? undefined : { height }}
       >
         <table

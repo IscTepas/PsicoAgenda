@@ -28,6 +28,23 @@ model cache_registro {
   @@index([expira_en])
 }
 
+/// Rangos en los que el psicólogo no atiende. Un bloqueo de día completo también
+/// se guarda como instantes (`00:00` local a `00:00` del día siguiente); `todo_el_dia`
+/// solo controla cómo se presenta.
+model bloqueos_agenda {
+  id             String     @id @db.Uuid
+  psicologo_id   String     @db.Uuid
+  fecha_inicio   DateTime   @db.Timestamptz(3)
+  fecha_fin      DateTime   @db.Timestamptz(3)
+  todo_el_dia    Boolean    @default(false)
+  motivo         String?    @db.VarChar(100)
+  creado_en      DateTime   @default(now()) @db.Timestamptz(3)
+  actualizado_en DateTime   @updatedAt @db.Timestamptz(3)
+  psicologos     psicologos @relation(fields: [psicologo_id], references: [id], onDelete: Cascade)
+
+  @@index([psicologo_id, fecha_inicio])
+}
+
 model citas {
   id                 String              @id @db.Uuid
   psicologo_id       String              @db.Uuid
@@ -110,6 +127,7 @@ model entradas_bitacora {
   expedientes_clinicos expedientes_clinicos  @relation(fields: [expediente_id], references: [id])
   psicologos           psicologos            @relation(fields: [psicologo_id], references: [id])
   revisiones_bitacora  revisiones_bitacora[]
+  tareas_sesion        tareas_sesion[]
 
   @@index([cita_id])
   @@index([expediente_id, fecha_sesion])
@@ -184,6 +202,7 @@ model notificaciones {
   usuarios           usuarios           @relation(fields: [usuario_id], references: [id])
 
   @@index([programada_para], map: "idx_notificaciones_pendientes", where: raw("(estado = 'PENDIENTE'::estado_envio)"))
+  @@index([estado, creado_en], map: "idx_notificaciones_purga")
   @@index([cita_id])
   @@index([estado, programada_para])
   @@index([usuario_id])
@@ -205,8 +224,26 @@ model pacientes {
   pacientes_tutores          pacientes_tutores[]
   usuarios                   usuarios                     @relation(fields: [usuario_id], references: [id])
   solicitudes_cita           solicitudes_cita[]
+  tareas_sesion              tareas_sesion[]
 
   @@index([psicologo_id])
+}
+
+/// Tareas que la psicóloga deja en la hoja de bitácora de una sesión; el paciente las marca como hechas.
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tareas_sesion {
+  id                String            @id @db.Uuid
+  entrada_id        String            @db.Uuid
+  paciente_id       String            @db.Uuid
+  texto             String
+  orden             Int               @default(0)
+  hecha_en          DateTime?         @db.Timestamptz(3)
+  creado_en         DateTime          @default(now()) @db.Timestamptz(3)
+  entradas_bitacora entradas_bitacora @relation(fields: [entrada_id], references: [id], onDelete: Cascade)
+  pacientes         pacientes         @relation(fields: [paciente_id], references: [id], onDelete: Cascade)
+
+  @@index([entrada_id])
+  @@index([paciente_id, hecha_en])
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -231,6 +268,7 @@ model psicologos {
   especialidad       String?
   anios_experiencia  Int?
   biografia          String?
+  bloqueos_agenda    bloqueos_agenda[]
   citas              citas[]
   entradas_bitacora  entradas_bitacora[]
   horarios_psicologo horarios_psicologo[]
@@ -315,6 +353,7 @@ model solicitudes_cita {
 
   @@index([paciente_id])
   @@index([psicologo_id, estado])
+  @@index([estado, creado_en], map: "idx_solicitudes_purga")
 }
 
 /// Catálogo plano de motivos de consulta (una cita elige varios). «Otro» es una fila con es_otro y pide texto.
@@ -478,6 +517,7 @@ enum tipo_notificacion {
   SOLICITUD
   RECHAZO
   ASISTENCIA
+  TAREA
 }
 
 enum tipo_reporte {

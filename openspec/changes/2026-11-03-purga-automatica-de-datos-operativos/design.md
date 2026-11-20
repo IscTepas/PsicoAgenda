@@ -44,7 +44,7 @@ La purga enumera explícitamente qué tablas toca. No existe una regla del tipo 
 
 El endpoint debe terminar muy por debajo de los 30 s de `cron-job.org` y del límite de la función en Vercel. Cada barrido borra como máximo un número acotado de filas por tabla (lote de 1 000, hasta 10 lotes). Si queda trabajo, la siguiente ejecución continúa. `SKIP LOCKED` evita que dos ejecuciones solapadas se bloqueen entre sí; el borrado es idempotente porque la condición es por fecha.
 
-El filtro de estado se escribe como `estado::text IN (...)` en SQL crudo para no depender del casting de arreglos de enums de Prisma; las constantes de estado siguen viniendo de `@/generated/prisma/enums`.
+El filtro de estado se escribe con literales del enum (`'ENVIADA'::estado_envio`, `'FALLIDA'::estado_envio`, `'CANCELADA'::estado_envio`) en SQL crudo: evita el casting de arreglos de enums de Prisma y, a diferencia de `estado::text`, permite que el planificador use el índice `(estado, creado_en)`. Las constantes de estado del código siguen viniendo de `@/generated/prisma/enums`.
 
 ### 4. `PENDIENTE` es intocable
 

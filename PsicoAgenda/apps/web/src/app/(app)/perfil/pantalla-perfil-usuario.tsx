@@ -335,7 +335,6 @@ export function PantallaPerfilUsuario() {
       {/* Cabecera de Página */}
       <PageHeader
         title="Perfil de Usuario"
-        description="Administra tu información personal, datos de contacto y preferencias de la interfaz."
       />
 
       {/* Solo aparece después de la transición por mayoría de edad */}

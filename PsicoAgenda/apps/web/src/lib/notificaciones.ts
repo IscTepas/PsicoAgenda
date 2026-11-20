@@ -6,9 +6,21 @@ import {
   type Notification,
 } from "@psicoagenda/shared"
 
+/** Nombre del tipo de aviso, para la pastilla de la tarjeta. */
+export const TIPO_DE_AVISO: Record<Notification["kind"], string> = {
+  reminder: "Recordatorio",
+  confirmation: "Confirmación",
+  change: "Cambio",
+  cancellation: "Cancelación",
+  request: "Solicitud",
+  rejection: "Rechazo",
+  attendance: "Asistencia",
+  homework: "Tarea",
+}
+
 export interface AccionDeAviso {
   href: string
-  /** Texto del botón ("Ver cita", "Pedir otro horario"…). */
+  /** Texto del botón ("Pedir otro horario", "Videollamada"…). */
   label: string
   /** Abre fuera de la app (mapa, videollamada). */
   external?: boolean
@@ -27,9 +39,9 @@ export interface ContextoDeAviso {
 }
 
 export interface AccionesDeAviso {
-  /** Lo que hace tocar el aviso (además de marcarlo leído). */
+  /** El siguiente paso que ofrece la tarjeta del aviso, si lo hay. Nunca lleva a modificar la cita. */
   principal: AccionDeAviso | null
-  /** Botones adicionales en la misma tarjeta. */
+  /** Botones adicionales en la tarjeta. */
   extras: AccionDeAviso[]
   /** Solicitudes: en qué quedó ("Aceptada", "Esperando tu respuesta"…). */
   estado: string | null
@@ -52,7 +64,6 @@ export function accionesDeAviso(
   aviso: Pick<Notification, "kind" | "appointmentId" | "requestId">,
   ctx: ContextoDeAviso,
 ): AccionesDeAviso {
-  const verCita = aviso.appointmentId ? { href: `/agenda/${aviso.appointmentId}`, label: "Ver cita" } : null
   const vacio: AccionesDeAviso = { principal: null, extras: [], estado: null, pendiente: false }
 
   switch (aviso.kind) {
@@ -61,12 +72,14 @@ export function accionesDeAviso(
       const estado = ctx.estadoSolicitud ? ESTADO_SOLICITUD[ctx.estadoSolicitud] : null
       return { ...vacio, estado, pendiente: ctx.estadoSolicitud === AppointmentRequestStatus.PENDING }
     }
+    case "homework":
+      return ctx.esPaciente ? { ...vacio, principal: { href: "/dashboard#tareas", label: "Ver mi tarea" } } : vacio
     case "rejection":
       return ctx.esPaciente ? { ...vacio, principal: { href: "/agenda/nueva", label: "Pedir otro horario" } } : vacio
     case "cancellation":
       return ctx.esPaciente
         ? { ...vacio, principal: { href: "/agenda/nueva", label: "Solicitar otra cita" } }
-        : { ...vacio, principal: verCita }
+        : vacio
     case "reminder":
     case "confirmation":
     case "change":
@@ -82,7 +95,7 @@ export function accionesDeAviso(
       } else if (vigente && ctx.esPaciente) {
         extras.push({ href: ctx.mapsUrl, label: "Cómo llegar", external: true })
       }
-      return { ...vacio, principal: verCita, extras }
+      return { ...vacio, extras }
     }
     default:
       return vacio

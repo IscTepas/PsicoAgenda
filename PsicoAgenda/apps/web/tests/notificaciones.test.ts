@@ -23,13 +23,11 @@ const futura = (modality: AppointmentModality) => ({
 })
 
 describe("accionesDeAviso", () => {
-  it("confirmaciones, cambios, recordatorios y asistencia llevan a la cita", () => {
+  it("ningún aviso de cita lleva a modificarla: solo se abre su tarjeta", () => {
     for (const kind of ["confirmation", "change", "reminder", "attendance"] as const) {
-      expect(accionesDeAviso({ kind, appointmentId: CITA }, ctx()).principal).toEqual({
-        href: `/agenda/${CITA}`,
-        label: "Ver cita",
-      })
+      expect(accionesDeAviso({ kind, appointmentId: CITA }, ctx()).principal).toBeNull()
     }
+    expect(accionesDeAviso({ kind: "cancellation", appointmentId: CITA }, ctx({ esPaciente: false })).principal).toBeNull()
   })
 
   it("una cita en línea vigente ofrece Videollamada; una presencial, Cómo llegar al paciente", () => {
@@ -64,12 +62,6 @@ describe("accionesDeAviso", () => {
   it("al paciente, un rechazo o una cancelación lo llevan a pedir otro horario", () => {
     expect(accionesDeAviso({ kind: "rejection" }, ctx()).principal?.href).toBe("/agenda/nueva")
     expect(accionesDeAviso({ kind: "cancellation", appointmentId: CITA }, ctx()).principal?.href).toBe("/agenda/nueva")
-  })
-
-  it("a la psicóloga, una cancelación la lleva a la cita cancelada", () => {
-    expect(accionesDeAviso({ kind: "cancellation", appointmentId: CITA }, ctx({ esPaciente: false })).principal?.href).toBe(
-      `/agenda/${CITA}`,
-    )
   })
 
   it("un aviso sin cita (p. ej. fin de tutela) solo se marca como leído", () => {

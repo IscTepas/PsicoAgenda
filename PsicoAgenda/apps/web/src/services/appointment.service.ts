@@ -191,6 +191,7 @@ export interface CreateAppointmentRequestPayload {
 
 export interface RescheduleAppointmentRequestPayload extends CreateAppointmentRequestPayload {
   appointmentId: string
+  changeReason?: string
 }
 
 /** Solicitudes del paciente: no ocupan agenda hasta que el psicólogo las acepta. */

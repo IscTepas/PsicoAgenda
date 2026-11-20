@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import { useDebouncedValue } from "@/lib/use-debounced-value"
+import { Skeleton } from "@/components/ui/skeleton"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Search, X, ChevronRight, UserX } from "lucide-react"
@@ -54,6 +56,7 @@ export default function PantallaBusquedaPaciente() {
       : UserRole.PSYCHOLOGIST)
 
   const [searchQuery, setSearchQuery] = useState("")
+  const busqueda = useDebouncedValue(searchQuery)
 
   const {
     patients,
@@ -101,7 +104,7 @@ export default function PantallaBusquedaPaciente() {
 
   // Filtrado reactivo de pacientes
   const filteredPatients = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase()
+    const query = busqueda.trim().toLowerCase()
 
     return enrichedPatients
       .filter((patient) => {
@@ -115,7 +118,7 @@ export default function PantallaBusquedaPaciente() {
 
         return matchesQuery
       })
-  }, [enrichedPatients, searchQuery])
+  }, [enrichedPatients, busqueda])
 
   type PatientRow = (typeof enrichedPatients)[number]
   const columns: TableColumn<PatientRow>[] = [
@@ -132,7 +135,7 @@ export default function PantallaBusquedaPaciente() {
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-foreground">{p.name}</p>
-            <p className="truncate text-xs text-muted-foreground">{p.email}</p>
+            <p className="truncate text-xs text-muted-foreground">{p.email || "Sin cuenta · lo lleva su tutor"}</p>
           </div>
         </div>
       ),
@@ -217,7 +220,6 @@ export default function PantallaBusquedaPaciente() {
       {/* Cabecera Principal */}
       <PageHeader
         title="Directorio de Pacientes"
-        description="Localiza expedientes clínicos, consulta asistencias recientes y gestiona el seguimiento terapéutico."
       />
 
       {loadError && (
@@ -227,8 +229,18 @@ export default function PantallaBusquedaPaciente() {
       )}
 
       {isDataLoading && (
-        <div className="py-16 text-center text-sm text-muted-foreground">
-          Cargando pacientes…
+        <div className="space-y-3" aria-busy="true" aria-label="Cargando pacientes">
+          <Skeleton className="h-12 rounded-2xl" />
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
+              <Skeleton className="size-10 rounded-full" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+              <Skeleton className="h-8 w-20 rounded-lg" />
+            </div>
+          ))}
         </div>
       )}
 

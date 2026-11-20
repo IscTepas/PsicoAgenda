@@ -80,6 +80,92 @@ export async function listTutoredPatients(auth: AuthenticatedUser): Promise<Tuto
     .map((link) => ({ id: link.pacientes.id, name: link.pacientes.usuarios.nombre_completo }));
 }
 
+export interface AddTutoredMinorInput {
+  name: string;
+  birthDate: Date;
+  relationship?: string;
+}
+
+/**
+ * Una cuenta adulta de paciente registra a un menor a su cargo y queda como su
+ * tutor principal: así puede pedir citas a su nombre sin otro registro. El menor
+ * no tiene cuenta; su fila de `usuarios` lleva un correo reservado (`.invalid`
+ * nunca se entrega) y los avisos por correo y WhatsApp apagados.
+ */
+export async function addTutoredMinor(
+  auth: AuthenticatedUser,
+  input: AddTutoredMinorInput,
+): Promise<TutoredPatient> {
+  const hoy = new Date();
+  if (input.birthDate > hoy || !isMinorOn(input.birthDate, hoy)) {
+    throw AppError.badRequest("Solo puedes registrar a menores de 18 años.");
+  }
+
+  const yo = await prisma.usuarios.findUnique({
+    where: { id: auth.id },
+    select: {
+      nombre_completo: true,
+      telefono: true,
+      zona_horaria: true,
+      pacientes: { select: { fecha_nacimiento: true, psicologo_id: true } },
+    },
+  });
+  if (auth.role !== UserRole.PATIENT || !yo?.pacientes) {
+    throw AppError.forbidden("Solo una cuenta de paciente puede registrar a un menor a su cargo.");
+  }
+  if (isMinorOn(yo.pacientes.fecha_nacimiento, hoy)) {
+    throw AppError.forbidden("Un menor de edad no puede ser tutor.");
+  }
+
+  const name = input.name.trim();
+  const yaRegistrado = (await listTutoredPatients(auth)).some(
+    (menor) => menor.name.trim().toLowerCase() === name.toLowerCase(),
+  );
+  if (yaRegistrado) throw AppError.conflict("Ya registraste a un menor con ese nombre.");
+
+  const usuarioId = randomUUID();
+  const pacienteId = randomUUID();
+  await prisma.$transaction(async (tx) => {
+    await tx.usuarios.create({
+      data: {
+        id: usuarioId,
+        correo: `menor-${usuarioId}@sin-cuenta.invalid`,
+        nombre_completo: name,
+        rol: "PACIENTE",
+        zona_horaria: yo.zona_horaria,
+        notificar_correo: false,
+        notificar_whatsapp: false,
+      },
+    });
+    await tx.pacientes.create({
+      data: {
+        id: pacienteId,
+        usuario_id: usuarioId,
+        fecha_nacimiento: input.birthDate,
+        // Lo atiende la misma psicóloga que a quien lo registra.
+        psicologo_id: yo.pacientes!.psicologo_id,
+      },
+    });
+    const tutor = await tx.tutores.upsert({
+      where: { usuario_id: auth.id },
+      create: {
+        id: randomUUID(),
+        usuario_id: auth.id,
+        nombre_completo: yo.nombre_completo,
+        telefono: yo.telefono,
+        parentesco: input.relationship?.trim() || null,
+      },
+      update: {},
+      select: { id: true },
+    });
+    await tx.pacientes_tutores.create({
+      data: { paciente_id: pacienteId, tutor_id: tutor.id, es_principal: true },
+    });
+  });
+
+  return { id: pacienteId, name };
+}
+
 // ---------------------------------------------------------------------------
 // Gestión de tutores desde el expediente
 // ---------------------------------------------------------------------------

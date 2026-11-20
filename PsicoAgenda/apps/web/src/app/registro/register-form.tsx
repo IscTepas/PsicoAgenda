@@ -56,6 +56,7 @@ import {
 } from "@/services/registro.service"
 import { TelefonoInput } from "@/components/telefono-input"
 import { WheelDatePicker } from "@/components/wheel-date-picker"
+import { PARENTESCOS_CONTACTO, PARENTESCOS_TUTOR, ParentescoSelect } from "@/components/parentesco-select"
 import { OTPInput } from "@/components/motion/otp-input"
 import { NewPasswordInput } from "@/components/new-password-input"
 import { Input as MotionInput } from "@/components/motion/input"
@@ -641,22 +642,16 @@ export function RegisterForm() {
                   <FormField
                     control={form.control}
                     name="guardianRelationship"
-                    render={({ field }) => (
+                    render={({ field, fieldState }) => (
                       <FormItem>
                         <FormLabel>Parentesco / Representación</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
-                          <FormControl>
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Parentesco" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="Madre">Madre</SelectItem>
-                            <SelectItem value="Padre">Padre</SelectItem>
-                            <SelectItem value="Tutor legal">Tutor/a legal</SelectItem>
-                            <SelectItem value="Familiar responsable">Familiar responsable</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <ParentescoSelect
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          opciones={PARENTESCOS_TUTOR}
+                          ariaLabel="Parentesco del tutor"
+                          invalid={Boolean(fieldState.error)}
+                        />
                         <FormMessage />
                       </FormItem>
                     )}
@@ -925,9 +920,12 @@ export function RegisterForm() {
                           <FormLabel>
                             Parentesco o relación <span className="text-muted-foreground font-normal">(Opcional)</span>
                           </FormLabel>
-                          <FormControl>
-                            <Input placeholder="Ej. Pareja, Hermano/a, Amistad" {...field} />
-                          </FormControl>
+                          <ParentescoSelect
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            opciones={PARENTESCOS_CONTACTO}
+                            ariaLabel="Parentesco del contacto de emergencia"
+                          />
                           <FormMessage />
                         </FormItem>
                       )}

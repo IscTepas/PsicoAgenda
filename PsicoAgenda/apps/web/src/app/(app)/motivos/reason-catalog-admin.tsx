@@ -61,8 +61,21 @@ export function ReasonCatalogAdmin() {
     }, "Motivo agregado")
   }
 
-  const editar = (reason: ConsultationReason, patch: Partial<ConsultationReason>) =>
-    ejecutar(() => consultationReasonService.update(reason.id, patch), "Motivo actualizado")
+  const editar = async (reason: ConsultationReason, patch: Partial<ConsultationReason>) => {
+    const clave = ["motivos-consulta", "todos"]
+    const previos = queryClient.getQueryData<ConsultationReason[]>(clave)
+    queryClient.setQueryData<ConsultationReason[]>(clave, (lista) =>
+      lista?.map((r) => (r.id === reason.id ? { ...r, ...patch } : r)),
+    )
+    await ejecutar(async () => {
+      try {
+        await consultationReasonService.update(reason.id, patch)
+      } catch (err) {
+        queryClient.setQueryData(clave, previos)
+        throw err
+      }
+    }, "Motivo actualizado")
+  }
 
   return (
     <div className="space-y-4">
@@ -111,7 +124,13 @@ export function ReasonCatalogAdmin() {
 
       <Card className="rounded-2xl">
         <CardContent className="divide-y divide-border p-0">
-          {isLoading ? <p className="p-4 text-sm text-muted-foreground">Cargando…</p> : null}
+          {isLoading ? (
+            <div className="space-y-2 p-4" aria-busy="true" aria-label="Cargando motivos">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-10 rounded-xl bg-muted/50 animate-pulse motion-reduce:animate-none" />
+              ))}
+            </div>
+          ) : null}
           {reasons.map((reason) => (
             <div key={reason.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">

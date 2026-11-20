@@ -84,7 +84,7 @@ export const FAQ = [
   {
     question: "¿Cómo agendo, cambio o cancelo una cita?",
     answer:
-      "Desde tu cuenta: eliges un horario disponible y, si algo cambia, puedes reagendar o cancelar desde el mismo lugar.",
+      "Desde tu cuenta: eliges un horario disponible y, si algo cambia, puedes modificar o cancelar tu cita desde el mismo lugar.",
   },
   {
     // EJEMPLO: confirmar que el consultorio atiende a menores (el sistema sí lo permite)

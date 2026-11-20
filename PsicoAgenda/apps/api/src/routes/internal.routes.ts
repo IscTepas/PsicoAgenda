@@ -3,6 +3,7 @@ import { requireCronSecret } from "@/middleware/cron.middleware";
 import { despacharPendientes } from "@/services/notification.service";
 import { limpiarCacheRegistroVencida } from "@/services/codigo-cache.repo";
 import { finalizarTutelasVencidas } from "@/services/guardianship.service";
+import { purgarDatosVencidos } from "@/services/mantenimiento.service";
 
 const router = Router();
 
@@ -36,6 +37,20 @@ router.post("/despachar", requireCronSecret, async (_req, res) => {
  */
 router.post("/finalizar-tutelas", requireCronSecret, async (_req, res) => {
   res.json({ ok: true, finalizadas: await finalizarTutelasVencidas() });
+});
+
+/**
+ * Purga de datos operativos vencidos (notificaciones, solicitudes y cache).
+ *
+ * Lo dispara `cron-job.org` una vez al día; ver la sección "Mantenimiento" del
+ * README. No toca datos clínicos ni avisos PENDIENTE. Es idempotente y trabaja
+ * por lotes, así que dos ejecuciones solapadas no se bloquean ni duplican
+ * borrados; el trabajo que no quepa en una corrida espera a la siguiente.
+ */
+router.post("/mantenimiento", requireCronSecret, async (_req, res) => {
+  const resultado = await purgarDatosVencidos();
+
+  res.json({ ok: true, ...resultado, ejecutadoEn: new Date().toISOString() });
 });
 
 export { router as internalRouter };

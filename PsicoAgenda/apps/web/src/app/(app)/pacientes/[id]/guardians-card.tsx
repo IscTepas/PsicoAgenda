@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import type { LegalGuardian } from "@psicoagenda/shared"
-import { Crown, ShieldCheck, Trash2, UserPlus } from "lucide-react"
+import { Crown, ShieldCheck, UserPlus } from "lucide-react"
 import { guardianService } from "@/services/patient.service"
 import { useToast } from "@/components/toast-provider"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 
 /**
  * Tutores de un menor: enlazar una cuenta por correo o registrar un contacto,
- * elegir el principal y desvincular. Solo se monta para pacientes menores: a un
+ * y elegir el principal. Solo se monta para pacientes menores: a un
  * adulto no se le ofrece vincular tutores.
  */
 export function GuardiansCard({ patientId, initial }: { patientId: string; initial: LegalGuardian[] }) {
@@ -51,19 +51,6 @@ export function GuardiansCard({ patientId, initial }: { patientId: string; initi
     }
   }
 
-  function remove(guardian: LegalGuardian) {
-    const others = guardians.filter((g) => g.id !== guardian.id)
-    let options: { nuevoPrincipalId?: string; sinPrincipal?: boolean } = {}
-    if (guardian.isPrimary) {
-      // Quitar al principal obliga a decidir: el siguiente pasa a principal, o se confirma quedarse sin él.
-      if (others[0]) options = { nuevoPrincipalId: others[0].id }
-      else if (window.confirm(`${guardian.name} es el único tutor. ¿Dejar al paciente sin tutor?`)) {
-        options = { sinPrincipal: true }
-      } else return
-    }
-    void run(() => guardianService.remove(patientId, guardian.id, options), "Tutor desvinculado")
-  }
-
   return (
     <div className="space-y-2.5 rounded-xl border border-primary/25 bg-primary/[0.03] p-3.5">
       <div className="flex items-center justify-between gap-2">
@@ -71,7 +58,8 @@ export function GuardiansCard({ patientId, initial }: { patientId: string; initi
           <ShieldCheck className="size-3.5" />
           <span>Tutores</span>
         </div>
-        {!adding ? (
+        {/* Con tutor ya vinculado (desde el registro o por el propio tutor) no hay nada que vincular. */}
+        {!adding && guardians.length === 0 ? (
           <Button size="sm" variant="ghost" className="h-10 text-xs sm:h-8" onClick={() => setAdding(true)}>
             <UserPlus className="size-3.5" /> Vincular
           </Button>
@@ -113,16 +101,6 @@ export function GuardiansCard({ patientId, initial }: { patientId: string; initi
                     <Crown className="size-3.5" />
                   </Button>
                 ) : null}
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-10 sm:size-8"
-                  disabled={busy}
-                  aria-label={`Desvincular a ${guardian.name}`}
-                  onClick={() => remove(guardian)}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
               </div>
             </li>
           ))}

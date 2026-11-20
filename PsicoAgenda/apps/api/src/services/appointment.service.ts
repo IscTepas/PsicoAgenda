@@ -15,6 +15,7 @@ import {
   tipo_sesion,
 } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { assertNoAgendaBlock } from "@/services/agenda-block.guard";
 import { reasonIdsOf, reasonLinks, reasonOtherOf, reasonText, resolveReasons } from "@/services/consultation-reason.service";
 import { assertCanActOnPatient, patientIdsForUser } from "@/services/guardianship.service";
 import { notificar, type CitaAviso } from "@/services/notification.service";
@@ -205,6 +206,7 @@ export const toAppointment = (row: AppointmentRow): Appointment => {
     reasonIds: reasonIdsOf(row.citas_motivos),
     reasonOther: reasonOtherOf(row.motivo, row.citas_motivos),
     notes: row.notas_internas ?? undefined,
+    cancellationReason: row.motivo_cancelacion ?? undefined,
     // `precio` es el snapshot de la tarifa; `payment` es el estado de cobro.
     price: row.precio ?? undefined,
     payment: payment
@@ -535,6 +537,7 @@ export async function insertAppointment(
   });
 
   await assertNoOverlap(tx, { psychologistId, patientId: patient.id, start, end });
+  await assertNoAgendaBlock(tx, { psychologistId, start, end });
 
   return tx.citas.create({
     data: {
@@ -598,6 +601,7 @@ export async function updateAppointment(
           end,
           excludeId: row.id,
         });
+        await assertNoAgendaBlock(tx, { psychologistId: row.psicologo_id, start, end });
       }
 
       return tx.citas.update({

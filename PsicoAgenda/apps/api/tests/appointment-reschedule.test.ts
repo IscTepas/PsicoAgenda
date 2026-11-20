@@ -14,10 +14,11 @@ const { prismaMock, notificar } = vi.hoisted(() => {
   };
   const pacientes = { findUnique: vi.fn(), findUniqueOrThrow: vi.fn() };
   const solicitudes_cita = { findFirst: vi.fn(), create: vi.fn() };
+  const bloqueos_agenda = { findFirst: vi.fn() };
   const pagos_honorarios = { deleteMany: vi.fn() };
 
   return {
-    prismaMock: { citas, pacientes, solicitudes_cita, pagos_honorarios, $transaction: vi.fn() },
+    prismaMock: { citas, pacientes, solicitudes_cita, bloqueos_agenda, pagos_honorarios, $transaction: vi.fn() },
     notificar: vi.fn(),
   };
 });
@@ -98,6 +99,7 @@ beforeEach(() => {
   });
   prismaMock.citas.findUnique.mockResolvedValue(currentAppointment());
   prismaMock.citas.findFirst.mockResolvedValue(null);
+  prismaMock.bloqueos_agenda.findFirst.mockResolvedValue(null);
   prismaMock.citas.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.citas.count.mockResolvedValue(1);
   prismaMock.solicitudes_cita.findFirst.mockResolvedValue(null);
@@ -122,7 +124,7 @@ describe("rescheduleAppointmentRequest", () => {
       estado: "CANCELADA",
       cancelada_por_id: PATIENT_USER_ID,
     });
-    expect(String(cancel.data.motivo_cancelacion)).toContain("Reagendamiento");
+    expect(String(cancel.data.motivo_cancelacion)).toContain("Cambio de fecha");
     expect(cancel.data.cancelada_en).toBeInstanceOf(Date);
 
     const created = lastCallArg(prismaMock.solicitudes_cita.create) as {
@@ -149,7 +151,7 @@ describe("rescheduleAppointmentRequest", () => {
       pacienteId: PATIENT_ID,
       psicologoId: PSYCH_ID,
     });
-    expect(String(avisoCancelacion?.motivoCancelacion)).toContain("Reagendamiento");
+    expect(String(avisoCancelacion?.motivoCancelacion)).toContain("Cambio de fecha");
 
     const llamadaSolicitud = notificar.mock.calls[1] as unknown[] | undefined;
     expect(llamadaSolicitud?.[0]).toBe("SOLICITUD_CREADA");

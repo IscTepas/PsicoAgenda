@@ -1,5 +1,6 @@
 export * from "./health.service";
 export * from "./appointment.service";
+export * from "./agenda-block.service";
 export * from "./patient.service";
 export * from "./psychologist.service";
 export * from "./notification.service";

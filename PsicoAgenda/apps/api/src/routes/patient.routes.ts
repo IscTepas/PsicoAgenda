@@ -1,12 +1,14 @@
 import { Router } from "express";
 import {
   addGuardianSchema,
+  addTutoredMinorSchema,
   createLogEntrySchema,
   guardianParamsSchema,
   removeGuardianQuerySchema,
   UserRole,
   idParamSchema,
   patientListQuerySchema,
+  taskDoneSchema,
   updatePatientProfileSchema,
 } from "@psicoagenda/shared";
 import {
@@ -23,7 +25,10 @@ import {
 import { requireAuth, requireRole } from "@/middleware/auth.middleware";
 import {
   addGuardianController,
+  addTutoredMinorController,
   listGuardiansController,
+  listMyTasksController,
+  setTaskDoneController,
   listTutoredPatientsController,
   removeGuardianController,
   setPrimaryGuardianController,
@@ -36,6 +41,23 @@ const router = Router();
 router.get("/me", requireAuth, getMyPatientController);
 // Menores que tutela la cuenta (para agendar a su nombre).
 router.get("/me/tutelados", requireAuth, listTutoredPatientsController);
+// Tareas que dejó la psicóloga (propias y de los menores a cargo) y su palomita.
+router.get("/me/tareas", requireAuth, requireRole(UserRole.PATIENT), listMyTasksController);
+router.patch(
+  "/me/tareas/:id",
+  requireAuth,
+  requireRole(UserRole.PATIENT),
+  validate({ params: idParamSchema, body: taskDoneSchema }),
+  setTaskDoneController,
+);
+// Un paciente adulto registra a un menor a su cargo y queda como su tutor.
+router.post(
+  "/me/tutelados",
+  requireAuth,
+  requireRole(UserRole.PATIENT),
+  validate({ body: addTutoredMinorSchema }),
+  addTutoredMinorController,
+);
 router.patch(
   "/me",
   requireAuth,

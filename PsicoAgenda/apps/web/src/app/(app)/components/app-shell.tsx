@@ -11,6 +11,7 @@ import { DesktopSidebar, Sidebar, SidebarLink, useSidebar } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { ToastProvider } from "@/components/toast-provider"
 import { navItemsForRole } from "@/lib/navigation"
+import { borrarTodosLosBorradores } from "@/lib/borradores-bitacora"
 import { cn } from "@/lib/utils"
 import { useSession } from "@/lib/use-session"
 import { usePendingResponses } from "@/lib/use-pending-responses"
@@ -84,6 +85,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   const badgeOf = (href: string) => (href === "/notificaciones" ? pendingCount : 0)
 
   const handleLogout = () => {
+    borrarTodosLosBorradores()
     void logout().finally(() => router.push("/login"))
   }
 
@@ -191,17 +193,37 @@ function ShellContent({ children }: { children: React.ReactNode }) {
               <Settings className="size-[18px]" />
             </Link>
           </motion.span>
+          <motion.span
+            initial={false}
+            animate={{ opacity: open ? 1 : 0 }}
+            transition={{ duration: open ? 0.18 : 0.08, delay: open ? 0.06 : 0 }}
+            className={cn("shrink-0", !open && "pointer-events-none")}
+          >
+            <button
+              type="button"
+              onClick={handleLogout}
+              aria-label="Cerrar sesión"
+              title="Cerrar sesión"
+              tabIndex={open ? 0 : -1}
+              className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive outline-none focus-visible:ring-3 focus-visible:ring-ring/40"
+            >
+              <LogOut className="size-[18px]" />
+            </button>
+          </motion.span>
         </div>
       </DesktopSidebar>
 
       {/* Contenido */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="material scroll-edge sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-border/40 bg-background/75 px-4 backdrop-blur-xl backdrop-saturate-150 lg:px-6">
-          <div className="flex-1" />
+        <header className="material scroll-edge sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b md:hidden border-border/40 bg-background/75 px-4 backdrop-blur-xl backdrop-saturate-150 lg:px-6">
+          <Link href="/dashboard" aria-label="Inicio" className="flex items-center gap-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/40">
+            <Image src="/images/psicoagenda-icon.png" alt="" width={28} height={24} className="h-6 w-7 object-contain" />
+            <Wordmark className="text-[15px]" />
+          </Link>
           <Button
             variant="ghost"
             size="icon"
-            className="size-9 rounded-lg text-muted-foreground hover:text-foreground"
+            className="size-11 rounded-lg text-muted-foreground hover:text-foreground"
             onClick={handleLogout}
             aria-label="Cerrar sesión"
             title="Cerrar sesión"
@@ -210,7 +232,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
           </Button>
         </header>
 
-        <main id="contenido" tabIndex={-1} className="flex-1 scroll-mt-14 p-4 pb-24 outline-none md:pb-6 lg:p-6">
+        <main id="contenido" tabIndex={-1} className="flex-1 scroll-mt-14 p-4 pb-24 outline-none md:scroll-mt-0 md:px-6 md:pt-8 md:pb-8 lg:px-8">
           {children}
         </main>
       </div>

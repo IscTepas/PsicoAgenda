@@ -13,11 +13,13 @@ import {
   requirePatientAccess,
   requirePsychologistId,
 } from "@/services/clinical-record.service";
+import { avisarTareas, syncTasks, toSessionTask, type TaskInput } from "@/services/task.service";
 
 const logInclude = {
   citas: true,
   psicologos: { include: { usuarios: true } },
   expedientes_clinicos: { select: { paciente_id: true } },
+  tareas_sesion: { orderBy: { orden: "asc" } },
 } satisfies Prisma.entradas_bitacoraInclude;
 
 type LogEntryRow = Prisma.entradas_bitacoraGetPayload<{ include: typeof logInclude }>;
@@ -53,6 +55,7 @@ function withSessionNumber(rows: LogEntryRow[]): SessionLogEntry[] {
       notes: row.notas_sesion,
       interventions: row.objetivos_trabajados ?? undefined,
       homework: row.plan_proxima_sesion ?? undefined,
+      tasks: row.tareas_sesion.map(toSessionTask),
       createdAt: row.creado_en,
       updatedAt: row.actualizado_en,
     }))
@@ -86,6 +89,7 @@ export interface CreateLogEntryInput {
   notes: string;
   interventions?: string;
   homework?: string;
+  tasks?: TaskInput[];
 }
 
 const emptyToNull = (value: string | undefined): string | null =>
@@ -111,11 +115,21 @@ export async function createLogEntry(
       throw AppError.badRequest("La cita asociada no corresponde al paciente");
     }
     sessionDate = appointment.inicio;
+
+    // Cada sesión tiene una sola hoja: la segunda vez se edita la que ya existe.
+    const previa = await prisma.entradas_bitacora.findFirst({
+      where: { cita_id: input.appointmentId },
+      select: { id: true },
+    });
+    if (previa) throw AppError.conflict("Esa sesión ya tiene su hoja de bitácora");
   }
 
-  const created = await prisma.entradas_bitacora.create({
+  const entryId = randomUUID();
+  let tareasNuevas: string[] = [];
+  const created = await prisma.$transaction(async (tx) => {
+    await tx.entradas_bitacora.create({
     data: {
-      id: randomUUID(),
+      id: entryId,
       expediente_id: clinicalRecordId,
       cita_id: input.appointmentId ?? null,
       psicologo_id: psychologistId,
@@ -125,8 +139,11 @@ export async function createLogEntry(
       plan_proxima_sesion: emptyToNull(input.homework),
       estado_general: emptyToNull(input.sessionType),
     },
-    include: logInclude,
+    });
+    tareasNuevas = await syncTasks(tx, entryId, patientId, input.tasks ?? []);
+    return { id: entryId };
   });
+  await avisarTareas(patientId, tareasNuevas);
 
   const siblings = await prisma.entradas_bitacora.findMany({
     where: { expediente_id: clinicalRecordId },
@@ -142,6 +159,7 @@ export interface UpdateLogEntryInput {
   notes?: string;
   interventions?: string;
   homework?: string;
+  tasks?: TaskInput[];
 }
 
 export async function updateLogEntry(
@@ -160,7 +178,10 @@ export async function updateLogEntry(
 
   await requirePatientAccess(auth, existing.expedientes_clinicos.paciente_id);
 
-  await prisma.entradas_bitacora.update({
+  const patientId = existing.expedientes_clinicos.paciente_id;
+  let tareasNuevas: string[] = [];
+  await prisma.$transaction(async (tx) => {
+  await tx.entradas_bitacora.update({
     where: { id },
     data: {
       cita_id: input.appointmentId ?? undefined,
@@ -171,6 +192,9 @@ export async function updateLogEntry(
       version: { increment: 1 },
     },
   });
+    if (input.tasks) tareasNuevas = await syncTasks(tx, id, patientId, input.tasks);
+  });
+  await avisarTareas(patientId, tareasNuevas);
 
   const siblings = await prisma.entradas_bitacora.findMany({
     where: { expediente_id: existing.expediente_id },

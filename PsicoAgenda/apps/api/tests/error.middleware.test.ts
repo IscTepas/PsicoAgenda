@@ -3,7 +3,7 @@ import type { Request, Response } from "express";
 import { errorHandler } from "@/middleware/error.middleware";
 
 const responder = () => {
-  const res = { statusCode: 0, body: undefined as unknown } as { statusCode: number; body: unknown };
+  const res: { statusCode: number; body: unknown } = { statusCode: 0, body: undefined };
   return Object.assign(res, {
     status(code: number) {
       res.statusCode = code;

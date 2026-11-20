@@ -5,10 +5,12 @@ import {
   type Appointment,
   type AppointmentModality,
   type AppointmentRequest,
+  CAMBIO_DE_FECHA_PREFIJO,
 } from "@psicoagenda/shared";
 import type { Prisma } from "@/generated/prisma/client";
 import { estado_cita, estado_pago, estado_solicitud } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { assertNoAgendaBlock } from "@/services/agenda-block.guard";
 import { reasonIdsOf, reasonLinks, reasonOtherOf, reasonText, resolveReasons } from "@/services/consultation-reason.service";
 import { assertCanActOnPatient, patientIdsForUser } from "@/services/guardianship.service";
 import { AppError } from "@/utils/app-error";
@@ -46,10 +48,12 @@ export interface CreateAppointmentRequestInput {
 }
 
 export interface RescheduleAppointmentRequestInput extends CreateAppointmentRequestInput {
+  changeReason?: string;
   appointmentId: string;
 }
 
-const MOTIVO_REAGENDAMIENTO = "Reagendamiento solicitado por el paciente";
+const motivoDeCambio = (motivo?: string) =>
+  `${CAMBIO_DE_FECHA_PREFIJO}${motivo?.trim() || "solicitado por el paciente"}`;
 
 const toSharedRequestStatus = (status: estado_solicitud): AppointmentRequestStatus => {
   switch (status) {
@@ -180,6 +184,7 @@ export async function createAppointmentRequest(
 
   const created = await prisma.$transaction(async (tx) => {
     await assertNoOverlap(tx, { psychologistId, patientId, start, end });
+    await assertNoAgendaBlock(tx, { psychologistId, start, end });
 
     const duplicate = await tx.solicitudes_cita.findFirst({
       where: { paciente_id: patientId, inicio_solicitado: start, estado: estado_solicitud.PENDIENTE },
@@ -275,7 +280,7 @@ export async function rescheduleAppointmentRequest(
         where: { id: current.id, estado: { not: estado_cita.CANCELADA } },
         data: {
           estado: estado_cita.CANCELADA,
-          motivo_cancelacion: MOTIVO_REAGENDAMIENTO,
+          motivo_cancelacion: motivoDeCambio(input.changeReason),
           cancelada_por_id: auth.id,
           cancelada_en: new Date(),
         },
@@ -288,6 +293,7 @@ export async function rescheduleAppointmentRequest(
       // La cita acaba de quedar cancelada, así que el chequeo de solapes ya no
       // la cuenta como activa.
       await assertNoOverlap(tx, { psychologistId, patientId, start, end });
+      await assertNoAgendaBlock(tx, { psychologistId, start, end });
 
       const duplicate = await tx.solicitudes_cita.findFirst({
         where: { paciente_id: patientId, inicio_solicitado: start, estado: estado_solicitud.PENDIENTE },
@@ -315,7 +321,7 @@ export async function rescheduleAppointmentRequest(
 
     await notificar(
       "CITA_CANCELADA_POR_PACIENTE",
-      avisoDeCita(current, { motivoCancelacion: MOTIVO_REAGENDAMIENTO }),
+      avisoDeCita(current, { motivoCancelacion: motivoDeCambio(input.changeReason) }),
     );
     await notificar("SOLICITUD_CREADA", avisoDeSolicitud(created));
 

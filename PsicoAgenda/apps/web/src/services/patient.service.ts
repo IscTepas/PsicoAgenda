@@ -4,6 +4,7 @@ import type {
   Patient,
   PatientProfile,
   TutoredPatient,
+  PatientTask,
 } from "@psicoagenda/shared"
 import { apiFetch } from "@/lib/api-client"
 
@@ -120,6 +121,19 @@ export const patientService = {
 
   /** Menores que tutela la cuenta (para pedir citas a su nombre). */
   listTutored: (): Promise<TutoredPatient[]> => apiFetch<TutoredPatient[]>("/patients/me/tutelados"),
+
+  /** Tareas que dejó la psicóloga, propias y de los menores a cargo. */
+  listTasks: async (): Promise<PatientTask[]> =>
+    (await apiFetch<(Omit<PatientTask, "doneAt" | "sessionDate"> & { doneAt?: string; sessionDate: string })[]>(
+      "/patients/me/tareas",
+    )).map((t) => ({ ...t, doneAt: t.doneAt ? new Date(t.doneAt) : undefined, sessionDate: new Date(t.sessionDate) })),
+
+  setTaskDone: (id: string, done: boolean): Promise<unknown> =>
+    apiFetch(`/patients/me/tareas/${id}`, { method: "PATCH", body: { done } }),
+
+  /** Registra a un menor a cargo de la cuenta; `birthDate` va como YYYY-MM-DD. */
+  addTutored: (payload: { name: string; birthDate: string; relationship?: string }): Promise<TutoredPatient> =>
+    apiFetch<TutoredPatient>("/patients/me/tutelados", { method: "POST", body: payload }),
 }
 
 export interface AddGuardianPayload {

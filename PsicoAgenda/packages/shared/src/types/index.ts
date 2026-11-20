@@ -124,8 +124,25 @@ export interface SessionLogEntry {
   notes: string;
   interventions?: string;
   homework?: string;
+  /** Tareas que se dejaron en esta sesión. */
+  tasks: SessionTask[];
   createdAt: Date;
   updatedAt?: Date;
+}
+
+export interface SessionTask {
+  id: string;
+  text: string;
+  /** Cuándo la marcó como hecha el paciente (o su tutor). */
+  doneAt?: Date;
+}
+
+/** Tarea tal como la ve el paciente en su inicio. */
+export interface PatientTask extends SessionTask {
+  patientId: string;
+  /** Nombre del menor a cargo, si la tarea no es de la propia cuenta. */
+  patientName?: string;
+  sessionDate: Date;
 }
 
 export interface Patient extends User {
@@ -191,8 +208,27 @@ export interface Appointment {
   /** Lo escrito en «Otro», si se eligió (para poder editarlo). */
   reasonOther?: string;
   notes?: string;
+  /** Por qué se canceló (o se movió a otra fecha), si está cancelada. */
+  cancellationReason?: string;
   price?: number;
   payment?: HonorariumPayment;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Rango en el que el psicólogo no atiende. El intervalo es semiabierto
+ * `[startTime, endTime)`: un bloqueo que termina a las 11:00 no choca con una
+ * cita que empieza a las 11:00.
+ */
+export interface AgendaBlock {
+  id: string;
+  psychologistId: string;
+  startTime: Date;
+  endTime: Date;
+  /** Bandera de presentación: el rango ya viene calculado como instantes. */
+  allDay: boolean;
+  reason?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -276,7 +312,8 @@ export type NotificationKind =
   | "cancellation"
   | "request"
   | "rejection"
-  | "attendance";
+  | "attendance"
+  | "homework";
 
 export interface Notification {
   id: string;

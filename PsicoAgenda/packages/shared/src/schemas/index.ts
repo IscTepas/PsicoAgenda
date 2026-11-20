@@ -31,7 +31,10 @@ export const createAppointmentSchema = z.object({
   psychologistId: z.string().uuid().optional(),
   patientId: z.string().uuid(),
   startTime: z.coerce.date(),
-  durationMinutes: z.number().int().min(45).max(60),
+  // 30–60: las sesiones de menores duran 30 minutos (getEffectiveDurationMinutes);
+  // los adultos siguen eligiendo 45/50/60 desde el formulario. El CHECK de la base
+  // ya admite 30–60.
+  durationMinutes: z.number().int().min(30).max(60),
   modality: z.enum(["in_person", "virtual"]),
   reason: z.string().optional(),
   /** Motivos del catálogo (uno o varios); «Otro» exige `reason`. */
@@ -40,7 +43,7 @@ export const createAppointmentSchema = z.object({
 
 export const updateAppointmentSchema = z.object({
   startTime: z.coerce.date().optional(),
-  durationMinutes: z.number().int().min(45).max(60).optional(),
+  durationMinutes: z.number().int().min(30).max(60).optional(),
   modality: z.enum(["in_person", "virtual"]).optional(),
   reason: z.string().optional(),
   /** Motivos del catálogo (uno o varios); «Otro» exige `reason`. */
@@ -80,7 +83,7 @@ export const updateAppointmentPaymentSchema = z.object({
 /** Solicitud del paciente: el paciente y el psicólogo salen de la sesión, no del cuerpo. */
 export const createAppointmentRequestSchema = z.object({
   startTime: z.coerce.date(),
-  durationMinutes: z.number().int().min(45).max(60),
+  durationMinutes: z.number().int().min(30).max(60),
   modality: z.enum(["in_person", "virtual"]),
   reason: z.string().optional(),
   /** Motivos del catálogo (uno o varios); «Otro» exige `reason`. */
@@ -95,6 +98,8 @@ export const createAppointmentRequestSchema = z.object({
  */
 export const rescheduleAppointmentRequestSchema = createAppointmentRequestSchema.extend({
   appointmentId: z.string().uuid(),
+  /** Por qué se cambia la fecha; queda como motivo de cancelación de la cita original. */
+  changeReason: z.string().trim().min(3).max(200).optional(),
 });
 
 export const appointmentRequestListQuerySchema = z.object({
@@ -130,6 +135,61 @@ export const appointmentOccupancyQuerySchema = z
   .refine((value) => value.to.getTime() - value.from.getTime() <= MAX_OCCUPANCY_RANGE_MS, {
     message: "El rango máximo es de 6 meses",
     path: ["to"],
+  });
+
+/**
+ * Bloqueo de agenda. El cliente calcula los instantes (incluido el día completo,
+ * que va de 00:00 local a 00:00 del día siguiente) y el servidor los guarda tal
+ * cual; `allDay` solo indica cómo presentarlo.
+ */
+export const createAgendaBlockSchema = z
+  .object({
+    startTime: z.coerce.date(),
+    endTime: z.coerce.date(),
+    allDay: z.boolean().optional().default(false),
+    reason: z
+      .string()
+      .trim()
+      .max(100, "El motivo no puede superar los 100 caracteres")
+      .optional(),
+  })
+  .refine((value) => value.endTime.getTime() > value.startTime.getTime(), {
+    message: "La fecha de fin debe ser posterior al inicio",
+    path: ["endTime"],
+  });
+
+/**
+ * Rango visible del calendario. Se aceptan `from`/`to` y sus alias
+ * `startDate`/`endDate` para no atar a los clientes a un solo vocabulario.
+ */
+export const agendaBlockListQuerySchema = z
+  .object({
+    from: z.coerce.date().optional(),
+    to: z.coerce.date().optional(),
+    startDate: z.coerce.date().optional(),
+    endDate: z.coerce.date().optional(),
+    psychologistId: z.string().uuid().optional(),
+  })
+  .superRefine((value, ctx) => {
+    const from = value.from ?? value.startDate;
+    const to = value.to ?? value.endDate;
+
+    if (!from || !to) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Indica el rango de fechas (from/to o startDate/endDate)",
+        path: ["from"],
+      });
+      return;
+    }
+
+    if (to.getTime() <= from.getTime()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "El rango de fechas no es válido",
+        path: ["to"],
+      });
+    }
   });
 
 /**
@@ -258,6 +318,13 @@ export const addGuardianSchema = z
     path: ["name"],
   });
 
+/** Un paciente adulto da de alta a un menor a su cargo (sin cuenta propia). */
+export const addTutoredMinorSchema = z.object({
+  name: z.string().trim().min(2, "Escribe el nombre completo").max(120),
+  birthDate: z.coerce.date(),
+  relationship: z.string().trim().max(40).optional(),
+});
+
 export const guardianParamsSchema = z.object({
   id: z.string().uuid("Identificador inválido"),
   tutorId: z.string().uuid("Identificador inválido"),
@@ -384,6 +451,13 @@ export const createLogEntrySchema = z.object({
   notes: z.string().min(1, "Las observaciones de la sesión son obligatorias"),
   interventions: z.string().optional(),
   homework: z.string().optional(),
+  // Con `id` se conserva la tarea (y si ya se hizo); sin `id` es nueva y se avisa al paciente.
+  tasks: z
+    .array(z.object({ id: z.string().uuid().optional(), text: z.string().trim().min(1).max(300) }))
+    .max(20)
+    .optional(),
 });
+
+export const taskDoneSchema = z.object({ done: z.boolean() });
 
 export const updateLogEntrySchema = createLogEntrySchema.partial();

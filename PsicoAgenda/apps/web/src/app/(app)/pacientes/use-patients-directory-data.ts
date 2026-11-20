@@ -14,7 +14,7 @@ export function usePatientsDirectoryData() {
   const [patients, appointments] = useQueries({
     queries: [
       {
-        queryKey: ["patients", "directory", 100],
+        queryKey: ["patients", "list", 100],
         queryFn: () => patientService.list({ limit: 100 }),
         staleTime: CATALOG_STALE_TIME_MS,
         refetchOnWindowFocus: false,

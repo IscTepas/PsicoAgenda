@@ -59,7 +59,6 @@ export default function SoportePage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <PageHeader
         title="Centro de Soporte y Contacto"
-        description="Estamos aquí para acompañarte y resolver cualquier duda con tus citas o la plataforma."
         actions={
           <Button variant="outline" size="sm" asChild className="rounded-xl border-border/80 text-xs">
             <Link href="/dashboard">

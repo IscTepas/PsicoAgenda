@@ -13,7 +13,12 @@ import { guardianshipEndedAt, linkSelect, toGuardian } from "@/services/guardian
 
 const patientListInclude = {
   usuarios: true,
-} as Prisma.pacientesInclude;
+  // Solo el tutor principal: su correo y teléfono son el contacto de un menor sin cuenta.
+  pacientes_tutores: {
+    where: { es_principal: true },
+    select: { tutores: { select: { telefono: true, usuarios: { select: { correo: true } } } } },
+  },
+} satisfies Prisma.pacientesInclude;
 
 const patientInclude = {
   usuarios: true,
@@ -58,9 +63,9 @@ function toPatient(row: PatientRow): Patient {
 
   return {
     id: row.id,
-    email: row.usuarios.correo,
+    email: correoVisible(row.usuarios.correo, guardians[0]?.email),
     name: row.usuarios.nombre_completo,
-    phone: row.usuarios.telefono ?? undefined,
+    phone: row.usuarios.telefono ?? guardians[0]?.phone,
     role: UserRole.PATIENT,
     birthDate: row.fecha_nacimiento ?? undefined,
     gender: row.sexo ?? undefined,
@@ -88,6 +93,13 @@ function toPatientProfile(row: PatientRow): PatientProfile {
 }
 
 /** Perfil del paciente autenticado (incluye preferencias de la cuenta). */
+/**
+ * Un menor registrado por su tutor no tiene correo propio: su contacto es el de
+ * la cuenta del tutor principal. El correo reservado (lleva su id) nunca se muestra.
+ */
+const correoVisible = (correo: string, delTutor?: string | null) =>
+  correo.endsWith("@sin-cuenta.invalid") ? (delTutor ?? "") : correo;
+
 export async function getMyPatientProfile(auth: AuthenticatedUser): Promise<PatientProfile> {
   const row = await prisma.pacientes.findUnique({
     where: { usuario_id: auth.id },
@@ -230,9 +242,9 @@ export async function listPatients(auth: AuthenticatedUser, filter: ListPatients
   return rows.map((row: PatientListRow): Patient => {
     return {
       id: row.id,
-      email: row.usuarios.correo,
+      email: correoVisible(row.usuarios.correo, row.pacientes_tutores[0]?.tutores.usuarios?.correo),
       name: row.usuarios.nombre_completo,
-      phone: row.usuarios.telefono ?? undefined,
+      phone: row.usuarios.telefono ?? row.pacientes_tutores[0]?.tutores.telefono ?? undefined,
       role: UserRole.PATIENT,
       birthDate: row.fecha_nacimiento ?? undefined,
       gender: row.sexo ?? undefined,
