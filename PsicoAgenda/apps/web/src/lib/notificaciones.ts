@@ -71,7 +71,10 @@ export function accionesDeAviso(
     case "request": {
       if (ctx.esPaciente) return vacio
       const estado = ctx.estadoSolicitud ? ESTADO_SOLICITUD[ctx.estadoSolicitud] : null
-      return { ...vacio, estado, pendiente: ctx.estadoSolicitud === AppointmentRequestStatus.PENDING }
+      const pendiente = ctx.estadoSolicitud === AppointmentRequestStatus.PENDING
+      // Se responde en Inicio; el enlace resalta la solicitud.
+      const principal = pendiente && aviso.requestId ? { href: `/dashboard?solicitud=${aviso.requestId}`, label: "Responder" } : null
+      return { ...vacio, principal, estado, pendiente }
     }
     case "homework":
       return ctx.esPaciente ? { ...vacio, principal: { href: "/dashboard#tareas", label: "Ver mi tarea" } } : vacio

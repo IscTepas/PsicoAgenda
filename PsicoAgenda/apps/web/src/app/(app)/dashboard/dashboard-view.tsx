@@ -1,5 +1,6 @@
 "use client"
 
+import { PendingInbox } from "./pending-inbox"
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
@@ -356,6 +357,8 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
         </div>
       </header>
 
+      {/* Solicitudes y citas por confirmar: lo primero que se atiende al entrar. */}
+      <PendingInbox />
 
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
         {/* Citas del día elegido. Las filas se adaptan al ancho de la tarjeta

@@ -61,9 +61,9 @@ function ShellContent({ children }: { children: React.ReactNode }) {
 
   const effectiveRole = user?.role ?? (user?.email?.toLowerCase().includes("paciente") ? UserRole.PATIENT : UserRole.PSYCHOLOGIST)
   const filteredNav = React.useMemo(() => navItemsForRole(effectiveRole), [effectiveRole])
-  // Lo que espera respuesta de la psicóloga se señala en "Notificaciones", donde se atiende.
+  // Lo que espera respuesta de la psicóloga se señala en "Inicio", donde se atiende.
   const { count: pendingCount } = usePendingResponses(Boolean(user) && effectiveRole === UserRole.PSYCHOLOGIST)
-  const badgeOf = (href: string) => (href === "/notificaciones" ? pendingCount : 0)
+  const badgeOf = (href: string) => (href === "/dashboard" ? pendingCount : 0)
 
   const handleLogout = () => {
     borrarTodosLosBorradores()

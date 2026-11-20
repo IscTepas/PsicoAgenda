@@ -131,7 +131,7 @@ export function PendingInbox() {
     const requestId = new URLSearchParams(window.location.search).get("solicitud")
     if (!requestId) return
     deepLinkHandled.current = true
-    router.replace("/notificaciones", { scroll: false })
+    router.replace("/dashboard", { scroll: false })
     if (!items.some((item) => item.id === requestId)) {
       toast({ title: "Esta solicitud ya fue atendida.", status: "info" })
       return
@@ -210,12 +210,9 @@ export function PendingInbox() {
           </button>
         </p>
       ) : items.length === 0 ? (
-        <p className="flex items-center gap-2 rounded-2xl border border-border bg-card px-4 py-3.5 text-sm text-muted-foreground">
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <CheckCircle2 className="size-4 shrink-0 text-primary" />
-          <span>
-            <span className="font-medium text-foreground">Nada por responder.</span> Las solicitudes nuevas aparecerán
-            aquí.
-          </span>
+          Nada por responder.
         </p>
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">

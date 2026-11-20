@@ -29,7 +29,6 @@ import { useSession } from "@/lib/use-session"
 import { useEnlaceVideollamada } from "@/lib/use-enlace-videollamada"
 import { cn } from "@/lib/utils"
 import { appointmentRequestService, appointmentService, notificationService } from "@/services"
-import { PendingInbox } from "./pending-inbox"
 
 const DAY = 24 * 60 * 60_000
 const MAPS_URL = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(PRACTICE.mapQuery)}`
@@ -162,7 +161,8 @@ export default function NotificationsPage() {
         }
       />
 
-      {user && (esPaciente ? proxima && <ProximaCita cita={proxima} enlaceVideollamada={enlaceVideollamada} /> : <PendingInbox />)}
+      {/* Las solicitudes por responder están en Inicio. */}
+      {user && esPaciente && proxima && <ProximaCita cita={proxima} enlaceVideollamada={enlaceVideollamada} />}
 
       <section aria-labelledby="avisos-titulo" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
