@@ -527,8 +527,9 @@ function namedParaPlantilla(nombre: string): boolean {
 }
 
 /**
- * Recordatorios de una cita activa: 24 h antes por los tres canales y 2 h antes
- * solo por WhatsApp. Siempre se reemplazan los pendientes, así que llamarlo de
+ * Recordatorios de una cita activa: 24 h y 2 h antes por los tres canales
+ * (campana, correo y WhatsApp), cada uno filtrado por las preferencias del
+ * destinatario. Siempre se reemplazan los pendientes, así que llamarlo de
  * nuevo tras mover la cita los reprograma.
  */
 async function programarRecordatorios(
@@ -545,7 +546,7 @@ async function programarRecordatorios(
   const filas: Prisma.notificacionesCreateManyInput[] = [];
   const plan = [
     { clave: "RECORDATORIO_24H" as const, antes: 24 * HORA, canales: [SISTEMA, CORREO, WHATSAPP] },
-    { clave: "RECORDATORIO_2H" as const, antes: 2 * HORA, canales: [WHATSAPP] },
+    { clave: "RECORDATORIO_2H" as const, antes: 2 * HORA, canales: [SISTEMA, CORREO, WHATSAPP] },
   ];
 
   for (const { clave, antes, canales } of plan) {

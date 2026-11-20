@@ -210,12 +210,14 @@ describe("notificar", () => {
     expect(filas.every((f) => f.usuario_id === PSICOLOGA.id)).toBe(true);
   });
 
-  it("aceptar programa recordatorios de 24 h (3 canales) y 2 h (WhatsApp)", async () => {
+  it("aceptar programa recordatorios de 24 h y 2 h por los tres canales", async () => {
     const inicio = new Date(Date.now() + 72 * HORA);
     await notificar("SOLICITUD_ACEPTADA", aviso(inicio));
 
     const recordatorios = filasCreadas().filter((f) => f.tipo === "RECORDATORIO");
-    expect(recordatorios.map((f) => f.canal)).toEqual([SISTEMA, CORREO, WHATSAPP, WHATSAPP]);
+    expect(recordatorios.map((f) => f.canal)).toEqual([
+      SISTEMA, CORREO, WHATSAPP, SISTEMA, CORREO, WHATSAPP,
+    ]);
     expect(recordatorios[0]!.programada_para.getTime()).toBe(inicio.getTime() - 24 * HORA);
     expect(recordatorios[3]!.programada_para.getTime()).toBe(inicio.getTime() - 2 * HORA);
   });
@@ -224,7 +226,39 @@ describe("notificar", () => {
     await notificar("SOLICITUD_ACEPTADA", aviso(new Date(Date.now() + 3 * HORA)));
 
     const recordatorios = filasCreadas().filter((f) => f.tipo === "RECORDATORIO");
-    expect(recordatorios.map((f) => f.canal)).toEqual([WHATSAPP]);
+    // A 3 h de la cita solo cabe el aviso de 2 h; el de 24 h ya venció.
+    expect(recordatorios.map((f) => f.canal)).toEqual([SISTEMA, CORREO, WHATSAPP]);
+  });
+
+  it("los recordatorios de 24 h y 2 h van a correo solo si el usuario lo tiene activo", async () => {
+    prismaMock.pacientes.findUnique.mockResolvedValue({ usuarios: { ...PACIENTE, notificar_correo: false } });
+
+    await notificar("CITA_AGENDADA", aviso(new Date(Date.now() + 72 * HORA)));
+
+    const recordatorios = filasCreadas().filter((f) => f.tipo === "RECORDATORIO");
+    // Sin correo: cada recordatorio queda en campana y WhatsApp.
+    expect(recordatorios.map((f) => f.canal)).toEqual([SISTEMA, WHATSAPP, SISTEMA, WHATSAPP]);
+  });
+
+  it("los recordatorios de 24 h y 2 h van a WhatsApp solo si el usuario lo tiene activo", async () => {
+    prismaMock.pacientes.findUnique.mockResolvedValue({ usuarios: { ...PACIENTE, notificar_whatsapp: false } });
+
+    await notificar("CITA_AGENDADA", aviso(new Date(Date.now() + 72 * HORA)));
+
+    const recordatorios = filasCreadas().filter((f) => f.tipo === "RECORDATORIO");
+    // Sin WhatsApp: cada recordatorio queda en campana y correo.
+    expect(recordatorios.map((f) => f.canal)).toEqual([SISTEMA, CORREO, SISTEMA, CORREO]);
+  });
+
+  it("con correo y WhatsApp desactivados solo queda el aviso en la campana", async () => {
+    prismaMock.pacientes.findUnique.mockResolvedValue({
+      usuarios: { ...PACIENTE, notificar_correo: false, notificar_whatsapp: false },
+    });
+
+    await notificar("CITA_AGENDADA", aviso(new Date(Date.now() + 72 * HORA)));
+
+    const recordatorios = filasCreadas().filter((f) => f.tipo === "RECORDATORIO");
+    expect(recordatorios.map((f) => f.canal)).toEqual([SISTEMA, SISTEMA]);
   });
 
   it("cancelar la cita elimina los recordatorios pendientes, no los marca cancelados", async () => {
