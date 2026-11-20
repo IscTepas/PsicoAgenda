@@ -184,6 +184,8 @@ export function Disponibilidad() {
               isFilled={(fecha) => delDia(fecha).some((b) => b.allDay)}
               hasMarker={(fecha) => delDia(fecha).length > 0 && !delDia(fecha).some((b) => b.allDay)}
               isDimmed={(fecha) => !atiende(fecha)}
+              // Un día sin atención (p. ej. sábado o domingo) no se puede elegir; si ya tiene bloqueos, sí, para verlos.
+              disabledDates={(fecha) => !atiende(fecha) && delDia(fecha).length === 0}
               showToday
             />
           ) : (

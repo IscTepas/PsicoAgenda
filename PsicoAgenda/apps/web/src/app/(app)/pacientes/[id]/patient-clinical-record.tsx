@@ -14,14 +14,12 @@ import {
   Check,
   CheckCircle2,
   Lock,
-  BookmarkCheck,
   Copy,
   X,
   Search,
   ChevronDown,
   Siren,
   Edit3,
-  Loader2,
 } from "lucide-react"
 import {
   AppointmentModality,
@@ -34,11 +32,7 @@ import {
 } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
-import { WheelDatePicker } from "@/components/wheel-date-picker"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/motion/select"
 import { useHydrated } from "@/lib/use-hydrated"
 import { GuardiansCard } from "./guardians-card"
 import { InvitarCuenta } from "./invitar-cuenta"
@@ -50,14 +44,14 @@ import {
   patientService,
 } from "@/services"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/motion/tabs"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { HojaDeSesion, LibretaSesionDialog } from "../../components/libreta-sesion"
+import { AccesosExpediente } from "./accesos-expediente"
+import { Caratula } from "./caratula"
+import { ConfirmarConContrasena } from "./confirmar-contrasena"
+import { ConsentimientoCard } from "./consentimiento-card"
+import { HistoriaClinica } from "./historia-clinica"
+import { NotaEspecialDialog, type TipoNotaEspecial } from "./nota-especial-dialog"
 
 // Mismo estilo de estado que el panel y la agenda: pastilla gris + punto de color.
 const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
@@ -66,20 +60,6 @@ const STATUS_PILL: Record<AppointmentStatus, { label: string; dot: string }> = {
   [AppointmentStatus.CANCELLED]: { label: "Cancelada", dot: "bg-destructive" },
   [AppointmentStatus.COMPLETED]: { label: "Completada", dot: "bg-muted-foreground/50" },
   [AppointmentStatus.NO_SHOW]: { label: "No asistió", dot: "bg-muted-foreground/50" },
-}
-
-const CONSENT_STATUS: Record<ConsentStatus, { label: string; className: string; dot: string }> = {
-  [ConsentStatus.SIGNED]: { label: "Vigente", className: "bg-primary/10 text-primary", dot: "bg-primary" },
-  [ConsentStatus.EXPIRED]: {
-    label: "Vencido",
-    className: "bg-muted text-muted-foreground",
-    dot: "bg-muted-foreground/50",
-  },
-  [ConsentStatus.WITHDRAWN]: {
-    label: "Retirado",
-    className: "bg-destructive/10 text-destructive",
-    dot: "bg-destructive",
-  },
 }
 
 function calculateAge(birthDate?: Date): number | null {
@@ -117,6 +97,10 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
     entry: SessionLogEntry | null
   } | null>(null)
   const [copiedPhone, setCopiedPhone] = React.useState<boolean>(false)
+  // Acciones sobre notas: cerrar (sellar), aclarar una cerrada y notas especiales.
+  const [cerrarNotaId, setCerrarNotaId] = React.useState<string | null>(null)
+  const [aclararNotaId, setAclararNotaId] = React.useState<string | null>(null)
+  const [notaEspecial, setNotaEspecial] = React.useState<TipoNotaEspecial | null>(null)
   const [successToast, setSuccessToast] = React.useState<string | null>(null)
 
   // Expediente, agenda y bitácora viven en la API: el detalle se resuelve en el
@@ -164,14 +148,31 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
   const hydrated = useHydrated()
   const age = hydrated && patient ? calculateAge(patient.birthDate) : null
   const consents = record?.consents ?? []
+  const faltaParaEvolucion = [
+    !consents.some((c) => c.status === ConsentStatus.SIGNED) && "el consentimiento informado firmado",
+    record?.historyStatus !== "closed" && "la historia clínica cerrada",
+  ].filter((x): x is string => Boolean(x))
+  const reemplazarNota = (nota: SessionLogEntry) =>
+    setLogs((prev) => (prev.some((l) => l.id === nota.id) ? prev.map((l) => (l.id === nota.id ? nota : l)) : [nota, ...prev]))
+  // Una nota nueva puede cambiar el número de sesión de las demás: se vuelve a pedir la lista.
+  const recargarNotas = async () => setLogs(await logEntryService.list(patientId))
 
   // La bitácora va por sesión: cada cita que ya llegó tiene (o espera) su hoja.
   // Las notas viejas sin cita se conservan como hojas sueltas.
   // Solo las hojas escritas: las sesiones que aún no tienen hoja se piden desde Inicio ("Pendientes").
   const [buscarHoja, setBuscarHoja] = React.useState("")
+  const aclaracionesDe = React.useMemo(() => {
+    const mapa = new Map<string, SessionLogEntry[]>()
+    for (const log of logs) {
+      if (log.kind !== "clarification" || !log.parentId) continue
+      mapa.set(log.parentId, [...(mapa.get(log.parentId) ?? []), log].sort((a, b) => a.date.getTime() - b.date.getTime()))
+    }
+    return mapa
+  }, [logs])
   const hojas = React.useMemo(() => {
     const q = buscarHoja.trim().toLowerCase()
     return [...logs]
+      .filter((log) => log.kind !== "clarification")
       .sort((a, b) => b.date.getTime() - a.date.getTime())
       .filter(
         (log) =>
@@ -443,13 +444,16 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
           {/* El indicador (color primario) se desliza entre pestañas; la lista hace scroll si no cabe. */}
           <TabsList className="border border-border/60" wrapperClassName="min-w-0 max-w-full">
             <TabsTrigger value="datos" className="text-xs font-semibold">
-              Antecedentes
+              Expediente
             </TabsTrigger>
             <TabsTrigger value="bitacora" className="text-xs font-semibold">
-              Bitácora ({logs.length})
+              Bitácora ({hojas.length})
             </TabsTrigger>
             <TabsTrigger value="citas" className="text-xs font-semibold">
               Citas ({appointments.length})
+            </TabsTrigger>
+            <TabsTrigger value="accesos" className="text-xs font-semibold">
+              Accesos
             </TabsTrigger>
           </TabsList>
 
@@ -457,77 +461,54 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
 
         {/* ==================== PESTAÑA 1: DATOS GENERALES ==================== */}
         <TabsContent value="datos" className="space-y-6 pt-1">
-          {/* Card: Diagnóstico Inicial y Motivo Clínico */}
-          <Card className="border-border/70 shadow-2xs bg-card">
-            <CardHeader className="pb-3 border-b border-border/50 bg-muted/10">
-              <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
-                <BookmarkCheck className="size-4 text-primary" />
-                <span>Diagnóstico y antecedentes</span>
-              </CardTitle>
-              <CardDescription className="text-xs text-muted-foreground">
-                Solo tú lo ves. Toca «Editar» en cada apartado para escribirlo.
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="pt-4 space-y-4">
-              {record ? (
-                <>
-                  <CampoDelExpediente
-                    titulo="Diagnóstico"
-                    valor={record.diagnosis}
-                    vacio="Sin diagnóstico registrado."
-                    max={500}
-                    filas={2}
-                    onGuardar={async (v) => setRecord(await clinicalRecordService.update(patientId, { diagnosis: v }))}
-                  />
-                  <CampoDelExpediente
-                    titulo="Antecedentes clínicos y familiares"
-                    valor={record.background}
-                    vacio="Sin antecedentes registrados."
-                    max={5000}
-                    onGuardar={async (v) => setRecord(await clinicalRecordService.update(patientId, { background: v }))}
-                  />
-                  <CampoDelExpediente
-                    titulo="Observaciones generales"
-                    valor={record.generalObservations}
-                    vacio="Sin observaciones registradas."
-                    max={5000}
-                    onGuardar={async (v) =>
-                      setRecord(await clinicalRecordService.update(patientId, { generalObservations: v }))
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Expediente abierto el {formatShortDate(record.openedAt)} · última revisión {formatShortDate(record.updatedAt)}
-                  </p>
-                </>
-              ) : (
-                <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-center text-xs text-muted-foreground">
-                  Aún no hay un expediente clínico abierto para este paciente.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Consentimiento informado: se registra la firma y se puede retirar. */}
-          <ConsentimientoCard patient={patient} consents={consents} onRecord={setRecord} />
+          {record ? (
+            <>
+              <Caratula patient={patient} record={record} onRecord={setRecord} />
+              {/* Consentimiento primero: es lo que se firma antes de iniciar la terapia. */}
+              <ConsentimientoCard patient={patient} consents={consents} onRecord={setRecord} />
+              <HistoriaClinica patientId={patientId} record={record} onRecord={setRecord} />
+            </>
+          ) : (
+            <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-6 text-center text-xs text-muted-foreground">
+              No se pudo abrir el expediente clínico de este paciente.
+            </div>
+          )}
         </TabsContent>
 
         {/* ==================== PESTAÑA 2: BITÁCORA, UNA HOJA POR SESIÓN ==================== */}
         <TabsContent value="bitacora" className="space-y-4 pt-1">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
-              Una hoja por cada sesión, de la más reciente a la más antigua.
+              Una hoja por sesión. Se escribe en borrador y se cierra con tu contraseña; cerrada ya no se modifica.
             </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setLibreta({ date: new Date(), entry: null })}
-            >
-              <Plus />
-              Nota sin cita
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setNotaEspecial("referral")}>
+                Interconsulta
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setNotaEspecial("discharge")}>
+                Egreso
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={faltaParaEvolucion.length > 0}
+                onClick={() => setLibreta({ date: new Date(), entry: null })}
+              >
+                <Plus />
+                Nota sin cita
+              </Button>
+            </div>
           </div>
+
+          {faltaParaEvolucion.length > 0 && (
+            <p role="status" className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">Para escribir notas de evolución falta {faltaParaEvolucion.join(" y ")}.</span>{" "}
+              <button type="button" onClick={() => setActiveTab("datos")} className="font-medium text-primary hover:underline">
+                Ir al expediente
+              </button>
+            </p>
+          )}
 
           {logs.length > 4 && (
             <div className="relative">
@@ -563,7 +544,9 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
                           <span className="block font-medium tabular-nums text-foreground">
                             {log.date.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
                           </span>
-                          <span className="block text-xs text-muted-foreground">Sesión {log.sessionNumber}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {log.kind === "referral" ? "Interconsulta" : log.kind === "discharge" ? "Egreso" : `Sesión ${log.sessionNumber}`}
+                          </span>
                         </span>
                         <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                           {log.notes.split("\n")[0]}
@@ -573,13 +556,66 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
                             {pendientes > 0 ? `${pendientes} de ${tareas.length} tareas pendientes` : `${tareas.length} tareas hechas`}
                           </span>
                         )}
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${log.status === "closed" ? "bg-primary/10 text-primary" : "bg-amber-500/10 text-amber-700 dark:text-amber-300"}`}
+                        >
+                          {log.status === "closed" ? "Cerrada" : "Borrador"}
+                        </span>
                         <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
                       </summary>
                       <div className="border-t border-border/60 bg-muted/10 p-4">
                         <HojaDeSesion
                           entry={log}
-                          onEdit={() => setLibreta({ appointmentId: log.appointmentId, date: log.date, entry: log })}
-                        />
+                          acciones={
+                            log.status === "draft" ? (
+                              <div className="flex gap-1">
+                                {log.kind === "evolution" && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-muted-foreground"
+                                    onClick={() => setLibreta({ appointmentId: log.appointmentId, date: log.date, entry: log })}
+                                  >
+                                    <Edit3 />
+                                    Editar
+                                  </Button>
+                                )}
+                                <Button type="button" size="sm" onClick={() => setCerrarNotaId(log.id)}>
+                                  <Lock />
+                                  Cerrar nota
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setAclararNotaId(log.id)}>
+                                <Plus />
+                                Nota aclaratoria
+                              </Button>
+                            )
+                          }
+                        >
+                          {log.status === "closed" && (
+                            <p className="mt-4 border-t border-border pt-3 text-xs text-muted-foreground">
+                              Cerrada por {log.closedByName ?? log.psychologistName}
+                              {log.closedByLicense ? `, cédula ${log.closedByLicense}` : ""} el{" "}
+                              {log.closedAt?.toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })} · sello{" "}
+                              <span className="font-mono">{log.hash?.slice(0, 16)}…</span>
+                            </p>
+                          )}
+                          {(aclaracionesDe.get(log.id) ?? []).map((a) => (
+                            <div key={a.id} className="mt-3 rounded-lg border-l-2 border-amber-500/60 bg-muted/30 px-3 py-2">
+                              <p className="text-xs font-medium text-foreground">
+                                Nota aclaratoria · {a.date.toLocaleString("es-MX", { dateStyle: "medium", timeStyle: "short" })}
+                              </p>
+                              <p className="whitespace-pre-wrap text-sm text-foreground">{a.notes}</p>
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                {a.closedByName}
+                                {a.closedByLicense ? `, cédula ${a.closedByLicense}` : ""} · sello{" "}
+                                <span className="font-mono">{a.hash?.slice(0, 16)}…</span>
+                              </p>
+                            </div>
+                          ))}
+                        </HojaDeSesion>
                       </div>
                     </details>
                   </li>
@@ -624,7 +660,43 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
             </div>
           )}
         </TabsContent>
+        {/* ==================== PESTAÑA 4: BITÁCORA DE AUDITORÍA ==================== */}
+        <TabsContent value="accesos" className="pt-1">
+          {activeTab === "accesos" && <AccesosExpediente patientId={patientId} />}
+        </TabsContent>
       </Tabs>
+
+      <ConfirmarConContrasena
+        open={cerrarNotaId !== null}
+        onOpenChange={(v) => !v && setCerrarNotaId(null)}
+        titulo="Cerrar nota"
+        descripcion="Se sellará con tu nombre, cédula y la hora del servidor. Después ya no se podrá modificar; las correcciones van en una nota aclaratoria."
+        accion="Cerrar y sellar"
+        onConfirmar={async (password) => {
+          if (!cerrarNotaId) return
+          reemplazarNota(await logEntryService.cerrar(cerrarNotaId, password))
+          // Cerrar el egreso cambia el estado del expediente.
+          setRecord(await clinicalRecordService.get(patientId))
+        }}
+      />
+      <ConfirmarConContrasena
+        open={aclararNotaId !== null}
+        onOpenChange={(v) => !v && setAclararNotaId(null)}
+        titulo="Nota aclaratoria"
+        descripcion="Queda ligada a la nota original, que no cambia. Se sella al guardarla."
+        accion="Guardar y sellar"
+        conTexto
+        onConfirmar={async (password, texto) => {
+          if (!aclararNotaId) return
+          reemplazarNota(await logEntryService.aclarar(aclararNotaId, texto, password))
+        }}
+      />
+      <NotaEspecialDialog
+        tipo={notaEspecial}
+        patientId={patientId}
+        onOpenChange={(v) => !v && setNotaEspecial(null)}
+        onSaved={() => void recargarNotas()}
+      />
 
       {libreta && (
         <LibretaSesionDialog
@@ -636,315 +708,9 @@ export function PatientClinicalRecord({ patientId, embebido = false }: PatientCl
           appointmentId={libreta.appointmentId}
           sessionDate={libreta.date}
           entry={libreta.entry}
-          onSaved={(saved, created) =>
-            setLogs((prev) => (created ? [saved, ...prev] : prev.map((log) => (log.id === saved.id ? saved : log))))
-          }
+          onSaved={(saved, created) => (created ? void recargarNotas() : reemplazarNota(saved))}
         />
       )}
     </div>
-  )
-}
-
-/** Un apartado del expediente: se lee y, con «Editar», se escribe ahí mismo. */
-function CampoDelExpediente({
-  titulo,
-  valor,
-  vacio,
-  max,
-  filas = 4,
-  onGuardar,
-}: {
-  titulo: string
-  valor?: string
-  vacio: string
-  max: number
-  filas?: number
-  onGuardar: (valor: string) => Promise<void>
-}) {
-  const [editando, setEditando] = React.useState(false)
-  const [texto, setTexto] = React.useState(valor ?? "")
-  const [guardando, setGuardando] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
-  const id = React.useId()
-
-  const guardar = async () => {
-    setGuardando(true)
-    setError(null)
-    try {
-      await onGuardar(texto.trim())
-      setEditando(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar.")
-    } finally {
-      setGuardando(false)
-    }
-  }
-
-  return (
-    <section className="space-y-1.5">
-      <div className="flex items-center justify-between gap-3">
-        <h4 id={id} className="text-sm font-semibold text-foreground">{titulo}</h4>
-        {!editando && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 text-muted-foreground"
-            onClick={() => {
-              setTexto(valor ?? "")
-              setEditando(true)
-            }}
-          >
-            <Edit3 className="size-3.5" />
-            Editar
-          </Button>
-        )}
-      </div>
-      {editando ? (
-        <div className="space-y-2">
-          <Textarea
-            aria-labelledby={id}
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
-            rows={filas}
-            maxLength={max}
-            autoFocus
-            disabled={guardando}
-            className="rounded-xl text-sm"
-          />
-          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="sm" disabled={guardando} onClick={() => setEditando(false)}>
-              Cancelar
-            </Button>
-            <Button type="button" size="sm" disabled={guardando} aria-busy={guardando} onClick={() => void guardar()}>
-              {guardando && <Loader2 className="size-3.5 animate-spin" />}
-              Guardar
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <p className={`whitespace-pre-line rounded-xl bg-muted/20 p-3.5 text-sm leading-relaxed ${valor ? "text-foreground" : "text-muted-foreground"}`}>
-          {valor || vacio}
-        </p>
-      )}
-    </section>
-  )
-}
-
-const DOCUMENTO_BASE = "Consentimiento informado para atención psicológica"
-const hoyIso = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
-
-/**
- * Consentimiento informado del paciente. La psicóloga lo da a firmar en papel
- * (o en el consultorio) y aquí registra cuándo y quién lo firmó; un menor lo
- * firma su tutor. Si el paciente lo retira, se marca y queda el historial.
- */
-function ConsentimientoCard({
-  patient,
-  consents,
-  onRecord,
-}: {
-  patient: Patient
-  consents: ClinicalRecord["consents"]
-  onRecord: (record: ClinicalRecord) => void
-}) {
-  const tutores = patient.isMinor ? (patient.guardians ?? []) : []
-  const vigente = consents.find((c) => c.status === ConsentStatus.SIGNED)
-  const [abierto, setAbierto] = React.useState(false)
-  const [fecha, setFecha] = React.useState(hoyIso)
-  const [documento, setDocumento] = React.useState(DOCUMENTO_BASE)
-  const [tutorId, setTutorId] = React.useState(tutores.find((t) => t.isPrimary)?.id ?? tutores[0]?.id ?? "")
-  const [guardando, setGuardando] = React.useState(false)
-  const [confirmarRetiro, setConfirmarRetiro] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
-
-  const ejecutar = async (accion: () => Promise<ClinicalRecord>) => {
-    setGuardando(true)
-    setError(null)
-    try {
-      onRecord(await accion())
-      setAbierto(false)
-      setConfirmarRetiro(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo guardar.")
-    } finally {
-      setGuardando(false)
-    }
-  }
-
-  const sinTutor = patient.isMinor && tutores.length === 0
-
-  return (
-    <Card className="border-border/70 shadow-2xs bg-card">
-      <CardHeader className="pb-3 border-b border-border/50 bg-muted/10">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="text-base font-semibold text-foreground font-heading flex items-center gap-2">
-            <Lock className="size-4 text-primary" />
-            <span>Consentimiento informado</span>
-          </CardTitle>
-          {!abierto && (
-            <Button type="button" size="sm" variant={vigente ? "ghost" : "default"} onClick={() => setAbierto(true)} disabled={sinTutor}>
-              <Plus className="size-3.5" />
-              {vigente ? "Registrar uno nuevo" : "Registrar firma"}
-            </Button>
-          )}
-        </div>
-        <CardDescription className="text-xs text-muted-foreground">
-          {vigente
-            ? `Vigente desde el ${formatShortDate(vigente.signedAt)}.`
-            : sinTutor
-              ? "Es menor de edad: agrega primero a su tutor para que firme."
-              : "Sin consentimiento vigente. Dalo a firmar antes de la primera sesión y regístralo aquí."}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="pt-4 space-y-3">
-        {abierto && (
-          <form
-            className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void ejecutar(() =>
-                clinicalRecordService.registrarConsentimiento(patient.id, {
-                  signedAt: fecha,
-                  document: documento.trim(),
-                  guardianId: patient.isMinor ? tutorId : undefined,
-                }),
-              )
-            }}
-          >
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="consentimiento-fecha">Fecha de firma</Label>
-                <WheelDatePicker
-                  id="consentimiento-fecha"
-                  value={fecha}
-                  onChange={setFecha}
-                  defaultYear={new Date().getFullYear()}
-                  fromYear={new Date().getFullYear() - 5}
-                  toYear={new Date().getFullYear()}
-                  invalid={fecha > hoyIso()}
-                  className="h-10 rounded-xl"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="consentimiento-firmante">Firmó</Label>
-                {patient.isMinor ? (
-                  <Select value={tutorId} onValueChange={setTutorId} className="w-full">
-                    <SelectTrigger id="consentimiento-firmante" className="h-10 rounded-xl text-sm">
-                      <SelectValue placeholder="Elige al tutor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {tutores.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.relationship ? `${t.name} (${t.relationship})` : t.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input id="consentimiento-firmante" value={`${patient.name} (el propio paciente)`} readOnly className="h-10 rounded-xl text-muted-foreground" />
-                )}
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="consentimiento-documento">Documento</Label>
-              <Input
-                id="consentimiento-documento"
-                value={documento}
-                onChange={(e) => setDocumento(e.target.value)}
-                required
-                minLength={3}
-                maxLength={200}
-                className="h-10 rounded-xl"
-              />
-            </div>
-            {fecha > hoyIso() && <p role="alert" className="text-sm text-destructive">La fecha de firma no puede ser futura.</p>}
-            {vigente && (
-              <p className="text-xs text-muted-foreground">El consentimiento vigente pasará a vencido y quedará en el historial.</p>
-            )}
-            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" size="sm" disabled={guardando} onClick={() => setAbierto(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" size="sm" disabled={guardando || fecha > hoyIso()} aria-busy={guardando}>
-                {guardando && <Loader2 className="size-3.5 animate-spin" />}
-                Guardar firma
-              </Button>
-            </div>
-          </form>
-        )}
-
-        {consents.length === 0 && !abierto ? (
-          <p className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-4 text-center text-xs text-muted-foreground">
-            Aún no hay consentimientos registrados.
-          </p>
-        ) : (
-          consents.map((consent) => {
-            const estado = CONSENT_STATUS[consent.status]
-            const esVigente = consent.status === ConsentStatus.SIGNED
-            return (
-              <div
-                key={consent.id}
-                className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className={`size-2 rounded-full ${estado.dot}`} aria-hidden="true" />
-                    <span className="text-xs font-semibold text-foreground">{consent.document}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground max-w-xl">
-                    Firmado el {formatShortDate(consent.signedAt)} por{" "}
-                    <strong className="font-semibold text-foreground">
-                      {consent.legalGuardian?.name ?? "el propio paciente"}
-                    </strong>
-                    {consent.legalGuardian ? " (tutor legal)" : ""}.
-                    {consent.withdrawnAt ? ` Retirado el ${formatShortDate(consent.withdrawnAt)}.` : ""}
-                  </p>
-                  {consent.documentUrl ? (
-                    <Link href={consent.documentUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-primary hover:underline">
-                      Ver documento
-                    </Link>
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {esVigente &&
-                    (confirmarRetiro ? (
-                      <>
-                        <span className="text-xs text-muted-foreground">¿Lo retiró?</span>
-                        <Button type="button" size="sm" variant="ghost" disabled={guardando} onClick={() => setConfirmarRetiro(false)}>
-                          No
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          disabled={guardando}
-                          onClick={() => void ejecutar(() => clinicalRecordService.retirarConsentimiento(patient.id, consent.id))}
-                        >
-                          Sí, retirar
-                        </Button>
-                      </>
-                    ) : (
-                      <Button type="button" size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setConfirmarRetiro(true)}>
-                        Retirar
-                      </Button>
-                    ))}
-                  <span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${estado.className}`}>
-                    <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                    {estado.label}
-                  </span>
-                </div>
-              </div>
-            )
-          })
-        )}
-        {error && !abierto && <p role="alert" className="text-sm text-destructive">{error}</p>}
-      </CardContent>
-    </Card>
   )
 }

@@ -22,10 +22,11 @@ interface SerializedPayment
 }
 
 interface SerializedAppointment
-  extends Omit<Appointment, "startTime" | "createdAt" | "updatedAt" | "payment"> {
+  extends Omit<Appointment, "startTime" | "createdAt" | "updatedAt" | "payment" | "cancelledAt"> {
   startTime: string
   createdAt: string
   updatedAt: string
+  cancelledAt?: string
   payment?: SerializedPayment
 }
 
@@ -44,6 +45,7 @@ function reviveAppointment(raw: SerializedAppointment): Appointment {
     startTime: new Date(raw.startTime),
     createdAt: new Date(raw.createdAt),
     updatedAt: new Date(raw.updatedAt),
+    cancelledAt: raw.cancelledAt ? new Date(raw.cancelledAt) : undefined,
     payment: raw.payment ? revivePayment(raw.payment) : undefined,
   }
 }
@@ -173,10 +175,11 @@ export const appointmentService = {
 }
 
 interface SerializedAppointmentRequest
-  extends Omit<AppointmentRequest, "startTime" | "createdAt" | "handledAt"> {
+  extends Omit<AppointmentRequest, "startTime" | "createdAt" | "handledAt" | "originalStartTime"> {
   startTime: string
   createdAt: string
   handledAt?: string
+  originalStartTime?: string
 }
 
 function reviveAppointmentRequest(raw: SerializedAppointmentRequest): AppointmentRequest {
@@ -185,6 +188,7 @@ function reviveAppointmentRequest(raw: SerializedAppointmentRequest): Appointmen
     startTime: new Date(raw.startTime),
     createdAt: new Date(raw.createdAt),
     handledAt: raw.handledAt ? new Date(raw.handledAt) : undefined,
+    originalStartTime: raw.originalStartTime ? new Date(raw.originalStartTime) : undefined,
   }
 }
 
@@ -238,6 +242,29 @@ export const appointmentRequestService = {
   reject: async (id: string): Promise<AppointmentRequest> =>
     reviveAppointmentRequest(
       await apiFetch<SerializedAppointmentRequest>(`/appointment-requests/${id}/reject`, { method: "POST" }),
+    ),
+
+  /** La psicóloga propone otro horario para una cita; el paciente lo acepta o rechaza. */
+  proponer: async (payload: {
+    appointmentId: string
+    startTime: Date
+    durationMinutes?: number
+    modality?: AppointmentModality
+  }): Promise<AppointmentRequest> =>
+    reviveAppointmentRequest(
+      await apiFetch<SerializedAppointmentRequest>("/appointment-requests/propuesta", {
+        method: "POST",
+        body: { ...payload, startTime: payload.startTime.toISOString() },
+      }),
+    ),
+
+  /** El paciente acepta o rechaza la propuesta de su psicóloga. */
+  responder: async (id: string, accept: boolean): Promise<AppointmentRequest> =>
+    reviveAppointmentRequest(
+      await apiFetch<SerializedAppointmentRequest>(`/appointment-requests/${id}/responder`, {
+        method: "POST",
+        body: { accept },
+      }),
     ),
 
   cancel: async (id: string): Promise<AppointmentRequest> =>

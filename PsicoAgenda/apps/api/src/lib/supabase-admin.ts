@@ -209,3 +209,48 @@ export async function crearCuentaVerificada(
   }
   return { id: data.user.id };
 }
+
+/** Bucket privado de los consentimientos firmados en PDF (NOM-004 10.1). */
+const BUCKET_CONSENTIMIENTOS = "consentimientos";
+let bucketListo = false;
+
+async function asegurarBucketConsentimientos(cliente: SupabaseClient): Promise<void> {
+  if (bucketListo) return;
+  const { error } = await cliente.storage.createBucket(BUCKET_CONSENTIMIENTOS, {
+    public: false,
+    fileSizeLimit: 5 * 1024 * 1024,
+    allowedMimeTypes: ["application/pdf"],
+  });
+  // Ya existe: es lo normal después de la primera vez.
+  if (error && !/already exists|duplicate/i.test(error.message)) {
+    console.error("[consentimientos] No se pudo preparar el bucket:", error);
+    throw new AppError(503, "No se pudo guardar el PDF. Intenta de nuevo más tarde.", "STORAGE_ERROR");
+  }
+  bucketListo = true;
+}
+
+/** Guarda el PDF firmado y devuelve su ruta dentro del bucket. */
+export async function guardarPdfConsentimiento(ruta: string, pdf: Buffer): Promise<string> {
+  const cliente = obtenerSupabaseAdmin();
+  await asegurarBucketConsentimientos(cliente);
+  const { error } = await cliente.storage
+    .from(BUCKET_CONSENTIMIENTOS)
+    .upload(ruta, pdf, { contentType: "application/pdf", upsert: false });
+  if (error) {
+    console.error("[consentimientos] No se pudo subir el PDF:", error);
+    throw new AppError(503, "No se pudo guardar el PDF. Intenta de nuevo más tarde.", "STORAGE_ERROR");
+  }
+  return ruta;
+}
+
+/** Enlace temporal (5 minutos) para abrir el PDF; el bucket nunca es público. */
+export async function enlacePdfConsentimiento(ruta: string): Promise<string> {
+  const { data, error } = await obtenerSupabaseAdmin()
+    .storage.from(BUCKET_CONSENTIMIENTOS)
+    .createSignedUrl(ruta, 5 * 60);
+  if (error || !data?.signedUrl) {
+    console.error("[consentimientos] No se pudo firmar el enlace:", error);
+    throw new AppError(503, "No se pudo abrir el PDF. Intenta de nuevo más tarde.", "STORAGE_ERROR");
+  }
+  return data.signedUrl;
+}

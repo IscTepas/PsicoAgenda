@@ -9,7 +9,7 @@ const { db } = vi.hoisted(() => ({
     expedientes_clinicos: { findUnique: vi.fn(), create: vi.fn() },
     consentimientos_informados: { findMany: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
     pacientes_tutores: { findUnique: vi.fn() },
-    $transaction: vi.fn((ops: unknown[]) => Promise.all(ops)),
+    $transaction: vi.fn((arg: unknown) => (typeof arg === "function" ? arg(db) : Promise.all(arg as unknown[]))),
   },
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: db }));
@@ -114,13 +114,15 @@ describe("consentimientos en el expediente", () => {
   });
 });
 
+const firma = { signatureImage: "data:image/png;base64,AAAA", privacyNoticeAccepted: true as const };
+
 describe("registrar y retirar el consentimiento", () => {
   const adulto = { id: "p-1", psicologo_id: null, fecha_nacimiento: new Date("1990-05-01") };
   const menor = { id: "p-1", psicologo_id: null, fecha_nacimiento: new Date(new Date().getFullYear() - 10, 0, 1) };
 
   it("un adulto lo firma él mismo y el anterior vigente pasa a vencido", async () => {
     db.pacientes.findUnique.mockResolvedValue(adulto);
-    await registrarConsentimiento(admin, "p-1", { signedAt: "2026-11-01", document: "Consentimiento v1" });
+    await registrarConsentimiento(admin, "p-1", { ...firma, signedAt: "2026-11-01", document: "Consentimiento v1" });
 
     expect(db.consentimientos_informados.updateMany).toHaveBeenCalledWith({
       where: { paciente_id: "p-1", estado: estado_consentimiento.FIRMADO },
@@ -133,16 +135,16 @@ describe("registrar y retirar el consentimiento", () => {
   it("un menor necesita a uno de sus tutores", async () => {
     db.pacientes.findUnique.mockResolvedValue(menor);
     await expect(
-      registrarConsentimiento(admin, "p-1", { signedAt: "2026-11-01", document: "Consentimiento v1" }),
+      registrarConsentimiento(admin, "p-1", { ...firma, signedAt: "2026-11-01", document: "Consentimiento v1" }),
     ).rejects.toThrow(/tutores/);
 
     db.pacientes_tutores.findUnique.mockResolvedValue(null);
     await expect(
-      registrarConsentimiento(admin, "p-1", { signedAt: "2026-11-01", document: "Consentimiento v1", guardianId: "t-9" }),
+      registrarConsentimiento(admin, "p-1", { ...firma, signedAt: "2026-11-01", document: "Consentimiento v1", guardianId: "t-9" }),
     ).rejects.toThrow(/no está registrado/);
 
     db.pacientes_tutores.findUnique.mockResolvedValue({ paciente_id: "p-1", tutor_id: "t-1" });
-    await registrarConsentimiento(admin, "p-1", { signedAt: "2026-11-01", document: "Consentimiento v1", guardianId: "t-1" });
+    await registrarConsentimiento(admin, "p-1", { ...firma, signedAt: "2026-11-01", document: "Consentimiento v1", guardianId: "t-1" });
     expect(db.consentimientos_informados.create.mock.calls[0]?.[0].data.tutor_legal_id).toBe("t-1");
   });
 

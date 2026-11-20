@@ -295,12 +295,25 @@ export function AgendaClient() {
   const [datePickerOpen, setDatePickerOpen] = React.useState(false)
   const router = useRouter()
   const [ahora] = React.useState(() => new Date())
+  // El paciente ve el horario de su psicóloga: solo puede pedir cita cuando ella atiende.
+  const psicologaDelPaciente = isPatient ? Object.values(patientsById)[0]?.psychologistId : undefined
   const { data: horario } = useQuery({
-    queryKey: ["horario", "yo"],
-    queryFn: () => psychologistService.getMySchedule(),
-    enabled: !isPatient,
+    queryKey: ["horario", isPatient ? psicologaDelPaciente : "yo"],
+    queryFn: () =>
+      isPatient ? psychologistService.getSchedule(psicologaDelPaciente!) : psychologistService.getMySchedule(),
+    enabled: !isPatient || Boolean(psicologaDelPaciente),
     staleTime: 5 * 60_000,
   })
+  const atiende = React.useCallback(
+    (dia: Date, hora: number) => {
+      const franjas = horario?.slots ?? []
+      // Sin horario cargado no se bloquea nada (la API valida al pedir la cita).
+      if (franjas.length === 0) return true
+      const diaSemana = ((dia.getDay() + 6) % 7) + 1
+      return franjas.some((f) => f.dayOfWeek === diaSemana && Number(f.startTime.slice(0, 2)) === hora)
+    },
+    [horario],
+  )
   const horarioDeAtencion = React.useMemo(() => {
     const franjas = horario?.slots ?? []
     if (franjas.length === 0) return { inicio: 9, fin: 19 }
@@ -486,14 +499,24 @@ export function AgendaClient() {
               <TabsTrigger value="mes" className="px-3 py-1 text-xs">Mes</TabsTrigger>
             </TabsList>
           </Tabs>
-          <Button asChild size="sm" className="h-8 rounded-lg px-3 active:scale-[0.97]">
-            <Link href="/agenda/nueva">
-              <Plus className="size-4" />
-              {isPatient ? "Solicitar cita" : "Nueva cita"}
-            </Link>
-          </Button>
+          {!isPatient && (
+            <Button asChild size="sm" className="h-8 rounded-lg px-3 active:scale-[0.97]">
+              <Link href="/agenda/nueva">
+                <Plus className="size-4" />
+                Nueva cita
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
+
+      {view !== "mes" && (
+        <p className="text-sm text-muted-foreground">
+          {isPatient
+            ? "Haz clic en una hora libre para solicitar tu cita. Las horas en gris son cuando no hay atención."
+            : "Haz clic en una hora libre para agendar una cita."}
+        </p>
+      )}
 
       {/* Semana: rejilla por horas. Los huecos libres se tocan para agendar ahí. */}
       {view !== "mes" ? (
@@ -511,6 +534,7 @@ export function AgendaClient() {
             router.push(`/agenda/nueva?fecha=${toInputDate(dia)}&hora=${String(hora).padStart(2, "0")}:00`)
           }
           etiquetaHueco={isPatient ? "Solicitar cita" : "Agendar"}
+          abierta={atiende}
         />
       ) : (
       <Card className="overflow-hidden border-border/60 bg-card shadow-none">

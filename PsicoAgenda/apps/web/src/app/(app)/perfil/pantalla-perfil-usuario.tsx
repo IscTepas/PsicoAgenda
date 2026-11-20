@@ -16,6 +16,7 @@ import {
   HeartPulse,
 } from "lucide-react"
 import { TIMEZONES, UserRole } from "@psicoagenda/shared"
+import { DatosConsultorio } from "./datos-consultorio"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
@@ -715,6 +716,8 @@ export function PantallaPerfilUsuario() {
           </div>
         </div>
       </form>
+
+      {effectiveRole === UserRole.PSYCHOLOGIST && <DatosConsultorio />}
 
       {/* En móvil el menú no muestra los ajustes de citas: se llega desde aquí. */}
       {effectiveRole === UserRole.PSYCHOLOGIST && (

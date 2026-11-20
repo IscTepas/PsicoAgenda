@@ -100,6 +100,10 @@ export interface Psychologist extends User {
   rates: PricingRates;
   /** Enlace fijo de su sala de videollamada (Meet, Zoom…), si lo configuró. */
   videoCallUrl?: string;
+  /** Carátula del expediente (NOM-004). */
+  facilityName?: string;
+  facilityType?: string;
+  facilityAddress?: string;
 }
 
 /** Preferencias de cuenta que aplican a cualquier rol. */
@@ -132,8 +136,59 @@ export interface SessionLogEntry {
   homework?: string;
   /** Tareas que se dejaron en esta sesión. */
   tasks: SessionTask[];
+  /** Tipo de nota (NOM-004): evolución, aclaratoria, interconsulta/referencia o egreso. */
+  kind: NoteKind;
+  /** Borrador (editable) o cerrada (sellada, ya no se modifica). */
+  status: NoteStatus;
+  closedAt?: Date;
+  closedByName?: string;
+  /** Cédula de quien cerró la nota. */
+  closedByLicense?: string;
+  /** Sello SHA-256 de la nota cerrada. */
+  hash?: string;
+  /** Nota que aclara (solo en aclaratorias). */
+  parentId?: string;
+  referredTo?: string;
+  referralReason?: string;
+  dischargeReason?: string;
+  dischargeSummary?: string;
   createdAt: Date;
   updatedAt?: Date;
+}
+
+export type NoteKind = "evolution" | "clarification" | "referral" | "discharge";
+export type NoteStatus = "draft" | "closed";
+
+/** Examen del estado mental de la historia clínica. */
+export interface MentalExam {
+  apariencia?: string;
+  conducta?: string;
+  animo?: string;
+  lenguaje?: string;
+  pensamiento?: string;
+  memoria?: string;
+  orientacion?: string;
+  juicio?: string;
+}
+
+/** Carátula del expediente: establecimiento y profesional responsable. */
+export interface RecordFacility {
+  name?: string;
+  type: string;
+  address?: string;
+  psychologistName?: string;
+  licenseNumber?: string;
+}
+
+/** Un renglón de la bitácora de auditoría del expediente. */
+export interface AuditEntry {
+  id: string;
+  userName?: string;
+  action: string;
+  entity: string;
+  entityId?: string;
+  ip?: string;
+  createdAt: Date;
 }
 
 export interface SessionTask {
@@ -218,6 +273,10 @@ export interface Appointment {
   notes?: string;
   /** Por qué se canceló (o se movió a otra fecha), si está cancelada. */
   cancellationReason?: string;
+  /** La canceló la psicóloga (o un bloqueo de agenda), no el paciente: hay que avisarle. */
+  cancelledByPsychologist?: boolean;
+  /** Cuándo se canceló. */
+  cancelledAt?: Date;
   /** La sesión ya tiene su hoja de bitácora. */
   hasSessionNote?: boolean;
   price?: number;
@@ -268,6 +327,12 @@ export interface AppointmentRequest {
   reasonOther?: string;
   status: AppointmentRequestStatus;
   appointmentId?: string;
+  /** La propuso la psicóloga (cambio de horario de una cita): la responde el paciente. */
+  proposedByPsychologist: boolean;
+  /** Cita que cambia si el paciente acepta la propuesta. */
+  originalAppointmentId?: string;
+  /** Horario actual de esa cita, para mostrar "de … a …". */
+  originalStartTime?: Date;
   createdAt: Date;
   handledAt?: Date;
 }
@@ -292,10 +357,33 @@ export interface ConsultationReasonGroup {
 export interface ClinicalRecord {
   id: string;
   patientId: string;
+  /** Número de expediente consecutivo (se muestra como EXP-000123). */
+  folio: number;
   openedAt: Date;
+  facility: RecordFacility;
+  /** Historia clínica: interrogatorio. */
+  chiefComplaint?: string;
+  currentProblem?: string;
+  familyHistory?: string;
+  nonPathologicalHistory?: string;
+  pathologicalHistory?: string;
+  /** Historia clínica: exploración y evaluación. */
+  mentalExam?: MentalExam;
+  psychometricTests?: string;
+  /** Historia clínica: conclusión. */
   diagnosis?: string;
+  diagnosisCode?: string;
+  diagnosisSystem?: "CIE-10" | "CIE-11";
+  prognosis?: string;
+  treatmentPlan?: string;
+  /** Antecedentes del registro anterior (todo junto); solo lectura. */
   background?: string;
   generalObservations?: string;
+  historyStatus: NoteStatus;
+  historyClosedAt?: Date;
+  historyHash?: string;
+  /** Hasta cuándo se conserva el expediente (5 años tras el egreso o la baja). */
+  retainUntil?: Date;
   status: RecordStatus;
   /** Consentimientos del paciente, del más reciente al más antiguo. */
   consents: InformedConsent[];
@@ -357,6 +445,11 @@ export interface InformedConsent {
   legalGuardian?: LegalGuardian;
   status: ConsentStatus;
   withdrawnAt?: Date;
+  /** Firma dibujada en pantalla (data URL PNG). */
+  signatureImage?: string;
+  /** Hay PDF firmado guardado (se abre con un enlace temporal). */
+  hasPdf: boolean;
+  privacyNoticeAccepted: boolean;
   createdAt: Date;
 }
 

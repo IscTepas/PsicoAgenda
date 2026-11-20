@@ -142,7 +142,7 @@ export default function SoportePage() {
             <p className="text-[11px] text-muted-foreground leading-relaxed">
               💡 Para reprogramar o solicitar una nueva sesión, puedes hacerlo directamente desde la sección de{" "}
               <Link href="/agenda" className="text-primary hover:underline font-semibold">
-                Mis Citas
+                Agenda
               </Link>.
             </p>
           </CardContent>

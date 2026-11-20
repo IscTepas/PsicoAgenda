@@ -10,6 +10,7 @@ on:
     - cron: "*/5 * * * *"
     - cron: "0 13 * * *" # 07:00 en Tepic: fin de tutelas por mayoría de edad
     - cron: "0 3 * * *" # 20:00 en Tepic: resumen de bitácora para la psicóloga
+    - cron: "17 * * * *" # cada hora: borra las notificaciones con más de 24 h
   workflow_dispatch:
 
 jobs:
@@ -46,6 +47,18 @@ jobs:
         run: |
           curl --fail-with-body -sS --retry 2 --retry-delay 20 --retry-all-errors \
             -X POST "${{ vars.API_URL }}/api/internal/resumen-bitacora" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+  mantenimiento:
+    # Cada hora (y a mano): borra notificaciones enviadas hace más de 24 h y limpia solicitudes vencidas.
+    if: github.event.schedule == '17 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Limpieza de notificaciones y solicitudes viejas
+        run: |
+          curl --fail-with-body -sS --retry 2 --retry-delay 20 --retry-all-errors \
+            -X POST "${{ vars.API_URL }}/api/internal/mantenimiento" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
 
   salud:

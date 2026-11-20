@@ -317,6 +317,14 @@ export default function ReportsPage() {
   // Por qué se cancelan o se mueven las citas del período (no depende de los filtros).
   const motivos = useMemo(() => resumenDeMotivos(appointments), [appointments])
 
+  // El navegador usa el título de la página como nombre del PDF.
+  const imprimir = () => {
+    const anterior = document.title
+    document.title = `Reporte del consultorio ${periodo.fromDate} a ${periodo.toDate}`
+    window.print()
+    document.title = anterior
+  }
+
   const handleExportCSV = () => {
     // Cada celda entre comillas (y las comillas internas duplicadas): un "#" o una coma ya no rompen el archivo.
     const celda = (v: string) => `"${v.replace(/"/g, '""')}"`
@@ -437,7 +445,7 @@ export default function ReportsPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5">
-              <DropdownMenuItem onClick={() => window.print()} className="cursor-pointer gap-2 rounded-lg py-2 text-sm">
+              <DropdownMenuItem onClick={imprimir} className="cursor-pointer gap-2 rounded-lg py-2 text-sm">
                 <FileText className="size-4 text-primary" />
                 Imprimir o guardar PDF
               </DropdownMenuItem>

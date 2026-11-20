@@ -1,8 +1,10 @@
 "use client"
 
+import { TusSolicitudes } from "./tus-solicitudes"
+import { MINUTOS_ANTES_DE_ATENDER } from "@/components/cobro-cita"
 import { PendingInbox } from "./pending-inbox"
 import { useState, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { MisTareas } from "./mis-tareas"
 import { LibretaSesionDialog } from "../components/libreta-sesion"
@@ -15,12 +17,10 @@ import {
   Video,
 } from "lucide-react"
 import {
-  AppointmentRequestStatus,
   AppointmentStatus,
   AppointmentModality,
   UserRole,
   type Appointment,
-  type AppointmentRequest,
   type PatientProfile,
   type PsychologistProfile,
 } from "@psicoagenda/shared"
@@ -40,7 +40,7 @@ import { useSession } from "@/lib/use-session"
 import { useHydrated } from "@/lib/use-hydrated"
 import { cn } from "@/lib/utils"
 import { formatAppointmentTime, formatShortDate } from "@/lib/format"
-import { appointmentRequestService, appointmentService, patientService, psychologistService } from "@/services"
+import { appointmentService, patientService, psychologistService } from "@/services"
 import { useDashboardData } from "./use-dashboard-data"
 import { DetalleCitaDialog, SesionDialog } from "./sesion-dialog"
 import { dinero, montoDe } from "@/components/cobro-cita"
@@ -464,6 +464,8 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                   const isLive = isNext && apt.id === currentAppointment?.id
                   const isClosed = !isOpenAppointment(apt)
                   const isUnregistered = esHoy && !isClosed && getEndTime(apt) <= clock
+                  // "Atender" se habilita poco antes de la hora; antes de eso solo se ve el detalle.
+                  const puedeAtender = esHoy && !isClosed && new Date(apt.startTime).getTime() - MINUTOS_ANTES_DE_ATENDER * 60_000 <= clock.getTime()
 
                   return (
                     <li
@@ -526,10 +528,7 @@ function PsychologistDashboardView({ user }: { user: SessionUser }) {
                           <StatusLabel status={apt.status} />
                         )}
                         <div className="flex items-center gap-1">
-                          <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
-                            <Link href={`/pacientes/${apt.patientId}`}>Expediente</Link>
-                          </Button>
-                          {esHoy && !isClosed ? (
+                          {puedeAtender ? (
                             <Button size="sm" onClick={() => setActiveSessionAppointment(apt)}>
                               {isUnregistered ? "Cerrar" : "Atender"}
                             </Button>
@@ -648,7 +647,6 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
   const [profile, setProfile] = useState<PatientProfile | null>(null)
   const [psychologist, setPsychologist] = useState<PsychologistProfile | null>(null)
   const [appointments, setAppointments] = useState<Appointment[]>([])
-  const [requests, setRequests] = useState<AppointmentRequest[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const { toast } = useToast()
@@ -670,15 +668,10 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
       setLoadError(null)
       try {
         // La API acota las citas al paciente autenticado (por su rol).
-        const [patientProfile, appointmentRows, requestRows] = await Promise.all([
-          patientService.getMe(),
-          appointmentService.list(),
-          appointmentRequestService.list(),
-        ])
+        const [patientProfile, appointmentRows] = await Promise.all([patientService.getMe(), appointmentService.list()])
         if (cancelled) return
         setProfile(patientProfile)
         setAppointments(appointmentRows)
-        setRequests(requestRows)
 
         if (patientProfile.psychologistId) {
           const therapist = await psychologistService.getById(patientProfile.psychologistId)
@@ -723,35 +716,6 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
   }, [patientAppointments, clock])
 
   const nextAppointment = upcomingAppointments[0] || null
-
-  // Un tutor ve también las solicitudes de sus menores: se rotulan con su nombre.
-  const { data: tutored = [] } = useQuery({
-    queryKey: ["pacientes", "tutelados"],
-    queryFn: patientService.listTutored,
-    staleTime: 5 * 60_000,
-  })
-  const tutoredNames = useMemo(() => new Map(tutored.map((m) => [m.id, m.name])), [tutored])
-
-  // Solicitudes que aún importan: las que esperan respuesta y los rechazos de fechas por venir.
-  const openRequests = useMemo(() => {
-    if (!clock) return []
-    return requests.filter(
-      (r) =>
-        // Una solicitud cuya fecha ya pasó no tiene nada que esperar: no se muestra.
-        (r.status === AppointmentRequestStatus.PENDING || r.status === AppointmentRequestStatus.REJECTED) &&
-        new Date(r.startTime) > clock,
-    )
-  }, [requests, clock])
-
-  const handleCancelRequest = async (requestId: string) => {
-    try {
-      const updated = await appointmentRequestService.cancel(requestId)
-      setRequests((prev) => prev.map((r) => (r.id === requestId ? updated : r)))
-      toast({ title: "Retiraste tu solicitud.", status: "success" })
-    } catch (error) {
-      toast({ title: error instanceof Error ? error.message : "No se pudo retirar la solicitud.", status: "error" })
-    }
-  }
 
   const handleCancelAppointment = async (aptId: string) => {
     const finalReason = cancellationReason === "Otro" ? (otherReason || "Sin especificar") : cancellationReason
@@ -839,47 +803,11 @@ function PatientDashboardView({ user }: { user: SessionUser }) {
         </div>
       </header>
 
-
-      {/* Solicitudes: lo que pediste y todavía no es cita */}
-      {openRequests.length > 0 && (
-        <section className="space-y-3 rounded-2xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold tracking-tight text-foreground">Tus solicitudes</h2>
-          <ul className="divide-y divide-border">
-            {openRequests.map((request) => {
-              const start = new Date(request.startTime)
-              const isPending = request.status === AppointmentRequestStatus.PENDING
-              return (
-                <li key={request.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {formatHeroDate(start)} · <span className="tabular-nums">{formatAppointmentTime(start)}</span>
-                      {tutoredNames.get(request.patientId) ? (
-                        <span className="text-muted-foreground"> · para {tutoredNames.get(request.patientId)}</span>
-                      ) : null}
-                    </p>
-                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <span
-                        className={cn("size-1.5 rounded-full", isPending ? "bg-amber-500" : "bg-destructive")}
-                        aria-hidden="true"
-                      />
-                      {isPending ? "Esperando confirmación" : "No fue aceptada · elige otro horario"}
-                    </p>
-                  </div>
-                  {isPending ? (
-                    <Button size="sm" variant="ghost" onClick={() => handleCancelRequest(request.id)}>
-                      Retirar
-                    </Button>
-                  ) : (
-                    <Button size="sm" variant="outline" asChild>
-                      <Link href="/agenda/nueva">Otro horario</Link>
-                    </Button>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      )}
+      {/* Lo que el paciente tiene que atender: cancelaciones, cambios propuestos y sus solicitudes. */}
+      <TusSolicitudes
+        appointments={appointments}
+        onCambio={() => void appointmentService.list().then(setAppointments)}
+      />
 
       <MisTareas />
 

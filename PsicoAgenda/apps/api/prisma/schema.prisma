@@ -66,7 +66,9 @@ model citas {
   usuarios           usuarios?           @relation(fields: [cancelada_por_id], references: [id])
   pacientes          pacientes           @relation(fields: [paciente_id], references: [id])
   psicologos         psicologos          @relation(fields: [psicologo_id], references: [id])
-  solicitudes_cita   solicitudes_cita?   @relation(fields: [solicitud_id], references: [id])
+  solicitudes_cita   solicitudes_cita?   @relation("cita_de_solicitud", fields: [solicitud_id], references: [id])
+  /// Propuestas de cambio de horario que hizo la psicóloga sobre esta cita.
+  propuestas_cambio  solicitudes_cita[]  @relation("propuesta_de_cambio")
   entradas_bitacora  entradas_bitacora[]
   notificaciones     notificaciones[]
   pagos_honorarios   pagos_honorarios?
@@ -79,17 +81,20 @@ model citas {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model consentimientos_informados {
-  id             String                @id @db.Uuid
-  paciente_id    String                @db.Uuid
-  firmado_en     DateTime              @default(now()) @db.Timestamptz(3)
-  documento      String
-  documento_url  String?
-  tutor_legal_id String?               @db.Uuid
-  estado         estado_consentimiento @default(FIRMADO)
-  retirado_en    DateTime?             @db.Timestamptz(3)
-  creado_en      DateTime              @default(now()) @db.Timestamptz(3)
-  pacientes      pacientes             @relation(fields: [paciente_id], references: [id])
-  tutores        tutores?              @relation(fields: [tutor_legal_id], references: [id])
+  id                        String                @id @db.Uuid
+  paciente_id               String                @db.Uuid
+  firmado_en                DateTime              @default(now()) @db.Timestamptz(3)
+  documento                 String
+  documento_url             String?
+  tutor_legal_id            String?               @db.Uuid
+  estado                    estado_consentimiento @default(FIRMADO)
+  retirado_en               DateTime?             @db.Timestamptz(3)
+  /// Firma dibujada en pantalla (data URL PNG).
+  firma_imagen              String?
+  aviso_privacidad_aceptado Boolean               @default(false)
+  creado_en                 DateTime              @default(now()) @db.Timestamptz(3)
+  pacientes                 pacientes             @relation(fields: [paciente_id], references: [id])
+  tutores                   tutores?              @relation(fields: [tutor_legal_id], references: [id])
 
   @@index([paciente_id, firmado_en])
   @@index([tutor_legal_id])
@@ -121,8 +126,22 @@ model entradas_bitacora {
   estado_general       String?
   progreso             String?
   version              Int                   @default(1)
+  tipo                 tipo_nota             @default(EVOLUCION)
+  estado               estado_nota           @default(BORRADOR)
+  cerrada_en           DateTime?             @db.Timestamptz(3)
+  cerrada_por_id       String?               @db.Uuid
+  /// Sello SHA-256 (contenido + cédula + paciente + hora del servidor), ver lib/sello.ts.
+  hash                 String?
+  /// Nota aclaratoria: apunta a la nota que corrige, sin alterarla.
+  nota_padre_id        String?               @db.Uuid
+  referido_a           String?
+  motivo_referencia    String?
+  motivo_egreso        String?
+  resumen_egreso       String?
   creado_en            DateTime              @default(now()) @db.Timestamptz(3)
   actualizado_en       DateTime              @updatedAt @db.Timestamptz(3)
+  nota_padre           entradas_bitacora?    @relation("aclaraciones", fields: [nota_padre_id], references: [id])
+  aclaraciones         entradas_bitacora[]   @relation("aclaraciones")
   citas                citas?                @relation(fields: [cita_id], references: [id])
   expedientes_clinicos expedientes_clinicos  @relation(fields: [expediente_id], references: [id])
   psicologos           psicologos            @relation(fields: [psicologo_id], references: [id])
@@ -132,22 +151,41 @@ model entradas_bitacora {
   @@index([cita_id])
   @@index([expediente_id, fecha_sesion])
   @@index([psicologo_id])
+  @@index([nota_padre_id])
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model expedientes_clinicos {
-  id                      String              @id @db.Uuid
-  paciente_id             String              @unique @db.Uuid
-  abierto_en              DateTime            @default(now()) @db.Timestamptz(3)
-  motivo_consulta         String?
-  antecedentes            String?
-  diagnostico             String?
-  observaciones_generales String?
-  estado                  estado_expediente   @default(ACTIVO)
-  conservar_hasta         DateTime?           @db.Date
-  actualizado_en          DateTime            @updatedAt @db.Timestamptz(3)
-  entradas_bitacora       entradas_bitacora[]
-  pacientes               pacientes           @relation(fields: [paciente_id], references: [id])
+  id                            String              @id @db.Uuid
+  paciente_id                   String              @unique @db.Uuid
+  abierto_en                    DateTime            @default(now()) @db.Timestamptz(3)
+  motivo_consulta               String?
+  antecedentes                  String?
+  diagnostico                   String?
+  observaciones_generales       String?
+  /// Número de expediente (se muestra como EXP-000123).
+  folio                         Int                 @unique @default(autoincrement())
+  problema_actual               String?
+  antecedentes_heredofamiliares String?
+  antecedentes_no_patologicos   String?
+  antecedentes_patologicos      String?
+  /// Examen del estado mental: apariencia, conducta, ánimo, lenguaje, pensamiento, memoria, orientación, juicio.
+  examen_mental                 Json?
+  pruebas_psicometricas         String?
+  diagnostico_codigo            String?
+  /// 'CIE-10' o 'CIE-11'.
+  diagnostico_sistema           String?
+  pronostico                    String?
+  plan_terapeutico              String?
+  historia_estado               estado_nota         @default(BORRADOR)
+  historia_cerrada_en           DateTime?           @db.Timestamptz(3)
+  historia_cerrada_por          String?             @db.Uuid
+  historia_hash                 String?
+  estado                        estado_expediente   @default(ACTIVO)
+  conservar_hasta               DateTime?           @db.Date
+  actualizado_en                DateTime            @updatedAt @db.Timestamptz(3)
+  entradas_bitacora             entradas_bitacora[]
+  pacientes                     pacientes           @relation(fields: [paciente_id], references: [id])
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -218,6 +256,8 @@ model pacientes {
   psicologo_id               String?                      @db.Uuid
   /// Paciente sin cuenta dado de alta por la psicóloga para una cita única.
   cita_unica                 Boolean                      @default(false)
+  /// Baja lógica: el paciente nunca se borra; su expediente se conserva 5 años.
+  eliminado_en               DateTime?                    @db.Timestamptz(3)
   citas                      citas[]
   consentimientos_informados consentimientos_informados[]
   contactos_emergencia       contactos_emergencia?
@@ -264,27 +304,31 @@ model pagos_honorarios {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model psicologos {
-  id                 String               @id @db.Uuid
-  usuario_id         String               @unique @db.Uuid
-  cedula_profesional String               @unique
-  especialidad       String?
-  anios_experiencia  Int?
-  biografia          String?
-  tarifa_adulto         Int               @default(800)
-  tarifa_menor          Int               @default(1000)
-  recargo_mismo_dia_pct Int               @default(30)
+  id                      String               @id @db.Uuid
+  usuario_id              String               @unique @db.Uuid
+  cedula_profesional      String               @unique
+  especialidad            String?
+  anios_experiencia       Int?
+  biografia               String?
+  tarifa_adulto           Int                  @default(800)
+  tarifa_menor            Int                  @default(1000)
+  recargo_mismo_dia_pct   Int                  @default(30)
   recargo_mismo_dia_monto Int?
-  descuento_virtual     Int               @default(100)
+  descuento_virtual       Int                  @default(100)
   /// Enlace fijo de videollamada para las sesiones en línea (https).
-  enlace_videollamada   String?
-  bloqueos_agenda    bloqueos_agenda[]
-  citas              citas[]
-  entradas_bitacora  entradas_bitacora[]
-  horarios_psicologo horarios_psicologo[]
-  pacientes          pacientes[]
-  usuarios           usuarios             @relation(fields: [usuario_id], references: [id])
-  reportes           reportes[]
-  solicitudes_cita   solicitudes_cita[]
+  enlace_videollamada     String?
+  /// Carátula del expediente (NOM-004): datos del establecimiento.
+  nombre_consultorio      String?
+  tipo_establecimiento    String               @default("Consultorio de psicología")
+  domicilio_consultorio   String?
+  bloqueos_agenda         bloqueos_agenda[]
+  citas                   citas[]
+  entradas_bitacora       entradas_bitacora[]
+  horarios_psicologo      horarios_psicologo[]
+  pacientes               pacientes[]
+  usuarios                usuarios             @relation(fields: [usuario_id], references: [id])
+  reportes                reportes[]
+  solicitudes_cita        solicitudes_cita[]
 }
 
 model registros_auditoria {
@@ -340,25 +384,30 @@ model revisiones_bitacora {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model solicitudes_cita {
-  id                  String                @id @db.Uuid
-  paciente_id         String                @db.Uuid
-  psicologo_id        String                @db.Uuid
-  inicio_solicitado   DateTime              @db.Timestamptz(3)
-  tipo_sesion         tipo_sesion
-  modalidad           modalidad_cita        @default(PRESENCIAL)
-  duracion_minutos    Int                   @default(50)
-  motivo              String?
+  id                      String                @id @db.Uuid
+  paciente_id             String                @db.Uuid
+  psicologo_id            String                @db.Uuid
+  inicio_solicitado       DateTime              @db.Timestamptz(3)
+  tipo_sesion             tipo_sesion
+  modalidad               modalidad_cita        @default(PRESENCIAL)
+  duracion_minutos        Int                   @default(50)
+  motivo                  String?
   /// Usuario que pidió la solicitud: el paciente o su tutor.
-  solicitante_id      String?               @db.Uuid
-  estado              estado_solicitud      @default(PENDIENTE)
-  creado_en           DateTime              @default(now()) @db.Timestamptz(3)
-  atendida_en         DateTime?             @db.Timestamptz(3)
-  citas               citas?
-  solicitudes_motivos solicitudes_motivos[]
-  notificaciones      notificaciones[]
-  pacientes           pacientes             @relation(fields: [paciente_id], references: [id])
-  psicologos          psicologos            @relation(fields: [psicologo_id], references: [id])
-  solicitante         usuarios?             @relation("solicitudes_solicitante", fields: [solicitante_id], references: [id], onDelete: SetNull)
+  solicitante_id          String?               @db.Uuid
+  estado                  estado_solicitud      @default(PENDIENTE)
+  creado_en               DateTime              @default(now()) @db.Timestamptz(3)
+  atendida_en             DateTime?             @db.Timestamptz(3)
+  citas                   citas?                @relation("cita_de_solicitud")
+  /// La psicóloga propuso el horario (cambio de una cita): responde el paciente.
+  propuesta_por_psicologo Boolean               @default(false)
+  /// Cita que se cambiaría si el paciente acepta la propuesta.
+  cita_original_id        String?               @db.Uuid
+  cita_original           citas?                @relation("propuesta_de_cambio", fields: [cita_original_id], references: [id], onDelete: Cascade)
+  solicitudes_motivos     solicitudes_motivos[]
+  notificaciones          notificaciones[]
+  pacientes               pacientes             @relation(fields: [paciente_id], references: [id])
+  psicologos              psicologos            @relation(fields: [psicologo_id], references: [id])
+  solicitante             usuarios?             @relation("solicitudes_solicitante", fields: [solicitante_id], references: [id], onDelete: SetNull)
 
   @@index([paciente_id])
   @@index([psicologo_id, estado])
@@ -432,31 +481,32 @@ model pacientes_tutores {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model usuarios {
-  id                    String                @id @db.Uuid
-  correo                String                @unique
-  nombre_completo       String
-  telefono              String?
-  rol                   rol_usuario           @default(PACIENTE)
-  activo                Boolean               @default(true)
-  zona_horaria          String                @default("UTC")
-  foto_perfil_url       String?
-  notificar_whatsapp    Boolean               @default(false)
-  notificar_correo      Boolean               @default(true)
+  id                           String                @id @db.Uuid
+  correo                       String                @unique
+  nombre_completo              String
+  telefono                     String?
+  rol                          rol_usuario           @default(PACIENTE)
+  activo                       Boolean               @default(true)
+  zona_horaria                 String                @default("UTC")
+  foto_perfil_url              String?
+  notificar_whatsapp           Boolean               @default(false)
+  notificar_correo             Boolean               @default(true)
   /// Correo de contacto de quien no tiene cuenta (cita única); el de la cuenta es `correo`.
-  correo_contacto       String?
-  preferencias_interfaz Json?
-  ultimo_acceso         DateTime?             @db.Timestamptz(3)
-  creado_en             DateTime              @default(now()) @db.Timestamptz(3)
-  actualizado_en        DateTime              @updatedAt @db.Timestamptz(3)
-  citas                 citas[]
-  notificaciones        notificaciones[]
-  pacientes             pacientes?
-  psicologos            psicologos?
-  registros_auditoria   registros_auditoria[]
-  reportes              reportes[]
-  revisiones_bitacora   revisiones_bitacora[]
-  tutores               tutores?
-  solicitudes_pedidas   solicitudes_cita[]    @relation("solicitudes_solicitante")
+  correo_contacto              String?
+  preferencias_interfaz        Json?
+  ultimo_acceso                DateTime?             @db.Timestamptz(3)
+  aviso_privacidad_aceptado_en DateTime?             @db.Timestamptz(3)
+  creado_en                    DateTime              @default(now()) @db.Timestamptz(3)
+  actualizado_en               DateTime              @updatedAt @db.Timestamptz(3)
+  citas                        citas[]
+  notificaciones               notificaciones[]
+  pacientes                    pacientes?
+  psicologos                   psicologos?
+  registros_auditoria          registros_auditoria[]
+  reportes                     reportes[]
+  revisiones_bitacora          revisiones_bitacora[]
+  tutores                      tutores?
+  solicitudes_pedidas          solicitudes_cita[]    @relation("solicitudes_solicitante")
 }
 
 enum canal_notificacion {
@@ -489,6 +539,18 @@ enum estado_envio {
 enum estado_expediente {
   ACTIVO
   INACTIVO
+}
+
+enum estado_nota {
+  BORRADOR
+  CERRADA
+}
+
+enum tipo_nota {
+  EVOLUCION
+  ACLARATORIA
+  INTERCONSULTA
+  EGRESO
 }
 
 enum estado_pago {

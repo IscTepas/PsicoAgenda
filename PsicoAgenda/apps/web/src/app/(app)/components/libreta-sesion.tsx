@@ -1,14 +1,16 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
+import { useQuery } from "@tanstack/react-query"
 import { Check, Loader2, Pencil, Plus, X } from "lucide-react"
-import type { SessionLogEntry, SessionTask } from "@psicoagenda/shared"
+import { ConsentStatus, type SessionLogEntry, type SessionTask } from "@psicoagenda/shared"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/components/toast-provider"
 import { borrarBorrador, claveDeBorrador, guardarBorrador, leerBorrador } from "@/lib/borradores-bitacora"
 import { cn } from "@/lib/utils"
-import { logEntryService } from "@/services"
+import { clinicalRecordService, logEntryService } from "@/services"
 
 /** Renglones de libreta: una raya cada 32px que se mueve con el texto. */
 const RENGLONES: React.CSSProperties = {
@@ -33,7 +35,11 @@ function crecer(el: HTMLTextAreaElement | null) {
 /** Las hojas anteriores guardaban técnicas y acuerdos aparte: ahora todo es una sola hoja. */
 function textoDeHoja(entry: SessionLogEntry): string {
   return [
+    entry.referredTo && `Se refiere a: ${entry.referredTo}`,
+    entry.referralReason && `Motivo de la referencia: ${entry.referralReason}`,
+    entry.dischargeReason && `Motivo del egreso: ${entry.dischargeReason}`,
     entry.notes,
+    entry.dischargeSummary && `Resumen del tratamiento: ${entry.dischargeSummary}`,
     entry.interventions && `Intervenciones: ${entry.interventions}`,
     entry.homework && `Acuerdos: ${entry.homework}`,
   ]
@@ -83,22 +89,46 @@ function ListaDeTareas({ tasks }: { tasks: SessionTask[] }) {
   )
 }
 
-/** Una hoja ya escrita, para leerla en el expediente. */
-export function HojaDeSesion({ entry, onEdit }: { entry: SessionLogEntry; onEdit: () => void }) {
+const TITULO_DE_NOTA: Partial<Record<SessionLogEntry["kind"], string>> = {
+  referral: "Interconsulta / referencia",
+  discharge: "Egreso / alta terapéutica",
+  clarification: "Nota aclaratoria",
+}
+
+/**
+ * Una hoja ya escrita, para leerla en el expediente. `onEdit` solo se pasa en
+ * borradores; `acciones` reemplaza el botón (cerrar, aclarar…).
+ */
+export function HojaDeSesion({
+  entry,
+  onEdit,
+  acciones,
+  children,
+}: {
+  entry: SessionLogEntry
+  onEdit?: () => void
+  acciones?: React.ReactNode
+  children?: React.ReactNode
+}) {
+  const tipo = TITULO_DE_NOTA[entry.kind]
   return (
     <Hoja
-      titulo={fechaDeHoja(entry.date)}
+      titulo={tipo ? `${tipo} · ${fechaDeHoja(entry.date)}` : fechaDeHoja(entry.date)}
       accion={
-        <Button type="button" variant="ghost" size="sm" onClick={onEdit} className="text-muted-foreground">
-          <Pencil />
-          Editar
-        </Button>
+        acciones ??
+        (onEdit && (
+          <Button type="button" variant="ghost" size="sm" onClick={onEdit} className="text-muted-foreground">
+            <Pencil />
+            Editar
+          </Button>
+        ))
       }
     >
       <p className="whitespace-pre-wrap text-sm text-foreground [overflow-wrap:anywhere]" style={RENGLONES}>
         {textoDeHoja(entry)}
       </p>
       <ListaDeTareas tasks={entry.tasks ?? []} />
+      {children}
     </Hoja>
   )
 }
@@ -178,6 +208,20 @@ export function LibretaSesionDialog({
   const [error, setError] = React.useState<string | null>(null)
   const [isSaving, setIsSaving] = React.useState(false)
   const nuevaRef = React.useRef<HTMLInputElement>(null)
+
+  // Regla de la NOM-004: una nota de evolución nueva exige consentimiento vigente e historia clínica cerrada.
+  const { data: expediente } = useQuery({
+    queryKey: ["expediente", patientId],
+    queryFn: () => clinicalRecordService.get(patientId),
+    enabled: open && entry === null,
+  })
+  const faltan =
+    entry === null && expediente
+      ? [
+          !expediente.consents.some((c) => c.status === ConsentStatus.SIGNED) && "el consentimiento informado firmado",
+          expediente.historyStatus !== "closed" && "la historia clínica cerrada",
+        ].filter((x): x is string => Boolean(x))
+      : []
 
   // Si no se sabe si la sesión ya tiene hoja, se busca al abrir para retomarla.
   React.useEffect(() => {
@@ -274,7 +318,25 @@ export function LibretaSesionDialog({
           <p role="alert" className="text-sm text-destructive">
             {loadError}
           </p>
-        ) : entry === undefined ? (
+        ) : entry?.status === "closed" ? (
+          <p role="status" className="rounded-[14px] bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Esta nota ya está cerrada y sellada:</span> no se modifica. Para
+            corregir algo, agrega una nota aclaratoria desde el{" "}
+            <Link href={`/pacientes/${patientId}`} className="font-medium text-primary hover:underline">
+              expediente
+            </Link>
+            .
+          </p>
+        ) : faltan.length > 0 ? (
+          <p role="status" className="rounded-[14px] bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">Antes de escribir notas de evolución falta {faltan.join(" y ")}.</span>{" "}
+            En la primera sesión se firma el consentimiento y se llena la historia clínica, en el{" "}
+            <Link href={`/pacientes/${patientId}`} className="font-medium text-primary hover:underline">
+              expediente
+            </Link>
+            .
+          </p>
+        ) : entry === undefined || (entry === null && !expediente) ? (
           <p className="flex items-center gap-2 py-10 text-sm text-muted-foreground" role="status">
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             Abriendo la hoja de esta sesión…

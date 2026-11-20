@@ -13,8 +13,7 @@ const { RETENCION, LOTE_PURGA, MAX_LOTES_PURGA } = await import("@/services/mant
 describe("RETENCION", () => {
   it("fija las ventanas acordadas", () => {
     expect(RETENCION).toEqual({
-      notificacionesEnviadasDias: 90,
-      notificacionesCanceladasDias: 7,
+      notificacionesHoras: 24,
       solicitudesVencidasDias: 30,
       solicitudesTerminalesMeses: 12,
     });

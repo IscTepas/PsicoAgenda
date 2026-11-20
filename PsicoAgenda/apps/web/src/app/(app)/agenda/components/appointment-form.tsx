@@ -649,13 +649,15 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
 
   // El paciente seleccionado es menor de edad: la sesión se fija en 30 min.
   const isMinorPatient = React.useMemo(() => {
+    // El tutor pide la cita para un menor a su cargo: la lista de tutelados solo trae menores.
+    if (isPatient && forPatientId) return true
     const birth = selectedPatient?.birthDate
     if (!birth) return false
     const birthDate = toDate(birth)
     const cutoff = new Date()
     cutoff.setFullYear(cutoff.getFullYear() - 18)
     return birthDate > cutoff
-  }, [selectedPatient])
+  }, [selectedPatient, isPatient, forPatientId])
 
   // Duración efectiva: 30 minutos para menores. También se deriva (en vez de
   // sincronizar el estado con un efecto) para que el selector, la vista previa
@@ -850,12 +852,21 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
     setIsSubmitting(true)
     try {
       if (isEdit && initialAppointment) {
+        // Un horario nuevo no se impone: se le propone al paciente y él lo acepta o rechaza.
+        const cambiaHorario = startTime.getTime() !== new Date(initialAppointment.startTime).getTime()
         await appointmentService.update(initialAppointment.id, {
-          startTime,
-          durationMinutes: durationMinutesEfectivos,
-          modality,
+          ...(cambiaHorario ? {} : { startTime, durationMinutes: durationMinutesEfectivos, modality }),
           ...reasonPayload,
         })
+        if (cambiaHorario) {
+          await appointmentRequestService.proponer({
+            appointmentId: initialAppointment.id,
+            startTime,
+            durationMinutes: durationMinutesEfectivos,
+            modality,
+          })
+          notifySuccess("Se le envió la propuesta de cambio al paciente. La cita cambia cuando la acepte.")
+        }
 
         // El estado administrativo viaja por su propio endpoint; solo se llama si
         // el usuario lo cambió respecto a la cita original.
@@ -866,7 +877,7 @@ function AppointmentFormInner({ initialAppointment }: AppointmentFormProps) {
           await appointmentService.changeStatus(initialAppointment.id, status)
         }
 
-        notifySuccess("¡Cita actualizada exitosamente!")
+        if (!cambiaHorario) notifySuccess("¡Cita actualizada exitosamente!")
       } else if (isPatient) {
         // El paciente no agenda: solicita. La cita existe cuando el psicólogo acepta.
         await appointmentRequestService.create({
@@ -1892,7 +1903,7 @@ function CitaSoloLectura({ cita }: { cita: Appointment }) {
           className="inline-flex items-center gap-1.5 rounded text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          Mis citas
+          Agenda
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Detalle de la cita</h1>
         <p className="text-sm text-muted-foreground">

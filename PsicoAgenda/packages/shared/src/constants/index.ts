@@ -39,3 +39,5 @@ export const TIMEZONES = [
   // Nayarit (Tepic) y Sinaloa: hora del Pacífico de México.
   "America/Mazatlan",
 ] as const;
+
+export * from "./cie10-f.js";

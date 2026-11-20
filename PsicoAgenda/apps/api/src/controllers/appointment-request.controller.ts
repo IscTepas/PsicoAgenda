@@ -5,9 +5,12 @@ import {
   cancelAppointmentRequest,
   createAppointmentRequest,
   listAppointmentRequests,
+  proponerCambio,
   rejectAppointmentRequest,
+  responderPropuesta,
   rescheduleAppointmentRequest,
   type CreateAppointmentRequestInput,
+  type ProponerCambioInput,
   type RescheduleAppointmentRequestInput,
 } from "@/services/appointment-request.service";
 import type { AuthedRequest } from "@/types/express";
@@ -16,6 +19,24 @@ export const listAppointmentRequestsController: RequestHandler = async (req: Aut
   try {
     const filter = req.query as { status?: AppointmentRequestStatus };
     res.json(await listAppointmentRequests(req.auth!, filter));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const proposeChangeController: RequestHandler = async (req: AuthedRequest, res, next) => {
+  try {
+    res.status(201).json(await proponerCambio(req.auth!, req.body as ProponerCambioInput));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const respondProposalController: RequestHandler = async (req: AuthedRequest, res, next) => {
+  try {
+    const { id } = req.params as { id: string };
+    const { accept } = req.body as { accept: boolean };
+    res.json(await responderPropuesta(req.auth!, id, accept));
   } catch (error) {
     next(error);
   }

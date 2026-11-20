@@ -61,10 +61,5 @@ export function navItemsForRole(role: UserRole | null | undefined): NavItem[] {
       { href: "/perfil", label: "Configuración", roles: [UserRole.PSYCHOLOGIST] },
     ]
   }
-  return NAV_ITEMS.filter((item) => item.roles.includes(activeRole)).map((item) => {
-    if (activeRole === UserRole.PATIENT && item.href === "/agenda") {
-      return { ...item, label: "Mis Citas" }
-    }
-    return item
-  })
+  return NAV_ITEMS.filter((item) => item.roles.includes(activeRole))
 }

@@ -28,7 +28,8 @@ export function usePendingResponses(enabled: boolean) {
     queryKey: PENDING_REQUESTS_KEY,
     queryFn: async () =>
       (await appointmentRequestService.list(AppointmentRequestStatus.PENDING))
-        .filter((request) => new Date(request.startTime).getTime() > Date.now())
+        // Las propuestas de la psicóloga las responde el paciente, no ella.
+        .filter((request) => !request.proposedByPsychologist && new Date(request.startTime).getTime() > Date.now())
         .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
     enabled,
     staleTime: 30_000,

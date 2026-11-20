@@ -361,22 +361,12 @@ describe("updateAppointment", () => {
     ).rejects.toMatchObject({ statusCode: 403 });
   });
 
-  it("recalcula el fin cuando cambia la hora de inicio", async () => {
+  it("la psicóloga no cambia el horario directo: lo propone al paciente", async () => {
     prismaMock.citas.findUnique.mockResolvedValue(appointmentRow());
-    prismaMock.citas.update.mockResolvedValue(
-      appointmentRow({ inicio: new Date("2030-01-01T12:00:00.000Z"), fin: new Date("2030-01-01T13:00:00.000Z") }),
-    );
-
-    await updateAppointment(psychologist, APPOINTMENT_ID, {
-      startTime: new Date("2030-01-01T12:00:00.000Z"),
-    });
-
-    const { data } = lastCallArg(prismaMock.citas.update) as { data: Record<string, unknown> };
-
-    expect(data).toMatchObject({
-      inicio: new Date("2030-01-01T12:00:00.000Z"),
-      fin: new Date("2030-01-01T13:00:00.000Z"),
-    });
+    await expect(
+      updateAppointment(psychologist, APPOINTMENT_ID, { startTime: new Date("2030-01-01T12:00:00.000Z") }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(prismaMock.citas.update).not.toHaveBeenCalled();
   });
 });
 
@@ -453,6 +443,13 @@ describe("closeAppointment", () => {
       statusCode: 409,
     });
     expect(prismaMock.pagos_honorarios.upsert).not.toHaveBeenCalled();
+  });
+
+  it("se puede cerrar desde 15 minutos antes de la hora", async () => {
+    prismaMock.citas.findUnique.mockResolvedValue(appointmentRow({ inicio: new Date(Date.now() + 10 * 60_000) }));
+    prismaMock.citas.findUniqueOrThrow.mockResolvedValue(appointmentRow({ estado: "NO_ASISTIO" }));
+    await closeAppointment(psychologist, APPOINTMENT_ID, { attended: false });
+    expect(lastCallArg(prismaMock.citas.update)).toMatchObject({ data: { estado: "NO_ASISTIO" } });
   });
 
   it("el paciente no puede cerrar la sesión", async () => {

@@ -18,6 +18,7 @@ import {
 import { enviarCodigoRegistro } from "@/services/mailer.service";
 import { crearCuentaVerificada, existeCuenta } from "@/lib/supabase-admin";
 import { fusionarInvitacion, validarInvitacion } from "@/services/cita-unica.service";
+import { prisma } from "@/lib/prisma";
 import { AppError } from "@/utils/app-error";
 
 /**
@@ -125,6 +126,11 @@ export const verificarCodigoController: RequestHandler = async (req, res, next) 
       payload.password,
       construirMetadata(payload),
     );
+
+    // El formulario no deja continuar sin aceptar el aviso de privacidad: se deja constancia (NOM-024 / LFPDPPP).
+    await Promise.resolve()
+      .then(() => prisma.usuarios.updateMany({ where: { id: usuario.id }, data: { aviso_privacidad_aceptado_en: new Date() } }))
+      .catch((error) => console.error("[registro] No se pudo guardar la aceptación del aviso:", error));
 
     // La cuenta nueva se queda con la ficha de la cita única (citas, expediente, cobros).
     // Si fallara, la cuenta ya existe y la psicóloga puede volver a invitar: no se aborta.

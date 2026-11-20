@@ -28,6 +28,9 @@ export interface UpdatePsychologistProfilePayload {
   bio?: string
   rates?: PricingRates
   videoCallUrl?: string
+  facilityName?: string
+  facilityType?: string
+  facilityAddress?: string
 }
 
 export const psychologistService = {

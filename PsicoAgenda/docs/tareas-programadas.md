@@ -36,8 +36,6 @@ guardadas y nunca salen.**
       `CRON_SECRET` y la variable `API_URL` (ver "Quién dispara cada tarea").
 - [ ] Correrlo una vez a mano (*Actions → Despachar notificaciones → Run workflow*)
       y revisar que salga en verde.
-- [ ] Dar de alta en cron-job.org la tarea de **mantenimiento** (la única que no
-      cubre el workflow).
 
 ## Lo que necesitas
 
@@ -67,14 +65,14 @@ Respuestas: `200` = funcionó. `401` = el secreto está mal. `503` = falta
 | 1 | **Envía los avisos** encolados (correo y WhatsApp: confirmaciones, recordatorios, tareas, el resumen de las 8 p.m.). Sin esta, no sale ningún correo. | `/api/internal/despachar` | **Cada 5 minutos** |
 | 2 | **Resumen de bitácora (nuevo):** a las 8 p.m. le manda a la psicóloga un correo si le quedaron sesiones sin cerrar o sin bitácora. | `/api/internal/resumen-bitacora` | Diario **20:00** |
 | 3 | **Fin de tutela:** cuando un paciente menor cumple 18, quita a sus tutores y les avisa. | `/api/internal/finalizar-tutelas` | Diario **07:00** |
-| 4 | **Mantenimiento:** borra avisos y solicitudes viejos para que la base no crezca. No toca datos clínicos. | `/api/internal/mantenimiento` | Diario **03:30** |
+| 4 | **Mantenimiento:** borra las notificaciones 24 horas después de enviarse (las pendientes nunca) y limpia solicitudes viejas. No toca datos clínicos. | `/api/internal/mantenimiento` | **Cada hora** |
 
 > La tarea 2 depende de la 1: el resumen se encola a las 20:00 y sale en la
 > siguiente pasada de "despachar" (a más tardar 5 minutos después).
 
 ## Quién dispara cada tarea
 
-**Tareas 1, 2 y 3: GitHub Actions** (ya está en el repositorio:
+**Las cuatro tareas: GitHub Actions** (ya está en el repositorio:
 `.github/workflows/despachar-notificaciones.yml`). Para que funcione, alguien con
 permisos de administrador en el repositorio de GitHub debe configurar, en
 *Settings → Secrets and variables → Actions*:
@@ -91,7 +89,6 @@ Para silenciarlo durante un mantenimiento: variable `MONITOR_PAUSADO` = `1` (y b
 Se puede correr a mano desde *Actions → Despachar notificaciones → Run workflow*
 (ejecuta las cuatro partes de una vez).
 
-**Tarea 4: cron-job.org**, con los datos de la tabla general de arriba.
 
 > GitHub puede atrasar los disparos programados varios minutos en horas pico. Si
 > los avisos tardan demasiado, se puede mover la tarea 1 a cron-job.org con la

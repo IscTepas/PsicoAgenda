@@ -143,6 +143,16 @@ export const updateAppointmentPaymentSchema = z.object({
   amount: z.number().min(0, "El monto no puede ser negativo").max(100_000, "El monto es demasiado alto").optional(),
 });
 
+/** La psicóloga propone otro horario para una cita; el paciente acepta o rechaza. */
+export const proponerCambioSchema = z.object({
+  appointmentId: z.string().uuid(),
+  startTime: z.coerce.date(),
+  durationMinutes: z.number().int().min(30).max(60).optional(),
+  modality: z.enum(["in_person", "virtual"]).optional(),
+});
+
+export const responderPropuestaSchema = z.object({ accept: z.boolean() });
+
 /** Solicitud del paciente: el paciente y el psicólogo salen de la sesión, no del cuerpo. */
 export const createAppointmentRequestSchema = z.object({
   startTime: z.coerce.date(),
@@ -553,6 +563,10 @@ export const updatePsychologistProfileSchema = z.object({
     .max(300, "El enlace es demasiado largo")
     .refine((v) => v === "" || /^https:\/\/[^\s]+\.[^\s]+/.test(v), "Pega el enlace completo, empieza con https://")
     .optional(),
+  /** Carátula del expediente (NOM-004): datos del establecimiento. */
+  facilityName: z.string().trim().max(150, "El nombre del consultorio es demasiado largo").optional(),
+  facilityType: z.string().trim().min(3, "Escribe el tipo de establecimiento").max(100, "El tipo es demasiado largo").optional(),
+  facilityAddress: z.string().trim().max(300, "El domicilio es demasiado largo").optional(),
 });
 
 export const updatePatientProfileSchema = z.object({
@@ -598,24 +612,94 @@ export const perfilPsicologoSchema = updatePsychologistProfileSchema.required({
  * `SessionLogEntry` usa `sessionType`/`interventions`/`homework`, que se mapean a
  * columnas existentes de `LogEntry` sin migración.
  */
-/** Campos del expediente que escribe la psicóloga. Vacío borra el dato. */
+const textoClinico = (max: number) => z.string().trim().max(max, "El texto es demasiado largo").optional();
+
+/** Apartados del examen del estado mental (NOM-004, exploración). */
+export const APARTADOS_EXAMEN_MENTAL = [
+  "apariencia",
+  "conducta",
+  "animo",
+  "lenguaje",
+  "pensamiento",
+  "memoria",
+  "orientacion",
+  "juicio",
+] as const;
+
+export type ApartadoExamenMental = (typeof APARTADOS_EXAMEN_MENTAL)[number];
+
+export const examenMentalSchema = z.object({
+  apariencia: textoClinico(1000),
+  conducta: textoClinico(1000),
+  animo: textoClinico(1000),
+  lenguaje: textoClinico(1000),
+  pensamiento: textoClinico(1000),
+  memoria: textoClinico(1000),
+  orientacion: textoClinico(1000),
+  juicio: textoClinico(1000),
+});
+
+/** Historia clínica y campos del expediente que escribe la psicóloga. Vacío borra el dato. */
 export const updateClinicalRecordSchema = z
   .object({
+    chiefComplaint: textoClinico(2000),
+    currentProblem: textoClinico(5000),
+    familyHistory: textoClinico(5000),
+    nonPathologicalHistory: textoClinico(5000),
+    pathologicalHistory: textoClinico(5000),
+    mentalExam: examenMentalSchema.optional(),
+    psychometricTests: textoClinico(5000),
     diagnosis: z.string().trim().max(500, "El diagnóstico es demasiado largo").optional(),
+    diagnosisCode: z
+      .string()
+      .trim()
+      .max(10, "El código es demasiado largo")
+      .regex(/^$|^[A-Z0-9][A-Z0-9.]*$/i, "Código inválido")
+      .optional(),
+    diagnosisSystem: z.enum(["CIE-10", "CIE-11"]).optional(),
+    prognosis: textoClinico(2000),
+    treatmentPlan: textoClinico(5000),
     background: z.string().trim().max(5000, "Los antecedentes son demasiado largos").optional(),
     generalObservations: z.string().trim().max(5000, "Las observaciones son demasiado largas").optional(),
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), { message: "No hay nada que guardar" });
 
-/** La psicóloga registra el consentimiento que el paciente (o su tutor) firmó en papel. */
-export const createConsentSchema = z.object({
-  signedAt: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
-    .refine((v) => new Date(`${v}T00:00:00`) <= new Date(), "La fecha de firma no puede ser futura"),
-  document: z.string().trim().min(3, "Escribe qué documento se firmó").max(200, "El nombre es demasiado largo"),
-  guardianId: z.string().uuid().optional(),
+/** Confirmar con la contraseña antes de cerrar (sellar) una nota o la historia clínica. */
+export const confirmarConContrasenaSchema = z.object({
+  password: z.string().min(1, "Escribe tu contraseña"),
 });
+
+/** Nota aclaratoria: corrige una nota cerrada sin alterarla; se sella al crearse. */
+export const notaAclaratoriaSchema = confirmarConContrasenaSchema.extend({
+  text: z.string().trim().min(3, "Escribe la aclaración").max(5000, "La aclaración es demasiado larga"),
+});
+
+/** PNG dibujado en pantalla (data URL). */
+const FIRMA_PNG = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/;
+/** PDF firmado en base64: 5 MB de archivo como máximo. */
+export const PDF_CONSENTIMIENTO_MAX_BYTES = 5 * 1024 * 1024;
+const PDF_BASE64_MAX = Math.ceil((PDF_CONSENTIMIENTO_MAX_BYTES * 4) / 3) + 4;
+
+/**
+ * Registro del consentimiento informado (NOM-004 10.1): firma en pantalla o PDF
+ * firmado, y el aviso de privacidad aceptado.
+ */
+export const createConsentSchema = z
+  .object({
+    signedAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
+      .refine((v) => new Date(`${v}T00:00:00`) <= new Date(), "La fecha de firma no puede ser futura"),
+    document: z.string().trim().min(3, "Escribe qué documento se firmó").max(200, "El nombre es demasiado largo"),
+    guardianId: z.string().uuid().optional(),
+    signatureImage: z.string().max(400_000, "La firma es demasiado grande").regex(FIRMA_PNG, "Firma inválida").optional(),
+    pdfBase64: z.string().max(PDF_BASE64_MAX, "El PDF debe pesar 5 MB o menos").optional(),
+    privacyNoticeAccepted: z.literal(true, { errorMap: () => ({ message: "Falta aceptar el aviso de privacidad" }) }),
+  })
+  .refine((v) => Boolean(v.signatureImage || v.pdfBase64), {
+    message: "Firma en pantalla o sube el PDF firmado",
+    path: ["signatureImage"],
+  });
 
 export const consentParamsSchema = z.object({
   id: z.string().uuid(),
@@ -623,6 +707,12 @@ export const consentParamsSchema = z.object({
 });
 
 export const createLogEntrySchema = z.object({
+  /** Evolución (por defecto), interconsulta/referencia o egreso. La aclaratoria tiene su propia ruta. */
+  kind: z.enum(["evolution", "referral", "discharge"]).optional(),
+  referredTo: z.string().trim().max(200, "El texto es demasiado largo").optional(),
+  referralReason: z.string().trim().max(2000, "El texto es demasiado largo").optional(),
+  dischargeReason: z.string().trim().max(500, "El texto es demasiado largo").optional(),
+  dischargeSummary: z.string().trim().max(5000, "El texto es demasiado largo").optional(),
   appointmentId: z.string().uuid().optional(),
   sessionType: z.string().optional(),
   notes: z.string().min(1, "Las observaciones de la sesión son obligatorias"),

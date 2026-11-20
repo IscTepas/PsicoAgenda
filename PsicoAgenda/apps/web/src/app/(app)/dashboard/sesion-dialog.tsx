@@ -46,7 +46,13 @@ export function SesionDialog({
     queryKey: ["expediente", cita.patientId],
     queryFn: () => clinicalRecordService.get(cita.patientId),
   })
-  const sinConsentimiento = expediente !== undefined && !expediente.consents.some((c) => c.status === ConsentStatus.SIGNED)
+  // NOM-004: sin consentimiento vigente ni historia clínica cerrada no hay notas de evolución.
+  const faltan = expediente
+    ? [
+        !expediente.consents.some((c) => c.status === ConsentStatus.SIGNED) && "el consentimiento informado",
+        expediente.historyStatus !== "closed" && "la historia clínica cerrada",
+      ].filter((x): x is string => Boolean(x))
+    : []
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -59,17 +65,22 @@ export function SesionDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {cita.reason && <p className="text-sm text-muted-foreground">Motivo: {cita.reason}</p>}
+        <div className="flex items-start justify-between gap-3">
+          {cita.reason ? <p className="text-sm text-muted-foreground">Motivo: {cita.reason}</p> : <span />}
+          <Link href={`/pacientes/${cita.patientId}`} className="shrink-0 text-sm font-medium text-primary hover:underline">
+            Ver expediente
+          </Link>
+        </div>
         {cita.status === AppointmentStatus.PENDING && (
           <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
             Esta cita no estaba confirmada. Al cerrarla queda registrada igual.
           </p>
         )}
 
-        {sinConsentimiento && (
+        {faltan.length > 0 && (
           <p className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Falta el consentimiento informado.</span> Dalo a firmar en esta sesión y
-            regístralo en el{" "}
+            <span className="font-medium text-foreground">Falta {faltan.join(" y ")}.</span> Sin eso no se puede escribir la
+            nota de evolución: fírmalo y llénala en esta sesión, en el{" "}
             <Link href={`/pacientes/${cita.patientId}`} className="font-medium text-primary hover:underline">
               expediente
             </Link>

@@ -3,7 +3,9 @@ import {
   appointmentRequestListQuerySchema,
   createAppointmentRequestSchema,
   idParamSchema,
+  proponerCambioSchema,
   rescheduleAppointmentRequestSchema,
+  responderPropuestaSchema,
   UserRole,
 } from "@psicoagenda/shared";
 import {
@@ -11,13 +13,31 @@ import {
   cancelAppointmentRequestController,
   createAppointmentRequestController,
   listAppointmentRequestsController,
+  proposeChangeController,
   rejectAppointmentRequestController,
+  respondProposalController,
   rescheduleAppointmentRequestController,
 } from "@/controllers/appointment-request.controller";
 import { requireAuth, requireRole } from "@/middleware/auth.middleware";
 import { validate } from "@/middleware/validate.middleware";
 
 const router = Router();
+
+// La psicóloga propone otro horario para una cita; el paciente (o su tutor) responde.
+router.post(
+  "/propuesta",
+  requireAuth,
+  requireRole(UserRole.PSYCHOLOGIST, UserRole.ADMIN),
+  validate({ body: proponerCambioSchema }),
+  proposeChangeController,
+);
+router.post(
+  "/:id/responder",
+  requireAuth,
+  requireRole(UserRole.PATIENT),
+  validate({ params: idParamSchema, body: responderPropuestaSchema }),
+  respondProposalController,
+);
 
 router.get(
   "/",

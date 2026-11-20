@@ -138,7 +138,10 @@ export type EventoCita =
   | "CITA_MODIFICADA"
   | "CITA_CANCELADA_POR_PSICOLOGO"
   | "CITA_CANCELADA_POR_PACIENTE"
-  | "CITA_ASISTENCIA";
+  | "CITA_ASISTENCIA"
+  | "CAMBIO_PROPUESTO"
+  | "CAMBIO_ACEPTADO"
+  | "CAMBIO_RECHAZADO";
 
 type Recordatorios = "programar" | "cancelar";
 
@@ -213,6 +216,15 @@ export const REGLAS: Record<EventoCita, Regla> = {
     canales: [SISTEMA],
     recordatorios: "cancelar",
   },
+  // La psicóloga propone otro horario: el paciente tiene que responder.
+  CAMBIO_PROPUESTO: { para: "paciente", tipo: tipo_notificacion.CAMBIO, canales: [SISTEMA, CORREO, WHATSAPP] },
+  CAMBIO_ACEPTADO: {
+    para: "psicologo",
+    tipo: tipo_notificacion.CONFIRMACION,
+    canales: [SISTEMA, CORREO],
+    recordatorios: "programar",
+  },
+  CAMBIO_RECHAZADO: { para: "psicologo", tipo: tipo_notificacion.RECHAZO, canales: [SISTEMA, CORREO] },
 };
 
 /** Datos de la cita (o de la solicitud) que describe el aviso. */
@@ -353,6 +365,21 @@ export function redactar(
             asunto: "Registramos tu inasistencia",
             mensaje: `No asististe a tu cita del ${diaHora}. Si fue un imprevisto, solicita un nuevo horario.`,
           };
+    case "CAMBIO_PROPUESTO":
+      return {
+        asunto: "Tu psicóloga propone cambiar tu cita",
+        mensaje: `${contraparte} propone cambiar tu cita al ${diaHora} (${modalidadTexto(aviso.modalidad)}). Entra a ${APP_NAME} para aceptar o rechazar el cambio.`,
+      };
+    case "CAMBIO_ACEPTADO":
+      return {
+        asunto: "El paciente aceptó el cambio de cita",
+        mensaje: `${contraparte} aceptó el nuevo horario. La cita queda ${detalle}.`,
+      };
+    case "CAMBIO_RECHAZADO":
+      return {
+        asunto: "El paciente rechazó el cambio de cita",
+        mensaje: `${contraparte} no aceptó el cambio al ${diaHora}. Su cita se queda en el horario original.`,
+      };
     case "RECORDATORIO_24H":
       return {
         asunto: "Recordatorio: tu cita es mañana",
@@ -424,6 +451,7 @@ function plantillaParaEvento(evento: EventoCita | "RECORDATORIO_24H" | "RECORDAT
     case "SOLICITUD_ACEPTADA":
     case "CITA_AGENDADA":
     case "CITA_MODIFICADA":
+    case "CAMBIO_PROPUESTO":
       return config.whatsappTemplatePatientNotice;
     case "SOLICITUD_RECHAZADA":
     case "CITA_CANCELADA_POR_PSICOLOGO":

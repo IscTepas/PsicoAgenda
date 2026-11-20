@@ -15,10 +15,8 @@ import { limpiarCacheRegistroVencida } from "@/services/codigo-cache.repo";
  * ajustarlas sin desplegar, se migran a variables con estos mismos valores.
  */
 export const RETENCION = {
-  /** Avisos ya entregados (ENVIADA) o agotados (FALLIDA). */
-  notificacionesEnviadasDias: 90,
-  /** Recordatorios reemplazados que quedaron cancelados. */
-  notificacionesCanceladasDias: 7,
+  /** Avisos ya entregados (ENVIADA), agotados (FALLIDA) o cancelados: 24 h después de enviarse se borran. */
+  notificacionesHoras: 24,
   /** Solicitudes que siguen PENDIENTE y cuya fecha ya pasó. */
   solicitudesVencidasDias: 30,
   /** Solicitudes RECHAZADA/CANCELADA sin cita asociada. */
@@ -81,14 +79,10 @@ function purgarNotificaciones(lote: number) {
     WITH vencidas AS (
       SELECT ctid
         FROM notificaciones
-       WHERE (
-               (estado = 'ENVIADA'::estado_envio OR estado = 'FALLIDA'::estado_envio)
-               AND creado_en < now() - make_interval(days => ${RETENCION.notificacionesEnviadasDias})
-             )
-          OR (
-               estado = 'CANCELADA'::estado_envio
-               AND creado_en < now() - make_interval(days => ${RETENCION.notificacionesCanceladasDias})
-             )
+       -- Las PENDIENTE (recordatorios por enviar) nunca se borran; las demás, 24 h después
+       -- de enviarse (o de crearse, si nunca salieron).
+       WHERE estado <> 'PENDIENTE'::estado_envio
+         AND COALESCE(enviada_en, creado_en) < now() - make_interval(hours => ${RETENCION.notificacionesHoras})
        ORDER BY creado_en
        LIMIT ${lote}
        FOR UPDATE SKIP LOCKED

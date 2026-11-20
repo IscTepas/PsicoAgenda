@@ -29,6 +29,8 @@ import { calculateAppointmentPrice, getEffectiveDurationMinutes } from "@/utils/
 // La cita viaja siempre con su fila de honorarios: el panel muestra si ya se cobró.
 const appointmentInclude = {
   pagos_honorarios: true,
+  // Para saber si la canceló la psicóloga (su usuario) o el paciente.
+  psicologos: { select: { usuario_id: true } },
   citas_motivos: reasonLinks,
   // Solo cuántas hojas de bitácora tiene: basta para saber si falta la nota.
   _count: { select: { entradas_bitacora: true } },
@@ -212,6 +214,9 @@ export const toAppointment = (row: AppointmentRow): Appointment => {
     reasonOther: reasonOtherOf(row.motivo, row.citas_motivos),
     notes: row.notas_internas ?? undefined,
     cancellationReason: row.motivo_cancelacion ?? undefined,
+    cancelledByPsychologist:
+      row.estado === estado_cita.CANCELADA && Boolean(row.cancelada_por_id) && row.cancelada_por_id === row.psicologos?.usuario_id,
+    cancelledAt: row.cancelada_en ?? undefined,
     hasSessionNote: (row._count?.entradas_bitacora ?? 0) > 0,
     // `precio` es el snapshot de la tarifa; `payment` es el estado de cobro.
     price: row.precio ?? undefined,
@@ -595,6 +600,10 @@ export async function updateAppointment(
   } else if (auth.role === UserRole.PATIENT) {
     throw AppError.forbidden("No puedes modificar los datos de una cita");
   }
+  // El horario no se cambia por encima del paciente: se le propone y él responde.
+  if (input.startTime && input.startTime.getTime() !== row.inicio.getTime()) {
+    throw AppError.conflict("El cambio de horario se le propone al paciente: usa «Proponer cambio».");
+  }
 
   const start = input.startTime ?? row.inicio;
   const durationMinutes = input.durationMinutes ?? durationOf(row.inicio, row.fin);
@@ -717,8 +726,9 @@ export async function closeAppointment(
   if (!ACTIVE_STATUSES.includes(row.estado)) {
     throw AppError.conflict("Esta sesión ya está cerrada");
   }
-  if (row.inicio.getTime() > Date.now()) {
-    throw AppError.conflict("La sesión todavía no empieza");
+  // Se puede atender y cerrar desde 15 minutos antes de la hora (igual que en la pantalla).
+  if (row.inicio.getTime() - 15 * 60_000 > Date.now()) {
+    throw AppError.conflict("La sesión todavía no empieza: se puede cerrar desde 15 minutos antes.");
   }
 
   const monto = input.attended ? (input.amount ?? Number(row.precio ?? row.pagos_honorarios?.monto ?? 0)) : undefined;

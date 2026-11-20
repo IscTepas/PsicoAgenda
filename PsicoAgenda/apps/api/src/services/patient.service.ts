@@ -222,7 +222,8 @@ export interface ListPatientsFilter {
 }
 
 export async function listPatients(auth: AuthenticatedUser, filter: ListPatientsFilter = {}): Promise<Patient[]> {
-  const where: Prisma.pacientesWhereInput = { usuarios: { activo: true } };
+  // Los dados de baja no aparecen (su expediente se conserva y se abre por enlace directo).
+  const where: Prisma.pacientesWhereInput = { usuarios: { activo: true }, eliminado_en: null };
 
   if (auth.role === UserRole.PATIENT) {
     where.usuario_id = auth.id;

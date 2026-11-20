@@ -3,6 +3,7 @@ import {
   addGuardianSchema,
   addTutoredMinorSchema,
   citaUnicaPacienteSchema,
+  confirmarConContrasenaSchema,
   consentParamsSchema,
   createConsentSchema,
   createLogEntrySchema,
@@ -22,8 +23,13 @@ import {
   updateMyPatientController,
 } from "@/controllers/patient.controller";
 import {
+  auditTrailController,
+  closeClinicalHistoryController,
+  consentPdfController,
   createConsentController,
+  dischargePatientController,
   getClinicalRecordController,
+  printRecordController,
   updateClinicalRecordController,
   withdrawConsentController,
 } from "@/controllers/clinical-record.controller";
@@ -121,6 +127,25 @@ router.post(
   validate({ params: consentParamsSchema }),
   withdrawConsentController,
 );
+// Enlace temporal al PDF firmado (la descarga queda auditada).
+router.get(
+  "/:id/consents/:consentId/pdf",
+  requireAuth,
+  validate({ params: consentParamsSchema }),
+  consentPdfController,
+);
+// Cerrar (sellar) la historia clínica: pide la contraseña.
+router.post(
+  "/:id/clinical-record/cerrar",
+  requireAuth,
+  validate({ params: idParamSchema, body: confirmarConContrasenaSchema }),
+  closeClinicalHistoryController,
+);
+// La impresión del expediente completo queda en la auditoría.
+router.post("/:id/clinical-record/impresion", requireAuth, validate({ params: idParamSchema }), printRecordController);
+router.get("/:id/audit", requireAuth, validate({ params: idParamSchema }), auditTrailController);
+// Baja lógica: el paciente nunca se borra; su expediente se conserva 5 años.
+router.post("/:id/baja", requireAuth, validate({ params: idParamSchema }), dischargePatientController);
 router.get(
   "/:id/log-entries",
   requireAuth,

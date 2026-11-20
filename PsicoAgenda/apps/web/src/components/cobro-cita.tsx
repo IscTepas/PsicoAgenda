@@ -49,6 +49,9 @@ function CampoMonto({
   )
 }
 
+/** Desde cuántos minutos antes de la hora se puede atender y cerrar una sesión. */
+export const MINUTOS_ANTES_DE_ATENDER = 15
+
 /**
  * Cobro de una sesión, el mismo en Inicio, Agenda, la cita y Reportes. El cobro
  * nace al cerrar la sesión: "Asistió" registra el pago (la tarifa, o el monto
@@ -74,7 +77,9 @@ export function CobroDeCita({
 
   const estado = actual.status
   const abierta = estado === AppointmentStatus.PENDING || estado === AppointmentStatus.CONFIRMED
-  const yaEmpezo = new Date(actual.startTime).getTime() <= (ahora ?? new Date()).getTime()
+  // Se puede cerrar (asistió / no asistió) desde poco antes de la hora.
+  const yaEmpezo =
+    new Date(actual.startTime).getTime() - MINUTOS_ANTES_DE_ATENDER * 60_000 <= (ahora ?? new Date()).getTime()
   const cobrada = actual.payment?.status === PaymentStatus.PAID
 
   if (estado === AppointmentStatus.CANCELLED) return null

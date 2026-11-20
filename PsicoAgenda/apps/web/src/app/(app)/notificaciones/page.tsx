@@ -8,7 +8,6 @@ import {
   AppointmentModality,
   AppointmentStatus,
   UserRole,
-  type Appointment,
   type Notification,
 } from "@psicoagenda/shared"
 import { Tabs, TabsList, TabsTrigger } from "@/components/motion/tabs"
@@ -137,15 +136,6 @@ export default function NotificationsPage() {
     })
   const abierto = lista.find((n) => n.id === abiertoId) ?? null
 
-  const proxima = esPaciente
-    ? citas
-        .filter(
-          (c) =>
-            new Date(c.startTime) > hoy &&
-            (c.status === AppointmentStatus.CONFIRMED || c.status === AppointmentStatus.PENDING),
-        )
-        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0]
-    : undefined
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -162,7 +152,7 @@ export default function NotificationsPage() {
       />
 
       {/* Las solicitudes por responder están en Inicio. */}
-      {user && esPaciente && proxima && <ProximaCita cita={proxima} enlaceVideollamada={enlaceVideollamada} />}
+      {/* Solo información: lo que el paciente tiene que hacer (solicitudes, cambios, próxima cita) está en Inicio. */}
 
       <section aria-labelledby="avisos-titulo" className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -392,54 +382,6 @@ function BotonAccion({
   )
 }
 
-function ProximaCita({ cita, enlaceVideollamada }: { cita: Appointment; enlaceVideollamada?: string }) {
-  const inicio = new Date(cita.startTime)
-  const virtual = cita.modality === AppointmentModality.VIRTUAL
-  return (
-    <section aria-labelledby="proxima-cita" className="space-y-3">
-      <h2 id="proxima-cita" className="text-lg font-semibold tracking-tight text-foreground">
-        Tu próxima cita
-      </h2>
-      <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-base font-semibold tracking-tight text-foreground">
-            {capitalize(inicio.toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long" }))}
-          </p>
-          <p className="flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground">
-            <span className="tabular-nums">{formatAppointmentTime(inicio)}</span>
-            <span aria-hidden="true">·</span>
-            <span className="inline-flex items-center gap-1">
-              {virtual ? <Video className="size-3.5" /> : <MapPin className="size-3.5" />}
-              {virtual ? "Videollamada" : "Presencial"}
-            </span>
-            {cita.status === AppointmentStatus.PENDING && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="text-amber-700 dark:text-amber-400">Por confirmar</span>
-              </>
-            )}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {(!virtual || enlaceVideollamada) && (
-            <Button asChild variant="outline" size="sm">
-              <a href={virtual ? enlaceVideollamada : MAPS_URL} target="_blank" rel="noopener noreferrer">
-                {virtual ? <Video /> : <MapPin />}
-                {virtual ? "Videollamada" : "Cómo llegar"}
-              </a>
-            </Button>
-          )}
-          <Button asChild size="sm">
-            <Link href={`/agenda/${cita.id}`}>
-              Modificar o cancelar
-              <ChevronRight />
-            </Link>
-          </Button>
-        </div>
-      </div>
-    </section>
-  )
-}
 
 function Vacio({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (

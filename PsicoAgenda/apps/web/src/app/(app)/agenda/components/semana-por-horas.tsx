@@ -70,6 +70,8 @@ export interface SemanaPorHorasProps {
   /** Tocar un hueco libre: agendar en ese día y hora. */
   onHueco: (dia: Date, hora: number) => void
   etiquetaHueco: string
+  /** Si la psicóloga atiende ese día a esa hora; fuera de su horario no se puede agendar. */
+  abierta?: (dia: Date, hora: number) => boolean
 }
 
 export function SemanaPorHoras({
@@ -84,6 +86,7 @@ export function SemanaPorHoras({
   onAbrirCita,
   onHueco,
   etiquetaHueco,
+  abierta,
 }: SemanaPorHorasProps) {
   // La rejilla se estira si alguna cita cae fuera del horario de atención.
   const visibles = citas.filter((c) => c.status !== AppointmentStatus.CANCELLED)
@@ -172,6 +175,7 @@ export function SemanaPorHoras({
             const fin = new Date(ini); fin.setHours(hora + 1)
             // Una hora que ya empezó no se puede agendar: se ve como pasada, no como hueco.
             if (ini < ahora) return true
+            if (abierta && !abierta(dia, hora)) return true
             return (
               bloqueosDelDia.some((b) => b.startTime < fin && b.endTime > ini) ||
               delDia.some((c) => c.startTime < fin && new Date(c.startTime.getTime() + c.durationMinutes * 60_000) > ini)
@@ -201,6 +205,7 @@ export function SemanaPorHoras({
                     type="button"
                     onClick={() => onHueco(dia, hora)}
                     aria-label={`${etiquetaHueco} el ${dia.toLocaleDateString("es-MX", { weekday: "long", day: "numeric" })} a las ${hora}:00`}
+                    title={`Haz clic para ${etiquetaHueco.toLowerCase()} a las ${hora}:00`}
                     className="group absolute inset-x-1 flex items-center justify-center rounded-lg text-primary opacity-0 outline-none transition-opacity duration-150 hover:bg-primary/[0.06] hover:opacity-100 focus-visible:bg-primary/[0.06] focus-visible:opacity-100"
                     style={{ top: i * HORA_PX + 2, height: HORA_PX - 4 }}
                   >
@@ -208,6 +213,18 @@ export function SemanaPorHoras({
                   </button>
                 ),
               )}
+
+              {/* Fuera del horario de atención (p. ej. sábados y domingos): gris, sin poder tocarse. */}
+              {abierta &&
+                horas.map((hora, i) =>
+                  abierta(dia, hora) ? null : (
+                    <div
+                      key={`cerrada-${hora}`}
+                      className="pointer-events-none absolute inset-x-0 bg-muted/50"
+                      style={{ top: i * HORA_PX, height: HORA_PX }}
+                    />
+                  ),
+                )}
 
               {/* Lo que ya pasó: sombreado igual que un bloqueo, sin texto. */}
               {(() => {

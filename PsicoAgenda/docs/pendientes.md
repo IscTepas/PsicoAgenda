@@ -29,3 +29,11 @@ Cosas que funcionan pero todavía hay que cambiar.
 - [ ] ¿Pagos parciales o paquetes de varias sesiones? Hoy es un solo pago por cita.
 - [ ] Si se ajusta el monto y luego se usa "Deshacer", el monto ajustado se queda. Decidir si debe volver a la tarifa.
 - [ ] ¿El paciente ve su estado de pago? Hoy solo lo ve en el detalle de la cita de la Agenda.
+
+## Expediente clínico (NOM-004 / NOM-024)
+
+Ya implementado; el detalle está en [cumplimiento-nom.md](cumplimiento-nom.md).
+
+- [ ] Aplicar la migración `20261120000000_nom004_expediente` (`npx prisma migrate deploy` desde `apps/api`).
+- [ ] Que la psicóloga llene los datos del consultorio en Configuración.
+- [ ] Confirmar con el proveedor que Supabase tenga respaldos automáticos.

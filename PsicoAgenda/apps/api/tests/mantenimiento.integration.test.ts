@@ -171,12 +171,14 @@ beforeAll(async () => {
   });
 
   // Notificaciones: solo las terminales vencidas deben desaparecer.
-  await crearAviso("enviada-vencida", estado_envio.ENVIADA, diasAtras(91), false);
-  await crearAviso("fallida-vencida", estado_envio.FALLIDA, diasAtras(120), false);
-  await crearAviso("cancelada-vencida", estado_envio.CANCELADA, diasAtras(8), false);
+  // Retención de 24 h: lo enviado, fallido o cancelado se borra un día después; lo pendiente nunca.
+  const horasAtras = (h: number) => new Date(Date.now() - h * 3_600_000);
+  await crearAviso("enviada-vencida", estado_envio.ENVIADA, horasAtras(25), false);
+  await crearAviso("fallida-vencida", estado_envio.FALLIDA, diasAtras(3), false);
+  await crearAviso("cancelada-vencida", estado_envio.CANCELADA, horasAtras(30), false);
   await crearAviso("pendiente-vieja", estado_envio.PENDIENTE, diasAtras(365), true);
-  await crearAviso("enviada-reciente", estado_envio.ENVIADA, diasAtras(30), true);
-  await crearAviso("cancelada-reciente", estado_envio.CANCELADA, diasAtras(3), true);
+  await crearAviso("enviada-reciente", estado_envio.ENVIADA, horasAtras(5), true);
+  await crearAviso("cancelada-reciente", estado_envio.CANCELADA, horasAtras(2), true);
 
   await prisma.cache_registro.createMany({
     data: [

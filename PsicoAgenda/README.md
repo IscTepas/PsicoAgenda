@@ -673,7 +673,7 @@ bitácoras, tutores ni usuarios:
 
 | Tabla | Qué se conserva | Qué se purga |
 |---|---|---|
-| `notificaciones` | `PENDIENTE` (sin importar la antigüedad) y las enviadas de los últimos 90 días | `ENVIADA`/`FALLIDA` con más de 90 días y `CANCELADA` con más de 7 |
+| `notificaciones` | `PENDIENTE` (sin importar la antigüedad) y las de las últimas 24 horas | `ENVIADA`/`FALLIDA`/`CANCELADA` 24 horas después de enviarse (o de crearse, si no salieron) |
 | `solicitudes_cita` | las que tienen cita asociada y las terminales de los últimos 12 meses | `RECHAZADA`/`CANCELADA` sin cita con más de 12 meses |
 | `cache_registro` | las entradas vigentes | las vencidas |
 

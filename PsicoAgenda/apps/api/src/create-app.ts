@@ -19,6 +19,8 @@ export function createApp() {
       credentials: true,
     }),
   );
+  // El consentimiento lleva la firma o el PDF firmado (hasta 5 MB) en base64; el resto sigue en 1 MB.
+  app.use(/^\/api\/patients\/[^/]+\/consents$/, express.json({ limit: "8mb" }));
   app.use(express.json({ limit: "1mb" }));
   app.use(express.urlencoded({ extended: true }));
 
