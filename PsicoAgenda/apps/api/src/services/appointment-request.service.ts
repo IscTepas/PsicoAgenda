@@ -10,6 +10,7 @@ import {
 import type { Prisma } from "@/generated/prisma/client";
 import { estado_cita, estado_pago, estado_solicitud } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { TRANSACTION_OPTIONS } from "@/lib/transaction";
 import { assertNoAgendaBlock } from "@/services/agenda-block.guard";
 import { isPatientMinor } from "@/utils/age";
 import { reasonIdsOf, reasonLinks, reasonOtherOf, reasonText, resolveReasons } from "@/services/consultation-reason.service";
@@ -334,7 +335,7 @@ export async function rescheduleAppointmentRequest(
         },
         include: requestInclude,
       });
-    });
+    }, TRANSACTION_OPTIONS);
 
     await notificar(
       "CITA_CANCELADA_POR_PACIENTE",
@@ -367,7 +368,7 @@ async function requirePendingRequestOfPsychologist(
     throw AppError.forbidden("Solo el psicólogo puede responder una solicitud");
   }
 
-  if (auth.role === UserRole.PSYCHOLOGIST && row.psicologo_id !== (await requirePsychologistId(auth))) {
+  if (auth.role === UserRole.PSYCHOLOGIST && row.psicologo_id !== (await requirePsychologistId(auth, tx))) {
     throw AppError.forbidden("No puedes responder la solicitud de otro profesional");
   }
 
@@ -415,7 +416,7 @@ export async function acceptAppointmentRequest(
         status: estado_cita.CONFIRMADA,
         requestId: request.id,
       });
-    });
+    }, TRANSACTION_OPTIONS);
 
     await notificar("SOLICITUD_ACEPTADA", avisoDeCita(created));
 
@@ -436,7 +437,7 @@ export async function rejectAppointmentRequest(
       data: { estado: estado_solicitud.RECHAZADA, atendida_en: new Date() },
       include: requestInclude,
     });
-  });
+  }, TRANSACTION_OPTIONS);
 
   await notificar("SOLICITUD_RECHAZADA", avisoDeSolicitud(updated));
 

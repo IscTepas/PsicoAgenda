@@ -135,7 +135,7 @@ El flujo de registro (código de verificación por correo) usa tres variables m�
 
 En producción, si falta alguna la API **no arranca** (error explícito al cargar la configuración). En desarrollo, si falta alguna de las de correo: aviso en consola y modo degradado — el código se escribe en la consola de la API en lugar de enviarse.
 
-`DATABASE_URL` usa **Supavisor en modo sesión**:
+`DATABASE_URL` usa **Supavisor en modo sesión** para desarrollo local y cualquier proceso de larga vida (Railway, Render, una VM). **En Vercel los valores son otros**: modo transacción (puerto 6543) y `DATABASE_POOL_MAX=1`; ver [Despliegue](#variables-de-entorno-de-la-api).
 
 ```bash
 DATABASE_URL="postgresql://prisma.<REF>:<CONTRASENA>@aws-<N>-<region>.pooler.supabase.com:5432/postgres"
@@ -144,8 +144,8 @@ DATABASE_URL="postgresql://prisma.<REF>:<CONTRASENA>@aws-<N>-<region>.pooler.sup
 - El usuario es `<rol>.<ref_del_proyecto>`, no solo el rol: Supavisor enruta por tenant y rechaza la conexión si falta el ref (`ENOTFOUND: tenant/user ...`).
 - El host del pooler es `aws-<N>-<region>.pooler.supabase.com`. El índice `N` **no se adivina**: el `aws-0` que circula por los ejemplos no tiene por qué ser el del proyecto y un índice equivocado da `ENOTFOUND: tenant/user ... not found`. Se copia de Project Settings → Database. En este proyecto es `aws-1-ca-central-1`.
 - El modo directo (`db.<ref>.supabase.co`) es IPv6 y no es alcanzable desde entornos sin IPv6 global.
-- El modo transacción (puerto 6543) queda descartado: no soporta sentencias preparadas, que Prisma emite por debajo.
-- **No agregues `pgbouncer=true`**: desactiva el caché de planes preparados y solo hace falta en modo transacción.
+- **En Vercel (serverless) se usa el modo transacción (puerto 6543), no el sesión.** Con Prisma 7 y `@prisma/adapter-pg` el driver no emite sentencias preparadas con nombre, así que Supavisor las acepta en modo transacción. Si en los logs aparece `prepared statement "s0" already exists`, vuelve a 5432 con `DATABASE_POOL_MAX=1`. El modo transacción no sirve para `prisma migrate deploy` ni para `pg_dump`: las migraciones y las copias usan una conexión de sesión (5432).
+- **No agregues `pgbouncer=true`**: desactiva el caché de planes preparados y no es necesario; Prisma 7 con `@prisma/adapter-pg` no emite sentencias preparadas con nombre.
 - **La URL no debe llevar parámetros `ssl*`**: `pg-connection-string` los traduce a `verify-full` y falla contra el certificado de Supabase con `SELF_SIGNED_CERT_IN_CHAIN`. El TLS se configura en el `PoolConfig`, no en la cadena.
 
 **5. Aplicar el esquema, devolver los privilegios a `postgres` y generar el cliente:**
@@ -420,7 +420,12 @@ Express por dentro.
 Las de `apps/api/.env.example`. En producción, además:
 
 - `DATABASE_URL` en **puerto 6543** (Supavisor, modo transacción) y
-  `DATABASE_POOL_MAX=1`: cada instancia de Vercel abre su propio pool.
+  `DATABASE_POOL_MAX=1`. **En Vercel los valores difieren de los locales**: en
+  modo sesión cada proceso reserva su conexión, mientras que las N instancias de
+  Vercel comparten un pool pequeño mediante el pooler en modo transacción. Sin
+  definir `DATABASE_POOL_MAX` el default del código es 5; fíjalo en 1. Las
+  migraciones (`prisma migrate deploy`) y las copias (`BACKUP_DATABASE_URL`) usan
+  una conexión de sesión en el puerto 5432, no el pooler de transacciones.
 - `CORS_ORIGIN` con el dominio del frontend; admite lista separada por comas y
   `*` como comodín (`https://psicoagenda-web-*.vercel.app`) para los previews.
 - `CRON_SECRET`: sin él, `POST /api/internal/despachar` responde 503.

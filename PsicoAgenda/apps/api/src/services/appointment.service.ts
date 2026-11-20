@@ -15,6 +15,7 @@ import {
   tipo_sesion,
 } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
+import { TRANSACTION_OPTIONS } from "@/lib/transaction";
 import { assertNoAgendaBlock } from "@/services/agenda-block.guard";
 import { reasonIdsOf, reasonLinks, reasonOtherOf, reasonText, resolveReasons } from "@/services/consultation-reason.service";
 import { assertCanActOnPatient, patientIdsForUser } from "@/services/guardianship.service";
@@ -235,8 +236,11 @@ export const toAppointment = (row: AppointmentRow): Appointment => {
  * El perfil de psicólogo cuelga del usuario y su identificador no viaja en la
  * sesión, así que se resuelve en cada petición.
  */
-export async function requirePsychologistId(auth: AuthenticatedUser): Promise<string> {
-  const psychologist = await prisma.psicologos.findUnique({
+export async function requirePsychologistId(
+  auth: AuthenticatedUser,
+  db: Prisma.TransactionClient = prisma,
+): Promise<string> {
+  const psychologist = await db.psicologos.findUnique({
     where: { usuario_id: auth.id },
     select: { id: true },
   });
@@ -248,8 +252,11 @@ export async function requirePsychologistId(auth: AuthenticatedUser): Promise<st
   return psychologist.id;
 }
 
-export async function requirePatientId(auth: AuthenticatedUser): Promise<string> {
-  const patient = await prisma.pacientes.findUnique({
+export async function requirePatientId(
+  auth: AuthenticatedUser,
+  db: Prisma.TransactionClient = prisma,
+): Promise<string> {
+  const patient = await db.pacientes.findUnique({
     where: { usuario_id: auth.id },
     select: { id: true },
   });
@@ -475,6 +482,7 @@ export async function createAppointment(
         // paciente (ruta antigua), queda PENDIENTE hasta que la confirme.
         status: auth.role === UserRole.PATIENT ? estado_cita.PENDIENTE : estado_cita.CONFIRMADA,
       }),
+      TRANSACTION_OPTIONS,
     );
 
     await notificar(
@@ -624,7 +632,7 @@ export async function updateAppointment(
         },
         include: appointmentInclude,
       });
-    });
+    }, TRANSACTION_OPTIONS);
 
     // Las notas internas no le interesan al paciente: solo se avisa si cambió lo
     // que él ve de la cita.
@@ -871,7 +879,7 @@ export async function updateAppointmentPayment(
     }
 
     return tx.citas.findUniqueOrThrow({ where: { id }, include: appointmentInclude });
-  });
+  }, TRANSACTION_OPTIONS);
 
   return toAppointment(updated);
 }
