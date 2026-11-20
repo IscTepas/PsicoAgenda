@@ -476,6 +476,37 @@ function langParaPlantilla(nombre: string): string {
 }
 
 /**
+ * Lista de idiomas a intentar para una plantilla, en orden de preferencia.
+ *
+ * Meta registra cada plantilla con un idioma concreto y responde `132001`
+ * («Template name does not exist in the translation») cuando el `language.code`
+ * no coincide. En lugar de dar el envío por perdido, se reintenta con el idioma
+ * que realmente tiene la plantilla en Meta:
+ *
+ *   - `jaspers_*` son las plantillas de ejemplo de Meta, registradas en `en_US`.
+ *   - `psicoagenda_recordatorio` quedó registrada en `en` (las demás en `es_MX`).
+ *
+ * La configuración (`WHATSAPP_TEMPLATE_LANG*`) sigue teniendo prioridad; los
+ * idiomas conocidos solo actúan como red de seguridad para que una variable
+ * mal copiada (p. ej. `es_MX` con una plantilla de prueba en inglés) no deje la
+ * cola de notificaciones llena de errores.
+ */
+function idiomasParaPlantilla(nombre: string): string[] {
+  const conocido =
+    nombre.startsWith("jaspers_")
+      ? "en_US"
+      : nombre === config.whatsappTemplateReminder
+        ? "en"
+        : "es_MX";
+  return [...new Set([langParaPlantilla(nombre), conocido, "en_US", "es_MX"])];
+}
+
+/** `true` si Meta rechazó por idioma de plantilla (no por token ni por otra causa). */
+function esErrorDeIdioma(status: number, detalle: string): boolean {
+  return status === 404 && (detalle.includes("132001") || detalle.includes("does not exist in"));
+}
+
+/**
  * Si la plantilla usa parámetros con nombre (`{{nombre}}`) en lugar de
  * posicionales (`{{1}}`). En las NAMED cada parámetro debe llevar su
  * `parameter_name`; Meta rechaza el envío si falta.
@@ -784,43 +815,50 @@ async function enviarWhatsapp(fila: FilaPendiente): Promise<{ id: string; status
 
   const template: Record<string, unknown> = {
     name: nombrePlantilla,
-    language: { code: langParaPlantilla(nombrePlantilla) },
   };
   if (parametrosCuerpo.length > 0) {
     template.components = [{ type: "body", parameters: parametrosCuerpo }];
   }
 
   const url = `https://graph.facebook.com/${config.whatsappApiVersion}/${config.whatsappPhoneId}/messages`;
-  const respuesta = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.whatsappAccessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: telefono,
-      type: "template",
-      template,
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
 
-  if (!respuesta.ok) {
+  let ultimoError: { status: number; detalle: string } | null = null;
+  for (const idioma of idiomasParaPlantilla(nombrePlantilla)) {
+    const respuesta = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.whatsappAccessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: telefono,
+        type: "template",
+        template: { ...template, language: { code: idioma } },
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (respuesta.ok) {
+      const body = (await respuesta.json()) as {
+        messages?: Array<{ id?: string; message_status?: string }>;
+      };
+      const mensaje = body.messages?.[0];
+      if (!mensaje?.id) {
+        throw new Error("WhatsApp no devolvió el ID del mensaje");
+      }
+      return { id: mensaje.id, status: mensaje.message_status ?? "accepted" };
+    }
+
     const detalle = await respuesta.text().catch(() => "");
-    throw new Error(
-      `WhatsApp respondió ${respuesta.status}${detalle ? `: ${detalle.slice(0, 300)}` : ""}`,
-    );
+    ultimoError = { status: respuesta.status, detalle };
+    // Solo el desajuste de idioma justifica reintentar; un 401 (token) o un
+    // 400 (parámetros) no se arreglan cambiando el idioma.
+    if (!esErrorDeIdioma(respuesta.status, detalle)) break;
   }
 
-  const body = (await respuesta.json()) as {
-    messages?: Array<{ id?: string; message_status?: string }>;
-  };
-  const mensaje = body.messages?.[0];
-  if (!mensaje?.id) {
-    throw new Error("WhatsApp no devolvió el ID del mensaje");
-  }
-  return { id: mensaje.id, status: mensaje.message_status ?? "accepted" };
+  const { status, detalle } = ultimoError ?? { status: 0, detalle: "" };
+  throw new Error(`WhatsApp respondió ${status}${detalle ? `: ${detalle.slice(0, 300)}` : ""}`);
 }
 
 async function entregar(

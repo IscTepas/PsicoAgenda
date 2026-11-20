@@ -503,4 +503,37 @@ describe("despacharPendientes", () => {
     });
     fetchMock.mockRestore();
   });
+
+  it("reintenta con el idioma real cuando Meta rechaza por idioma de plantilla (132001)", async () => {
+    config.whatsappEnabled = true;
+    prismaMock.notificaciones.findMany.mockResolvedValueOnce([
+      { ...fila(WHATSAPP), plantilla_whatsapp: "jaspers_market_order_confirmation_v1" },
+    ]);
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: "(#132001) Template name does not exist in the translation",
+              code: 132001,
+            },
+          }),
+          { status: 404, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(respuestaWhatsappOk());
+
+    await despacharPendientes();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const idiomaDe = (indice: number) =>
+      (JSON.parse((fetchMock.mock.calls[indice]![1] as { body: string }).body) as {
+        template: { language: { code: string } };
+      }).template.language.code;
+    expect(idiomaDe(0)).toBe("es_MX"); // config por defecto
+    expect(idiomaDe(1)).toBe("en_US"); // idioma real de las plantillas jaspers_*
+    expect(estadosActualizados()).toEqual([estado_envio.ENVIADA]);
+    fetchMock.mockRestore();
+  });
 });
