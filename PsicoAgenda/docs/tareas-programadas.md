@@ -27,6 +27,11 @@ guardadas y nunca salen.**
 
 ## Lo que falta para que funcione
 
+> **Estado actual: los disparos automáticos están DESACTIVADOS** (comentados en
+> `.github/workflows/despachar-notificaciones.yml`) porque fallaban cada 5 minutos sin
+> `CRON_SECRET` y `API_URL`. Mientras sigan así, los avisos por correo y WhatsApp no salen
+> solos. Para reactivarlos: completar la lista de abajo y quitar los `#` del bloque `schedule`.
+
 - [ ] Subir el workflow al repositorio (`.github/workflows/despachar-notificaciones.yml`,
       ya está en el código; falta el commit y el push).
 - [ ] Confirmar con Jose Tadeo por qué lo borró el 10 de noviembre (commit

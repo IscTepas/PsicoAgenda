@@ -5,12 +5,15 @@
 # shortcut: GitHub puede retrasar los `schedule` varios minutos en horas pico; si se incumplen los 5 min, mover el disparo a cron-job.org con el mismo curl.
 name: Despachar notificaciones
 
+# DESACTIVADO: los disparos automáticos fallaban cada 5 minutos porque faltan el secret
+# CRON_SECRET y la variable API_URL en GitHub. Solo corre a mano (Actions → Run workflow).
+# Para reactivarlo: configurar ambos (ver docs/tareas-programadas.md) y quitar los «#» de abajo.
 on:
-  schedule:
-    - cron: "*/5 * * * *"
-    - cron: "0 13 * * *" # 07:00 en Tepic: fin de tutelas por mayoría de edad
-    - cron: "0 3 * * *" # 20:00 en Tepic: resumen de bitácora para la psicóloga
-    - cron: "17 * * * *" # cada hora: borra las notificaciones con más de 24 h
+  # schedule:
+  #   - cron: "*/5 * * * *"
+  #   - cron: "0 13 * * *" # 07:00 en Tepic: fin de tutelas por mayoría de edad
+  #   - cron: "0 3 * * *" # 20:00 en Tepic: resumen de bitácora para la psicóloga
+  #   - cron: "17 * * * *" # cada hora: borra las notificaciones con más de 24 h
   workflow_dispatch:
 
 jobs:
